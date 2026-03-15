@@ -34,7 +34,7 @@ The mobile app authenticates with Supabase Auth directly and receives a JWT. Eve
 
 | Layer | Choice | Notes |
 |-------|--------|-------|
-| Language | Go 1.23+ | |
+| Language | Go 1.26.1+ | |
 | Router | github.com/go-chi/chi/v5 | Lightweight, idiomatic, great middleware |
 | DB Driver | github.com/jackc/pgx/v5/pgxpool | Connection pooling, best Go PG driver |
 | Migrations | github.com/golang-migrate/migrate/v4 | SQL file based migrations |
@@ -574,7 +574,7 @@ return streak
 ## Dockerfile
 
 ```dockerfile
-FROM golang:1.23-alpine AS builder
+FROM golang:1.26.1-alpine AS builder
 WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
