@@ -1,4 +1,4 @@
-package repository
+package dao
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
-type TemplateRepository interface {
+type TemplateDAO interface {
 	List(ctx context.Context, userID uuid.UUID, typeFilter, subtypeFilter string) ([]model.TemplateSummary, error)
 	GetByID(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error)
 	Create(ctx context.Context, userID uuid.UUID, t *model.WorkoutTemplate) error
@@ -19,15 +19,15 @@ type TemplateRepository interface {
 	Delete(ctx context.Context, userID, templateID uuid.UUID) error
 }
 
-type templateRepo struct {
+type templateDAO struct {
 	pool *pgxpool.Pool
 }
 
-func NewTemplateRepo(pool *pgxpool.Pool) TemplateRepository {
-	return &templateRepo{pool: pool}
+func NewTemplateDAO(pool *pgxpool.Pool) TemplateDAO {
+	return &templateDAO{pool: pool}
 }
 
-func (r *templateRepo) List(ctx context.Context, userID uuid.UUID, typeFilter, subtypeFilter string) ([]model.TemplateSummary, error) {
+func (r *templateDAO) List(ctx context.Context, userID uuid.UUID, typeFilter, subtypeFilter string) ([]model.TemplateSummary, error) {
 	query := `
 		SELECT t.id, t.name, t.type_id, t.subtype_id, t.created_at, t.updated_at,
 		       COUNT(e.id) AS exercise_count,
@@ -79,7 +79,7 @@ func (r *templateRepo) List(ctx context.Context, userID uuid.UUID, typeFilter, s
 	return summaries, rows.Err()
 }
 
-func (r *templateRepo) GetByID(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
+func (r *templateDAO) GetByID(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
 	t := &model.WorkoutTemplate{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, name, type_id, subtype_id, created_at, updated_at
@@ -102,7 +102,7 @@ func (r *templateRepo) GetByID(ctx context.Context, userID, templateID uuid.UUID
 	return t, nil
 }
 
-func (r *templateRepo) getExercises(ctx context.Context, templateID uuid.UUID) ([]model.Exercise, error) {
+func (r *templateDAO) getExercises(ctx context.Context, templateID uuid.UUID) ([]model.Exercise, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, template_id, name, sort_order, sets, reps, weight, rest_seconds, notes
 		FROM exercises
@@ -133,7 +133,7 @@ func (r *templateRepo) getExercises(ctx context.Context, templateID uuid.UUID) (
 	return exercises, rows.Err()
 }
 
-func (r *templateRepo) Create(ctx context.Context, userID uuid.UUID, t *model.WorkoutTemplate) error {
+func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.WorkoutTemplate) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -170,7 +170,7 @@ func (r *templateRepo) Create(ctx context.Context, userID uuid.UUID, t *model.Wo
 	return tx.Commit(ctx)
 }
 
-func (r *templateRepo) Update(ctx context.Context, userID uuid.UUID, t *model.WorkoutTemplate) error {
+func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.WorkoutTemplate) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -200,7 +200,6 @@ func (r *templateRepo) Update(ctx context.Context, userID uuid.UUID, t *model.Wo
 		return fmt.Errorf("updating template: %w", err)
 	}
 
-	// Delete all existing exercises and re-insert.
 	_, err = tx.Exec(ctx, `DELETE FROM exercises WHERE template_id = $1`, t.ID)
 	if err != nil {
 		return fmt.Errorf("deleting exercises: %w", err)
@@ -225,7 +224,7 @@ func (r *templateRepo) Update(ctx context.Context, userID uuid.UUID, t *model.Wo
 	return tx.Commit(ctx)
 }
 
-func (r *templateRepo) Delete(ctx context.Context, userID, templateID uuid.UUID) error {
+func (r *templateDAO) Delete(ctx context.Context, userID, templateID uuid.UUID) error {
 	result, err := r.pool.Exec(ctx, `
 		DELETE FROM workout_templates WHERE id = $1 AND user_id = $2`,
 		templateID, userID,

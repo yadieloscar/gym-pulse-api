@@ -18,8 +18,8 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 	"github.com/gym-pulse/gym-pulse-api/internal/router"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
@@ -79,10 +79,10 @@ func main() {
 	v := validator.New()
 
 	// Build dependency graph.
-	templateRepo := repository.NewTemplateRepo(pool)
-	logRepo := repository.NewLogRepo(pool)
-	statsRepo := repository.NewStatsRepo(pool)
-	settingsRepo := repository.NewSettingsRepo(pool)
+	templateRepo := dao.NewTemplateDAO(pool)
+	logRepo := dao.NewLogDAO(pool)
+	statsRepo := dao.NewStatsDAO(pool)
+	settingsRepo := dao.NewSettingsDAO(pool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)

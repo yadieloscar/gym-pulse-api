@@ -1,4 +1,4 @@
-package repository
+package dao
 
 import (
 	"context"
@@ -11,21 +11,21 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
-type StatsRepository interface {
+type StatsDAO interface {
 	GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error)
 	GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error)
 	GetDistribution(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
 }
 
-type statsRepo struct {
+type statsDAO struct {
 	pool *pgxpool.Pool
 }
 
-func NewStatsRepo(pool *pgxpool.Pool) StatsRepository {
-	return &statsRepo{pool: pool}
+func NewStatsDAO(pool *pgxpool.Pool) StatsDAO {
+	return &statsDAO{pool: pool}
 }
 
-func (r *statsRepo) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error) {
+func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM day_logs
@@ -38,7 +38,7 @@ func (r *statsRepo) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSt
 	return count, nil
 }
 
-func (r *statsRepo) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error) {
+func (r *statsDAO) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM day_logs WHERE user_id = $1`,
@@ -50,7 +50,7 @@ func (r *statsRepo) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int
 	return count, nil
 }
 
-func (r *statsRepo) GetDistribution(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error) {
+func (r *statsDAO) GetDistribution(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT type_id, subtype_id, COUNT(*) AS count
 		FROM day_logs
@@ -64,7 +64,6 @@ func (r *statsRepo) GetDistribution(ctx context.Context, userID uuid.UUID) ([]mo
 	}
 	defer rows.Close()
 
-	// Aggregate flat rows into nested structure.
 	typeMap := make(map[string]*model.TypeDistribution)
 	var typeOrder []string
 

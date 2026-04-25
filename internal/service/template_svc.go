@@ -7,8 +7,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 )
 
 type TemplateService interface {
@@ -20,11 +20,11 @@ type TemplateService interface {
 }
 
 type templateService struct {
-	repo      repository.TemplateRepository
+	repo      dao.TemplateDAO
 	validator *validator.Validate
 }
 
-func NewTemplateService(repo repository.TemplateRepository, v *validator.Validate) TemplateService {
+func NewTemplateService(repo dao.TemplateDAO, v *validator.Validate) TemplateService {
 	return &templateService{repo: repo, validator: v}
 }
 

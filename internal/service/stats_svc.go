@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 )
 
 type StatsService interface {
@@ -16,11 +16,11 @@ type StatsService interface {
 }
 
 type statsService struct {
-	statsRepo    repository.StatsRepository
-	settingsRepo repository.SettingsRepository
+	statsRepo    dao.StatsDAO
+	settingsRepo dao.SettingsDAO
 }
 
-func NewStatsService(statsRepo repository.StatsRepository, settingsRepo repository.SettingsRepository) StatsService {
+func NewStatsService(statsRepo dao.StatsDAO, settingsRepo dao.SettingsDAO) StatsService {
 	return &statsService{statsRepo: statsRepo, settingsRepo: settingsRepo}
 }
 

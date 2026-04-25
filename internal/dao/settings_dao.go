@@ -1,4 +1,4 @@
-package repository
+package dao
 
 import (
 	"context"
@@ -11,20 +11,20 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
-type SettingsRepository interface {
+type SettingsDAO interface {
 	Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
 	Upsert(ctx context.Context, userID uuid.UUID, settings *model.UserSettings) error
 }
 
-type settingsRepo struct {
+type settingsDAO struct {
 	pool *pgxpool.Pool
 }
 
-func NewSettingsRepo(pool *pgxpool.Pool) SettingsRepository {
-	return &settingsRepo{pool: pool}
+func NewSettingsDAO(pool *pgxpool.Pool) SettingsDAO {
+	return &settingsDAO{pool: pool}
 }
 
-func (r *settingsRepo) Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error) {
+func (r *settingsDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error) {
 	s := &model.UserSettings{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT weight_unit, weekly_goal
@@ -42,7 +42,7 @@ func (r *settingsRepo) Get(ctx context.Context, userID uuid.UUID) (*model.UserSe
 	return s, nil
 }
 
-func (r *settingsRepo) Upsert(ctx context.Context, userID uuid.UUID, settings *model.UserSettings) error {
+func (r *settingsDAO) Upsert(ctx context.Context, userID uuid.UUID, settings *model.UserSettings) error {
 	_, err := r.pool.Exec(ctx, `
 		INSERT INTO user_settings (user_id, weight_unit, weekly_goal)
 		VALUES ($1, $2, $3)
