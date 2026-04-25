@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
+	httpswagger "github.com/swaggo/http-swagger"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
@@ -29,6 +30,7 @@ func New(
 
 	// Public routes.
 	r.Get("/health", handler.HealthCheck)
+	r.Get("/docs/*", httpswagger.WrapHandler)
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {

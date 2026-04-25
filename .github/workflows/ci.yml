@@ -1,0 +1,42 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.4
+
+      - name: Regenerate docs
+        run: swag init -g cmd/server/main.go --output docs
+
+      - name: Fail if docs are out of date
+        run: |
+          git diff --exit-code docs/ || \
+            (echo "Swagger docs are out of date — run 'swag init -g cmd/server/main.go --output docs' and commit the result." && exit 1)
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: v2.11.4
+
+      - name: Build
+        run: go build ./...

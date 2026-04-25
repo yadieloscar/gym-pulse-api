@@ -1,3 +1,12 @@
+// @title           Gym Pulse API
+// @version         1.0
+// @description     REST API for the Gym Pulse workout tracking app.
+// @host            localhost:8080
+// @BasePath        /
+// @securityDefinitions.apikey BearerAuth
+// @in              header
+// @name            Authorization
+// @description     JWT Bearer token — prefix value with "Bearer "
 package main
 
 import (
@@ -19,6 +28,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	_ "github.com/gym-pulse/gym-pulse-api/docs"
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"

@@ -1,0 +1,779 @@
+basePath: /
+definitions:
+  model.CreateDayLogRequest:
+    properties:
+      date:
+        type: string
+      overrides:
+        items:
+          $ref: '#/definitions/model.CreateOverrideRequest'
+        type: array
+      session_notes:
+        type: string
+      subtype_id:
+        type: string
+      template_id:
+        type: string
+      type_id:
+        type: string
+    required:
+    - date
+    - subtype_id
+    - type_id
+    type: object
+  model.CreateExerciseRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      notes:
+        type: string
+      reps:
+        type: integer
+      rest_seconds:
+        type: integer
+      sets:
+        type: integer
+      weight:
+        type: number
+    required:
+    - name
+    type: object
+  model.CreateOverrideRequest:
+    properties:
+      actual_reps:
+        type: integer
+      actual_sets:
+        type: integer
+      actual_weight:
+        type: number
+      exercise_id:
+        type: string
+      notes:
+        type: string
+      skipped:
+        type: boolean
+    required:
+    - exercise_id
+    type: object
+  model.CreateTemplateRequest:
+    properties:
+      exercises:
+        items:
+          $ref: '#/definitions/model.CreateExerciseRequest'
+        type: array
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      subtype_id:
+        type: string
+      type_id:
+        type: string
+    required:
+    - name
+    - subtype_id
+    - type_id
+    type: object
+  model.DayLog:
+    properties:
+      date:
+        type: string
+      id:
+        type: string
+      logged_at:
+        type: string
+      overrides:
+        items:
+          $ref: '#/definitions/model.ExerciseOverride'
+        type: array
+      session_notes:
+        type: string
+      subtype_id:
+        type: string
+      template:
+        $ref: '#/definitions/model.WorkoutTemplate'
+      template_id:
+        type: string
+      template_name:
+        type: string
+      type_id:
+        type: string
+    required:
+    - subtype_id
+    - type_id
+    type: object
+  model.DayLogSummary:
+    properties:
+      date:
+        type: string
+      id:
+        type: string
+      logged_at:
+        type: string
+      session_notes:
+        type: string
+      subtype_id:
+        type: string
+      template_id:
+        type: string
+      template_name:
+        type: string
+      type_id:
+        type: string
+    type: object
+  model.Exercise:
+    properties:
+      id:
+        type: string
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      notes:
+        type: string
+      reps:
+        type: integer
+      rest_seconds:
+        type: integer
+      sets:
+        type: integer
+      sort_order:
+        type: integer
+      weight:
+        type: number
+    required:
+    - name
+    type: object
+  model.ExerciseOverride:
+    properties:
+      actual_reps:
+        type: integer
+      actual_sets:
+        type: integer
+      actual_weight:
+        type: number
+      exercise_id:
+        type: string
+      id:
+        type: string
+      notes:
+        type: string
+      skipped:
+        type: boolean
+    required:
+    - exercise_id
+    type: object
+  model.StatsSummary:
+    properties:
+      streak_weeks:
+        type: integer
+      this_week:
+        $ref: '#/definitions/model.WeekProgress'
+      total_workouts:
+        type: integer
+    type: object
+  model.SubtypeDistribution:
+    properties:
+      count:
+        type: integer
+      subtype_id:
+        type: string
+    type: object
+  model.TemplateSummary:
+    properties:
+      created_at:
+        type: string
+      exercise_count:
+        type: integer
+      exercises_preview:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      subtype_id:
+        type: string
+      type_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.TypeDistribution:
+    properties:
+      count:
+        type: integer
+      subtypes:
+        items:
+          $ref: '#/definitions/model.SubtypeDistribution'
+        type: array
+      type_id:
+        type: string
+    type: object
+  model.UpdateDayLogRequest:
+    properties:
+      overrides:
+        items:
+          $ref: '#/definitions/model.CreateOverrideRequest'
+        type: array
+      session_notes:
+        type: string
+    type: object
+  model.UserSettings:
+    properties:
+      weekly_goal:
+        maximum: 7
+        minimum: 3
+        type: integer
+      weight_unit:
+        enum:
+        - lb
+        - kg
+        type: string
+    required:
+    - weekly_goal
+    - weight_unit
+    type: object
+  model.WeekProgress:
+    properties:
+      completed:
+        type: integer
+      goal:
+        type: integer
+    type: object
+  model.WorkoutTemplate:
+    properties:
+      created_at:
+        type: string
+      exercises:
+        items:
+          $ref: '#/definitions/model.Exercise'
+        type: array
+      id:
+        type: string
+      name:
+        maxLength: 100
+        minLength: 1
+        type: string
+      subtype_id:
+        type: string
+      type_id:
+        type: string
+      updated_at:
+        type: string
+    required:
+    - name
+    - subtype_id
+    - type_id
+    type: object
+host: localhost:8080
+info:
+  contact: {}
+  description: REST API for the Gym Pulse workout tracking app.
+  title: Gym Pulse API
+  version: "1.0"
+paths:
+  /api/v1/logs:
+    get:
+      description: Returns all day logs in the week containing the given Monday date.
+      parameters:
+      - description: Week start date (Monday) in YYYY-MM-DD format
+        in: query
+        name: week
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.DayLogSummary'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List day logs for a week
+      tags:
+      - logs
+    post:
+      consumes:
+      - application/json
+      description: Logs a workout session for the given date. Only one log per date
+        is allowed.
+      parameters:
+      - description: Day log payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateDayLogRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.DayLog'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: A log already exists for this date
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a day log
+      tags:
+      - logs
+  /api/v1/logs/{date}:
+    delete:
+      description: Permanently deletes the day log for the given date.
+      parameters:
+      - description: Date in YYYY-MM-DD format
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a day log
+      tags:
+      - logs
+    get:
+      description: Returns the full day log for a specific date including template
+        and overrides.
+      parameters:
+      - description: Date in YYYY-MM-DD format
+        in: path
+        name: date
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DayLog'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a day log
+      tags:
+      - logs
+    put:
+      consumes:
+      - application/json
+      description: Updates session notes and replaces the exercise override list for
+        the given date.
+      parameters:
+      - description: Date in YYYY-MM-DD format
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateDayLogRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DayLog'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a day log
+      tags:
+      - logs
+  /api/v1/settings:
+    get:
+      description: Returns the authenticated user's settings (weight unit, weekly
+        goal).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserSettings'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get user settings
+      tags:
+      - settings
+    put:
+      consumes:
+      - application/json
+      description: Updates weight unit and weekly goal for the authenticated user.
+      parameters:
+      - description: Settings payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UserSettings'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserSettings'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user settings
+      tags:
+      - settings
+  /api/v1/stats/distribution:
+    get:
+      description: Returns a breakdown of workout counts by type and subtype.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.TypeDistribution'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get workout type distribution
+      tags:
+      - stats
+  /api/v1/stats/summary:
+    get:
+      description: Returns this week's progress, current streak, and total workout
+        count.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StatsSummary'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get stats summary
+      tags:
+      - stats
+  /api/v1/templates:
+    get:
+      description: Returns all workout templates for the authenticated user, optionally
+        filtered by type or subtype.
+      parameters:
+      - description: Filter by type (push, pull, legs, cardio, upper, lower, full,
+          core, other)
+        in: query
+        name: type
+        type: string
+      - description: Filter by subtype (hypertrophy, strength, power, endurance, mobility,
+          conditioning, skills, general)
+        in: query
+        name: subtype
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.TemplateSummary'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List workout templates
+      tags:
+      - templates
+    post:
+      consumes:
+      - application/json
+      description: Creates a new workout template with exercises.
+      parameters:
+      - description: Template payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.WorkoutTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a workout template
+      tags:
+      - templates
+  /api/v1/templates/{id}:
+    delete:
+      description: Permanently deletes a workout template and its exercises.
+      parameters:
+      - description: Template UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a workout template
+      tags:
+      - templates
+    get:
+      description: Returns the full workout template including exercises.
+      parameters:
+      - description: Template UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WorkoutTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get a workout template
+      tags:
+      - templates
+    put:
+      consumes:
+      - application/json
+      description: Replaces the template name, type, subtype, and full exercise list.
+      parameters:
+      - description: Template UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Template payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateTemplateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WorkoutTemplate'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update a workout template
+      tags:
+      - templates
+  /health:
+    get:
+      description: Returns 200 when the server is up.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Health check
+      tags:
+      - health
+securityDefinitions:
+  BearerAuth:
+    description: JWT Bearer token — prefix value with "Bearer "
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

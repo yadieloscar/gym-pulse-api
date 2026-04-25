@@ -19,7 +19,6 @@ type contextKey string
 const UserIDKey contextKey = "user_id"
 
 var (
-	errUserIDNotInContext   = errors.New("user_id not found in context")
 	errUnexpectedSignMethod = errors.New("unexpected signing method")
 )
 
@@ -68,13 +67,15 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 	}
 }
 
-// GetUserID extracts the user ID from the request context.
-func GetUserID(ctx context.Context) (uuid.UUID, error) {
-	userIDStr, ok := ctx.Value(UserIDKey).(string)
-	if !ok {
-		return uuid.Nil, errUserIDNotInContext
+// MustGetUserID extracts the authenticated user's UUID from the context.
+// Panics if the value is absent — only call from handlers inside the AuthMiddleware group.
+func MustGetUserID(ctx context.Context) uuid.UUID {
+	userIDStr, _ := ctx.Value(UserIDKey).(string)
+	id, err := uuid.Parse(userIDStr)
+	if err != nil {
+		panic("MustGetUserID called outside authenticated route: " + err.Error())
 	}
-	return uuid.Parse(userIDStr)
+	return id
 }
 
 func writeAuthError(w http.ResponseWriter, message string) {

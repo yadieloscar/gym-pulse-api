@@ -64,6 +64,12 @@ linters:
       # internal packages wrap their own errors at the service boundary
       - linters: [wrapcheck]
         path: "internal/"
+      # generated swagger docs — not our code to fix
+      - path: "docs/"
+        linters: [godot, unused, staticcheck, revive]
+      # swag annotation lines end with route paths, not sentences
+      - linters: [godot]
+        source: "^// @"
 
 formatters:
   enable:

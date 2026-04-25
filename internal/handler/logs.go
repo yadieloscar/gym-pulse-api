@@ -18,12 +18,19 @@ func NewLogHandler(svc service.LogService) *LogHandler {
 	return &LogHandler{svc: svc}
 }
 
+// ListByWeek godoc
+// @Summary     List day logs for a week
+// @Description Returns all day logs in the week containing the given Monday date.
+// @Tags        logs
+// @Produce     json
+// @Param       week query string true "Week start date (Monday) in YYYY-MM-DD format"
+// @Success     200 {array}  model.DayLogSummary
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/logs [get]
 func (h *LogHandler) ListByWeek(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
+	userID := middleware.MustGetUserID(r.Context())
 
 	weekParam := r.URL.Query().Get("week")
 	if weekParam == "" {
@@ -40,13 +47,19 @@ func (h *LogHandler) ListByWeek(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, logs)
 }
 
+// GetByDate godoc
+// @Summary     Get a day log
+// @Description Returns the full day log for a specific date including template and overrides.
+// @Tags        logs
+// @Produce     json
+// @Param       date path string true "Date in YYYY-MM-DD format"
+// @Success     200 {object} model.DayLog
+// @Failure     401 {object} map[string]string
+// @Failure     404 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/logs/{date} [get]
 func (h *LogHandler) GetByDate(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
-
+	userID := middleware.MustGetUserID(r.Context())
 	date := chi.URLParam(r, "date")
 
 	log, err := h.svc.GetByDate(r.Context(), userID, date)
@@ -58,12 +71,21 @@ func (h *LogHandler) GetByDate(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, log)
 }
 
+// Create godoc
+// @Summary     Create a day log
+// @Description Logs a workout session for the given date. Only one log per date is allowed.
+// @Tags        logs
+// @Accept      json
+// @Produce     json
+// @Param       body body model.CreateDayLogRequest true "Day log payload"
+// @Success     201 {object} model.DayLog
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     409 {object} map[string]string "A log already exists for this date"
+// @Security    BearerAuth
+// @Router      /api/v1/logs [post]
 func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
+	userID := middleware.MustGetUserID(r.Context())
 
 	var req model.CreateDayLogRequest
 	if err := decodeJSON(r, &req); err != nil {
@@ -80,13 +102,22 @@ func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, log)
 }
 
+// Update godoc
+// @Summary     Update a day log
+// @Description Updates session notes and replaces the exercise override list for the given date.
+// @Tags        logs
+// @Accept      json
+// @Produce     json
+// @Param       date path string                    true "Date in YYYY-MM-DD format"
+// @Param       body body model.UpdateDayLogRequest true "Update payload"
+// @Success     200 {object} model.DayLog
+// @Failure     400 {object} map[string]string
+// @Failure     401 {object} map[string]string
+// @Failure     404 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/logs/{date} [put]
 func (h *LogHandler) Update(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
-
+	userID := middleware.MustGetUserID(r.Context())
 	date := chi.URLParam(r, "date")
 
 	var req model.UpdateDayLogRequest
@@ -104,13 +135,18 @@ func (h *LogHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, log)
 }
 
+// Delete godoc
+// @Summary     Delete a day log
+// @Description Permanently deletes the day log for the given date.
+// @Tags        logs
+// @Param       date path string true "Date in YYYY-MM-DD format"
+// @Success     204
+// @Failure     401 {object} map[string]string
+// @Failure     404 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/logs/{date} [delete]
 func (h *LogHandler) Delete(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
-
+	userID := middleware.MustGetUserID(r.Context())
 	date := chi.URLParam(r, "date")
 
 	if err := h.svc.Delete(r.Context(), userID, date); err != nil {

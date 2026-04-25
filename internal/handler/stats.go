@@ -15,12 +15,17 @@ func NewStatsHandler(svc service.StatsService) *StatsHandler {
 	return &StatsHandler{svc: svc}
 }
 
+// Summary godoc
+// @Summary     Get stats summary
+// @Description Returns this week's progress, current streak, and total workout count.
+// @Tags        stats
+// @Produce     json
+// @Success     200 {object} model.StatsSummary
+// @Failure     401 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/stats/summary [get]
 func (h *StatsHandler) Summary(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
+	userID := middleware.MustGetUserID(r.Context())
 
 	summary, err := h.svc.GetSummary(r.Context(), userID)
 	if err != nil {
@@ -31,12 +36,17 @@ func (h *StatsHandler) Summary(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, summary)
 }
 
+// Distribution godoc
+// @Summary     Get workout type distribution
+// @Description Returns a breakdown of workout counts by type and subtype.
+// @Tags        stats
+// @Produce     json
+// @Success     200 {object} map[string][]model.TypeDistribution
+// @Failure     401 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/stats/distribution [get]
 func (h *StatsHandler) Distribution(w http.ResponseWriter, r *http.Request) {
-	userID, err := middleware.GetUserID(r.Context())
-	if err != nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "UNAUTHORIZED", nil)
-		return
-	}
+	userID := middleware.MustGetUserID(r.Context())
 
 	dist, err := h.svc.GetDistribution(r.Context(), userID)
 	if err != nil {
