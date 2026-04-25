@@ -57,6 +57,6 @@ func handleServiceError(w http.ResponseWriter, err error) {
 }
 
 func decodeJSON(r *http.Request, v interface{}) error {
-	defer r.Body.Close()
+	defer r.Body.Close() //nolint:errcheck
 	return json.NewDecoder(r.Body).Decode(v)
 }

@@ -133,7 +133,7 @@ func runMigrations(databaseURL string) error {
 	if err != nil {
 		return err
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {

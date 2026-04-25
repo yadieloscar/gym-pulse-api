@@ -185,7 +185,7 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO day_logs (user_id, date, type_id, subtype_id, template_id, session_notes)
@@ -226,7 +226,7 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	var logID uuid.UUID
 	err = tx.QueryRow(ctx, `

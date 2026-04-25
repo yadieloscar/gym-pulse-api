@@ -138,7 +138,7 @@ func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.Wor
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO workout_templates (user_id, name, type_id, subtype_id)
@@ -175,7 +175,7 @@ func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.Wor
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	defer tx.Rollback(ctx) //nolint:errcheck
 
 	var exists bool
 	err = tx.QueryRow(ctx, `

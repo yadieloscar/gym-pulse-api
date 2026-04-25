@@ -71,5 +71,7 @@ func GetUserID(ctx context.Context) (uuid.UUID, error) {
 func writeAuthError(w http.ResponseWriter, message string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	json.NewEncoder(w).Encode(map[string]string{"error": message})
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+		http.Error(w, message, http.StatusUnauthorized)
+	}
 }

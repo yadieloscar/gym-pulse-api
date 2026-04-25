@@ -45,12 +45,12 @@ type DayLogSummary struct {
 
 // CreateDayLogRequest is the request body for POST /api/v1/logs.
 type CreateDayLogRequest struct {
-	Date         string                    `json:"date" validate:"required"`
-	TypeID       string                    `json:"type_id" validate:"required"`
-	SubtypeID    string                    `json:"subtype_id" validate:"required"`
-	TemplateID   *uuid.UUID                `json:"template_id,omitempty"`
-	Overrides    []CreateOverrideRequest   `json:"overrides,omitempty"`
-	SessionNotes *string                   `json:"session_notes,omitempty"`
+	Date         string                  `json:"date" validate:"required"`
+	TypeID       string                  `json:"type_id" validate:"required"`
+	SubtypeID    string                  `json:"subtype_id" validate:"required"`
+	TemplateID   *uuid.UUID              `json:"template_id,omitempty"`
+	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
+	SessionNotes *string                 `json:"session_notes,omitempty"`
 }
 
 // UpdateDayLogRequest is the request body for PUT /api/v1/logs/:date.
