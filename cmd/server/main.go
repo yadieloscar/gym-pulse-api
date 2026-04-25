@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -64,7 +66,7 @@ func main() {
 
 	if err := pool.Ping(context.Background()); err != nil {
 		logger.Error("failed to ping database", "error", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // pool.Close defer intentionally skipped on fatal startup error
 	}
 	logger.Info("connected to database")
 
@@ -121,7 +123,7 @@ func main() {
 	}()
 
 	logger.Info("server starting", "port", cfg.Port, "env", cfg.Environment)
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server error", "error", err)
 		os.Exit(1)
 	}
@@ -131,22 +133,22 @@ func main() {
 func runMigrations(databaseURL string) error {
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("opening migration db: %w", err)
 	}
-	defer db.Close() //nolint:errcheck
+	defer db.Close()
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return err
+		return fmt.Errorf("creating migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating migrator: %w", err)
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return err
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("running migrations: %w", err)
 	}
 
 	return nil

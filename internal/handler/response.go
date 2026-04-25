@@ -10,12 +10,12 @@ import (
 )
 
 type apiError struct {
-	Error   string      `json:"error"`
-	Code    string      `json:"code,omitempty"`
-	Details interface{} `json:"details,omitempty"`
+	Error   string `json:"error"`
+	Code    string `json:"code,omitempty"`
+	Details any    `json:"details,omitempty"`
 }
 
-func writeJSON(w http.ResponseWriter, status int, v interface{}) {
+func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	if err := json.NewEncoder(w).Encode(v); err != nil {
@@ -23,7 +23,7 @@ func writeJSON(w http.ResponseWriter, status int, v interface{}) {
 	}
 }
 
-func writeError(w http.ResponseWriter, status int, message, code string, details interface{}) {
+func writeError(w http.ResponseWriter, status int, message, code string, details any) {
 	writeJSON(w, status, apiError{
 		Error:   message,
 		Code:    code,
@@ -56,7 +56,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "internal server error", "INTERNAL_ERROR", nil)
 }
 
-func decodeJSON(r *http.Request, v interface{}) error {
-	defer r.Body.Close() //nolint:errcheck
+func decodeJSON(r *http.Request, v any) error {
+	defer r.Body.Close()
 	return json.NewDecoder(r.Body).Decode(v)
 }

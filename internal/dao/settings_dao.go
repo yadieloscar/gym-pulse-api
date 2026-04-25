@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -33,7 +34,7 @@ func (r *settingsDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserSet
 		userID,
 	).Scan(&s.WeightUnit, &s.WeeklyGoal)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			defaults := model.DefaultUserSettings()
 			return &defaults, nil
 		}

@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -30,10 +29,10 @@ func NewTemplateService(repo dao.TemplateDAO, v *validator.Validate) TemplateSer
 
 func (s *templateService) List(ctx context.Context, userID uuid.UUID, typeFilter, subtypeFilter string) ([]model.TemplateSummary, error) {
 	if typeFilter != "" && !model.IsValidTypeID(typeFilter) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid type: %s", typeFilter), Field: "type"}
+		return nil, &model.ValidationError{Message: "invalid type: " + typeFilter, Field: "type"}
 	}
 	if subtypeFilter != "" && !model.IsValidSubtypeID(subtypeFilter) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid subtype: %s", subtypeFilter), Field: "subtype"}
+		return nil, &model.ValidationError{Message: "invalid subtype: " + subtypeFilter, Field: "subtype"}
 	}
 	return s.repo.List(ctx, userID, typeFilter, subtypeFilter)
 }
@@ -91,10 +90,10 @@ func (s *templateService) validateRequest(req model.CreateTemplateRequest) error
 		return &model.ValidationError{Message: "invalid template data", Field: "body"}
 	}
 	if !model.IsValidTypeID(req.TypeID) {
-		return &model.ValidationError{Message: fmt.Sprintf("invalid workout type: %s", req.TypeID), Field: "type_id"}
+		return &model.ValidationError{Message: "invalid workout type: " + req.TypeID, Field: "type_id"}
 	}
 	if !model.IsValidSubtypeID(req.SubtypeID) {
-		return &model.ValidationError{Message: fmt.Sprintf("invalid workout subtype: %s", req.SubtypeID), Field: "subtype_id"}
+		return &model.ValidationError{Message: "invalid workout subtype: " + req.SubtypeID, Field: "subtype_id"}
 	}
 	for _, e := range req.Exercises {
 		if err := s.validator.Struct(e); err != nil {

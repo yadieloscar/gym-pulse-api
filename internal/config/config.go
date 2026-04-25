@@ -1,11 +1,18 @@
+// Package config loads application configuration from environment variables.
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strings"
 )
 
+var (
+	ErrMissingDatabaseURL = errors.New("DATABASE_URL is required")
+	ErrMissingJWTSecret   = errors.New("SUPABASE_JWT_SECRET is required")
+)
+
+// Config holds the application configuration.
 type Config struct {
 	Port              string
 	DatabaseURL       string
@@ -15,15 +22,16 @@ type Config struct {
 	LogLevel          string
 }
 
+// Load reads configuration from environment variables.
 func Load() (*Config, error) {
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
+		return nil, ErrMissingDatabaseURL
 	}
 
 	jwtSecret := os.Getenv("SUPABASE_JWT_SECRET")
 	if jwtSecret == "" {
-		return nil, fmt.Errorf("SUPABASE_JWT_SECRET is required")
+		return nil, ErrMissingJWTSecret
 	}
 
 	port := os.Getenv("PORT")
@@ -43,7 +51,7 @@ func Load() (*Config, error) {
 
 	var origins []string
 	if raw := os.Getenv("ALLOWED_ORIGINS"); raw != "" {
-		for _, o := range strings.Split(raw, ",") {
+		for o := range strings.SplitSeq(raw, ",") {
 			if trimmed := strings.TrimSpace(o); trimmed != "" {
 				origins = append(origins, trimmed)
 			}

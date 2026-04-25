@@ -1,8 +1,10 @@
+// Package middleware provides HTTP middleware for the gym-pulse API.
 package middleware
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -13,8 +15,15 @@ import (
 
 type contextKey string
 
+// UserIDKey is the context key for the authenticated user's ID.
 const UserIDKey contextKey = "user_id"
 
+var (
+	errUserIDNotInContext   = errors.New("user_id not found in context")
+	errUnexpectedSignMethod = errors.New("unexpected signing method")
+)
+
+// AuthMiddleware validates the Bearer JWT and injects the user ID into the request context.
 func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -30,9 +39,9 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 				return
 			}
 
-			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (interface{}, error) {
+			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-					return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+					return nil, fmt.Errorf("%w: %v", errUnexpectedSignMethod, t.Header["alg"])
 				}
 				return []byte(jwtSecret), nil
 			})
@@ -63,7 +72,7 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 func GetUserID(ctx context.Context) (uuid.UUID, error) {
 	userIDStr, ok := ctx.Value(UserIDKey).(string)
 	if !ok {
-		return uuid.Nil, fmt.Errorf("user_id not found in context")
+		return uuid.Nil, errUserIDNotInContext
 	}
 	return uuid.Parse(userIDStr)
 }

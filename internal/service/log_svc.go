@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -62,10 +61,10 @@ func (s *logService) Create(ctx context.Context, userID uuid.UUID, req model.Cre
 	}
 
 	if !model.IsValidTypeID(req.TypeID) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid workout type: %s", req.TypeID), Field: "type_id"}
+		return nil, &model.ValidationError{Message: "invalid workout type: " + req.TypeID, Field: "type_id"}
 	}
 	if !model.IsValidSubtypeID(req.SubtypeID) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid workout subtype: %s", req.SubtypeID), Field: "subtype_id"}
+		return nil, &model.ValidationError{Message: "invalid workout subtype: " + req.SubtypeID, Field: "subtype_id"}
 	}
 
 	// Verify template ownership if provided.

@@ -1,6 +1,9 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 var ValidTypeIDs = []string{
 	"push", "pull", "legs", "cardio",
@@ -13,21 +16,11 @@ var ValidSubtypeIDs = []string{
 }
 
 func IsValidTypeID(s string) bool {
-	for _, v := range ValidTypeIDs {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidTypeIDs, s)
 }
 
 func IsValidSubtypeID(s string) bool {
-	for _, v := range ValidSubtypeIDs {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidSubtypeIDs, s)
 }
 
 // NotFoundError indicates a resource was not found (or not owned by user).

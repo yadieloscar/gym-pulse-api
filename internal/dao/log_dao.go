@@ -79,7 +79,7 @@ func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (
 		&dl.TemplateID, &dl.SessionNotes, &dl.LoggedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &model.NotFoundError{Message: "log not found"}
 		}
 		return nil, fmt.Errorf("querying day log: %w", err)
@@ -145,8 +145,8 @@ func (r *logDAO) getTemplate(ctx context.Context, templateID uuid.UUID) (*model.
 		templateID,
 	).Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil //nolint:nilnil
 		}
 		return nil, fmt.Errorf("querying template for log: %w", err)
 	}
@@ -185,7 +185,7 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx)
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO day_logs (user_id, date, type_id, subtype_id, template_id, session_notes)
@@ -226,7 +226,7 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx)
 
 	var logID uuid.UUID
 	err = tx.QueryRow(ctx, `
@@ -234,7 +234,7 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 		userID, date,
 	).Scan(&logID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return &model.NotFoundError{Message: "log not found"}
 		}
 		return fmt.Errorf("querying log for update: %w", err)

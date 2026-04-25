@@ -2,6 +2,7 @@ package dao
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -39,7 +40,7 @@ func (r *templateDAO) List(ctx context.Context, userID uuid.UUID, typeFilter, su
 		LEFT JOIN exercises e ON e.template_id = t.id
 		WHERE t.user_id = $1`
 
-	args := []interface{}{userID}
+	args := []any{userID}
 	argIdx := 2
 
 	if typeFilter != "" {
@@ -88,7 +89,7 @@ func (r *templateDAO) GetByID(ctx context.Context, userID, templateID uuid.UUID)
 		templateID, userID,
 	).Scan(&t.ID, &t.UserID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &model.NotFoundError{Message: "template not found"}
 		}
 		return nil, fmt.Errorf("querying template: %w", err)
@@ -138,7 +139,7 @@ func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.Wor
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx)
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO workout_templates (user_id, name, type_id, subtype_id)
@@ -175,7 +176,7 @@ func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.Wor
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck
+	defer tx.Rollback(ctx)
 
 	var exists bool
 	err = tx.QueryRow(ctx, `

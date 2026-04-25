@@ -44,5 +44,5 @@ func (h *StatsHandler) Distribution(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]interface{}{"types": dist})
+	writeJSON(w, http.StatusOK, map[string]any{"types": dist})
 }
