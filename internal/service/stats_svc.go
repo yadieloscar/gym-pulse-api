@@ -59,8 +59,8 @@ func (s *statsService) GetSummary(ctx context.Context, userID uuid.UUID) (*model
 			Completed: thisWeekCount,
 			Goal:      settings.WeeklyGoal,
 		},
-		StreakWeeks:    streak,
-		StreakDays:     dayStreak,
+		StreakWeeks:   streak,
+		StreakDays:    dayStreak,
 		TotalWorkouts: totalWorkouts,
 	}, nil
 }

@@ -2,8 +2,8 @@ package model
 
 type StatsSummary struct {
 	ThisWeek      WeekProgress `json:"this_week"`
-	StreakWeeks    int          `json:"streak_weeks"`
-	StreakDays     int          `json:"streak_days"`
+	StreakWeeks   int          `json:"streak_weeks"`
+	StreakDays    int          `json:"streak_days"`
 	TotalWorkouts int          `json:"total_workouts"`
 }
 

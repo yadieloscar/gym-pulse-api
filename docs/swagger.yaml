@@ -1,5 +1,34 @@
 basePath: /
 definitions:
+  model.BodyWeight:
+    properties:
+      date:
+        type: string
+      id:
+        type: string
+      logged_at:
+        type: string
+      unit:
+        type: string
+      weight:
+        type: number
+    type: object
+  model.CreateBodyWeightRequest:
+    properties:
+      date:
+        type: string
+      unit:
+        enum:
+        - lb
+        - kg
+        type: string
+      weight:
+        type: number
+    required:
+    - date
+    - unit
+    - weight
+    type: object
   model.CreateDayLogRequest:
     properties:
       date:
@@ -167,6 +196,8 @@ definitions:
     type: object
   model.StatsSummary:
     properties:
+      streak_days:
+        type: integer
       streak_weeks:
         type: integer
       this_week:
@@ -222,6 +253,28 @@ definitions:
       session_notes:
         type: string
     type: object
+  model.UpdateProfileRequest:
+    properties:
+      avatar_url:
+        type: string
+      display_name:
+        maxLength: 50
+        minLength: 2
+        type: string
+    type: object
+  model.UserProfile:
+    properties:
+      avatar_url:
+        type: string
+      created_at:
+        type: string
+      display_name:
+        type: string
+      id:
+        type: string
+      onboarding_completed:
+        type: boolean
+    type: object
   model.UserSettings:
     properties:
       weekly_goal:
@@ -276,6 +329,107 @@ info:
   title: Gym Pulse API
   version: "1.0"
 paths:
+  /api/v1/body/weight:
+    get:
+      description: Returns all body weight entries for the authenticated user, ordered
+        by date descending.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.BodyWeight'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List body weight entries
+      tags:
+      - body-weight
+    post:
+      consumes:
+      - application/json
+      description: Creates or updates a body weight entry for the given date. Only
+        one entry per date is kept.
+      parameters:
+      - description: Body weight payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateBodyWeightRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.BodyWeight'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a body weight entry
+      tags:
+      - body-weight
+  /api/v1/body/weight/{id}:
+    delete:
+      description: Permanently deletes a body weight entry by its ID.
+      parameters:
+      - description: Body weight entry UUID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a body weight entry
+      tags:
+      - body-weight
   /api/v1/logs:
     get:
       description: Returns all day logs in the week containing the given Monday date.
@@ -462,6 +616,70 @@ paths:
       summary: Update a day log
       tags:
       - logs
+  /api/v1/profile:
+    get:
+      description: Returns the authenticated user's profile (display name, avatar,
+        onboarding status).
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserProfile'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - profile
+    put:
+      consumes:
+      - application/json
+      description: Updates display name and avatar URL for the authenticated user.
+        Sets onboarding_completed to true.
+      parameters:
+      - description: Profile update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserProfile'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update user profile
+      tags:
+      - profile
   /api/v1/settings:
     get:
       description: Returns the authenticated user's settings (weight unit, weekly
