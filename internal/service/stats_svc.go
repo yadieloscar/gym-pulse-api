@@ -49,12 +49,18 @@ func (s *statsService) GetSummary(ctx context.Context, userID uuid.UUID) (*model
 		return nil, err
 	}
 
+	dayStreak, err := s.statsRepo.GetDayStreak(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &model.StatsSummary{
 		ThisWeek: model.WeekProgress{
 			Completed: thisWeekCount,
 			Goal:      settings.WeeklyGoal,
 		},
-		StreakWeeks:   streak,
+		StreakWeeks:    streak,
+		StreakDays:     dayStreak,
 		TotalWorkouts: totalWorkouts,
 	}, nil
 }

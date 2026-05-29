@@ -95,19 +95,25 @@ func main() {
 	logRepo := dao.NewLogDAO(pool)
 	statsRepo := dao.NewStatsDAO(pool)
 	settingsRepo := dao.NewSettingsDAO(pool)
+	profileRepo := dao.NewProfileDAO(pool)
+	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
 	statsSvc := service.NewStatsService(statsRepo, settingsRepo)
 	settingsSvc := service.NewSettingsService(settingsRepo, v)
+	profileSvc := service.NewProfileService(profileRepo, v)
+	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 
 	templateHandler := handler.NewTemplateHandler(templateSvc)
 	logHandler := handler.NewLogHandler(logSvc)
 	statsHandler := handler.NewStatsHandler(statsSvc)
 	settingsHandler := handler.NewSettingsHandler(settingsSvc)
+	profileHandler := handler.NewProfileHandler(profileSvc)
+	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler)
+	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{

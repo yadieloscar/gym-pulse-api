@@ -7,7 +7,7 @@ import (
 
 var ValidTypeIDs = []string{
 	"push", "pull", "legs", "cardio",
-	"upper", "lower", "full", "core", "other",
+	"upper", "lower", "full", "core", "other", "rest",
 }
 
 var ValidSubtypeIDs = []string{

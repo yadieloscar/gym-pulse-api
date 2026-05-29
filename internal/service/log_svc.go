@@ -67,6 +67,15 @@ func (s *logService) Create(ctx context.Context, userID uuid.UUID, req model.Cre
 		return nil, &model.ValidationError{Message: "invalid workout subtype: " + req.SubtypeID, Field: "subtype_id"}
 	}
 
+	if req.TypeID == "rest" {
+		if req.TemplateID != nil {
+			return nil, &model.ValidationError{Message: "rest days cannot have templates", Field: "template_id"}
+		}
+		if len(req.Overrides) > 0 {
+			return nil, &model.ValidationError{Message: "rest days cannot have exercise overrides", Field: "overrides"}
+		}
+	}
+
 	// Verify template ownership if provided.
 	if req.TemplateID != nil {
 		_, err := s.templateRepo.GetByID(ctx, userID, *req.TemplateID)

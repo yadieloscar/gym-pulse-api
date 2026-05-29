@@ -15,6 +15,7 @@ type StatsDAO interface {
 	GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error)
 	GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error)
 	GetDistribution(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
+	GetDayStreak(ctx context.Context, userID uuid.UUID) (int, error)
 }
 
 type statsDAO struct {
@@ -95,4 +96,44 @@ func (r *statsDAO) GetDistribution(ctx context.Context, userID uuid.UUID) ([]mod
 		result = append(result, *typeMap[typeID])
 	}
 	return result, rows.Err()
+}
+
+func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `
+		WITH logged_dates AS (
+			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 ORDER BY date DESC
+		),
+		streaks AS (
+			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
+			FROM logged_dates
+		)
+		SELECT COUNT(*) FROM streaks
+		WHERE grp = (SELECT grp FROM streaks WHERE date = CURRENT_DATE)`,
+		userID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("calculating day streak: %w", err)
+	}
+	if count > 0 {
+		return count, nil
+	}
+
+	// If today has no log, check from yesterday.
+	err = r.pool.QueryRow(ctx, `
+		WITH logged_dates AS (
+			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 ORDER BY date DESC
+		),
+		streaks AS (
+			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
+			FROM logged_dates
+		)
+		SELECT COUNT(*) FROM streaks
+		WHERE grp = (SELECT grp FROM streaks WHERE date = CURRENT_DATE - 1)`,
+		userID,
+	).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("calculating day streak from yesterday: %w", err)
+	}
+	return count, nil
 }

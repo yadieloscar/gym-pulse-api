@@ -20,6 +20,8 @@ func New(
 	logHandler *handler.LogHandler,
 	statsHandler *handler.StatsHandler,
 	settingsHandler *handler.SettingsHandler,
+	profileHandler *handler.ProfileHandler,
+	bodyWeightHandler *handler.BodyWeightHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -66,6 +68,17 @@ func New(
 			// Settings
 			r.Get("/settings", settingsHandler.Get)
 			r.Put("/settings", settingsHandler.Update)
+
+			// Profile
+			r.Get("/profile", profileHandler.Get)
+			r.Put("/profile", profileHandler.Update)
+
+			// Body Weight
+			r.Route("/body/weight", func(r chi.Router) {
+				r.Post("/", bodyWeightHandler.Create)
+				r.Get("/", bodyWeightHandler.List)
+				r.Delete("/{id}", bodyWeightHandler.Delete)
+			})
 		})
 	})
 
