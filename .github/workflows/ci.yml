@@ -34,7 +34,7 @@ jobs:
             (echo "Swagger docs are out of date — run 'swag init -g cmd/server/main.go --output docs' and commit the result." && exit 1)
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v6
+        uses: golangci/golangci-lint-action@v7
         with:
           version: v2.11.4
 
