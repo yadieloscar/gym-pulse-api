@@ -55,7 +55,7 @@ func (e *ConflictError) Error() string { return e.Message }
 // UserSettings holds per-user preferences.
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`
-	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=3,max=7"`
+	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=1,max=7"`
 }
 
 // DefaultUserSettings returns the default settings for new users.
