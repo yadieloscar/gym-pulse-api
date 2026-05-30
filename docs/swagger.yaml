@@ -279,7 +279,7 @@ definitions:
     properties:
       weekly_goal:
         maximum: 7
-        minimum: 3
+        minimum: 1
         type: integer
       weight_unit:
         enum:

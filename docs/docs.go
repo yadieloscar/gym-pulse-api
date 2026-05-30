@@ -1457,7 +1457,7 @@ const docTemplate = `{
                 "weekly_goal": {
                     "type": "integer",
                     "maximum": 7,
-                    "minimum": 3
+                    "minimum": 1
                 },
                 "weight_unit": {
                     "type": "string",
