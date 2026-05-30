@@ -47,7 +47,18 @@ func (r *profileDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserProf
 }
 
 func (r *profileDAO) Upsert(ctx context.Context, userID uuid.UUID, profile *model.UpdateProfileRequest) error {
+	// Ensure the user exists in auth.users first (local dev / Supabase compatibility)
 	_, err := r.pool.Exec(ctx, `
+		INSERT INTO auth.users (id)
+		VALUES ($1)
+		ON CONFLICT (id) DO NOTHING`,
+		userID,
+	)
+	if err != nil {
+		return fmt.Errorf("ensuring user in auth.users: %w", err)
+	}
+
+	_, err = r.pool.Exec(ctx, `
 		INSERT INTO user_profiles (id, display_name, avatar_url, onboarding_completed)
 		VALUES ($1, $2, $3, true)
 		ON CONFLICT (id) DO UPDATE

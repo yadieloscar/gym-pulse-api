@@ -36,7 +36,7 @@ func New(
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware(cfg.SupabaseJWTSecret))
+		r.Use(middleware.AuthMiddleware(cfg.SupabaseJWTSecret, cfg.SupabaseJWKSURL))
 
 		r.Route("/api/v1", func(r chi.Router) {
 			// Templates
@@ -62,6 +62,7 @@ func New(
 			})
 
 			// Stats
+			r.Get("/stats", statsHandler.Summary)
 			r.Get("/stats/summary", statsHandler.Summary)
 			r.Get("/stats/distribution", statsHandler.Distribution)
 

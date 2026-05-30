@@ -3,11 +3,19 @@ package middleware
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rsa"
+	"encoding/base64"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
@@ -22,8 +30,135 @@ var (
 	errUnexpectedSignMethod = errors.New("unexpected signing method")
 )
 
+type JWKSKey struct {
+	Kty string `json:"kty"`
+	Crv string `json:"crv"`
+	X   string `json:"x"`
+	Y   string `json:"y"`
+	N   string `json:"n"`
+	E   string `json:"e"`
+	Kid string `json:"kid"`
+	Alg string `json:"alg"`
+}
+
+type JWKS struct {
+	Keys []JWKSKey `json:"keys"`
+}
+
+type keyCache struct {
+	keys      map[string]any
+	lastFetch time.Time
+	mutex     sync.RWMutex
+}
+
+var jwksCache = &keyCache{
+	keys: make(map[string]any),
+}
+
+func (c *keyCache) getPublicKey(jwksURL string, kid string) (any, error) {
+	// Try read lock first
+	c.mutex.RLock()
+	key, ok := c.keys[kid]
+	isFresh := time.Since(c.lastFetch) < 1*time.Hour
+	c.mutex.RUnlock()
+
+	if ok && isFresh {
+		return key, nil
+	}
+
+	// Write lock for fetch
+	c.mutex.Lock()
+	defer c.mutex.Unlock()
+
+	// Double check cache
+	if key, ok = c.keys[kid]; ok && time.Since(c.lastFetch) < 1*time.Hour {
+		return key, nil
+	}
+
+	resp, err := http.Get(jwksURL)
+	if err != nil {
+		return nil, fmt.Errorf("fetching JWKS: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected JWKS status code: %d", resp.StatusCode)
+	}
+
+	var jwks JWKS
+	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
+		return nil, fmt.Errorf("decoding JWKS: %w", err)
+	}
+
+	newKeys := make(map[string]any)
+	for _, k := range jwks.Keys {
+		var pubKey any
+		switch k.Kty {
+		case "EC":
+			xVal, err := decodeCoordinate(k.X)
+			if err != nil {
+				continue
+			}
+			yVal, err := decodeCoordinate(k.Y)
+			if err != nil {
+				continue
+			}
+			pubKey = &ecdsa.PublicKey{
+				Curve: elliptic.P256(),
+				X:     xVal,
+				Y:     yVal,
+			}
+		case "RSA":
+			nBytes, err := decodeCoordinateBytes(k.N)
+			if err != nil {
+				continue
+			}
+			eBytes, err := decodeCoordinateBytes(k.E)
+			if err != nil {
+				continue
+			}
+			var eVal int
+			if len(eBytes) < 4 {
+				padded := make([]byte, 4)
+				copy(padded[4-len(eBytes):], eBytes)
+				eVal = int(binary.BigEndian.Uint32(padded))
+			} else {
+				eVal = int(binary.BigEndian.Uint32(eBytes))
+			}
+			pubKey = &rsa.PublicKey{
+				N: new(big.Int).SetBytes(nBytes),
+				E: eVal,
+			}
+		default:
+			continue
+		}
+		newKeys[k.Kid] = pubKey
+	}
+
+	c.keys = newKeys
+	c.lastFetch = time.Now()
+
+	key, ok = c.keys[kid]
+	if !ok {
+		return nil, fmt.Errorf("key %s not found in JWKS", kid)
+	}
+	return key, nil
+}
+
+func decodeCoordinate(s string) (*big.Int, error) {
+	data, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return nil, err
+	}
+	return new(big.Int).SetBytes(data), nil
+}
+
+func decodeCoordinateBytes(s string) ([]byte, error) {
+	return base64.RawURLEncoding.DecodeString(s)
+}
+
 // AuthMiddleware validates the Bearer JWT and injects the user ID into the request context.
-func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
+func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -39,6 +174,26 @@ func AuthMiddleware(jwtSecret string) func(http.Handler) http.Handler {
 			}
 
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+				// 1. Asymmetric JWKS validation if configured
+				if jwksURL != "" {
+					kid, ok := t.Header["kid"].(string)
+					if !ok || kid == "" {
+						return nil, fmt.Errorf("missing kid header in token")
+					}
+
+					switch t.Method.(type) {
+					case *jwt.SigningMethodECDSA:
+						// Expected alg ES256
+					case *jwt.SigningMethodRSA:
+						// Expected alg RS256
+					default:
+						return nil, fmt.Errorf("unexpected signing method alg: %v", t.Header["alg"])
+					}
+
+					return jwksCache.getPublicKey(jwksURL, kid)
+				}
+
+				// 2. Symmetric HMAC validation fallback
 				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
 					return nil, fmt.Errorf("%w: %v", errUnexpectedSignMethod, t.Header["alg"])
 				}

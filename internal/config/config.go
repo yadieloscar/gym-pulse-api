@@ -17,6 +17,7 @@ type Config struct {
 	Port              string
 	DatabaseURL       string
 	SupabaseJWTSecret string
+	SupabaseJWKSURL   string
 	AllowedOrigins    []string
 	Environment       string
 	LogLevel          string
@@ -58,10 +59,13 @@ func Load() (*Config, error) {
 		}
 	}
 
+	jwksURL := os.Getenv("SUPABASE_JWKS_URL")
+
 	return &Config{
 		Port:              port,
 		DatabaseURL:       dbURL,
 		SupabaseJWTSecret: jwtSecret,
+		SupabaseJWKSURL:   jwksURL,
 		AllowedOrigins:    origins,
 		Environment:       env,
 		LogLevel:          logLevel,
