@@ -13,17 +13,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// resetJWKSCache clears the package-level cache between tests.
-func resetJWKSCache() {
-	jwksCache.mutex.Lock()
-	defer jwksCache.mutex.Unlock()
-	jwksCache.keys = make(map[string]any)
-	jwksCache.lastFetch = time.Time{}
-}
-
 func TestAuthMiddleware_JWKS_MalformedAndUnsupportedKeys(t *testing.T) {
-	resetJWKSCache()
-
 	// Mix in a key with kty=oct (skipped), an EC key with bad x coordinate
 	// (decodeCoordinate fails -> continue), and an RSA key with bad N.
 	jwks := JWKS{
