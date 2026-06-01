@@ -141,7 +141,7 @@ func (m *MockTemplateDAO) Delete(ctx context.Context, userID, templateID uuid.UU
 }
 
 type MockStatsDAO struct {
-	GetWeeklyCountFunc  func(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error)
+	GetWeeklyCountFunc   func(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error)
 	GetTotalWorkoutsFunc func(ctx context.Context, userID uuid.UUID) (int, error)
 	GetDistributionFunc  func(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
 	GetDayStreakFunc     func(ctx context.Context, userID uuid.UUID) (int, error)
