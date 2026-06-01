@@ -70,6 +70,15 @@ linters:
       # swag annotation lines end with route paths, not sentences
       - linters: [godot]
         source: "^// @"
+      # test files use ad-hoc errors as failure-injection fixtures — that's
+      # the whole point of a stub, no need for sentinels here. Same for the
+      # other "fine in production, noise in tests" rules:
+      #   noctx   — httptest.NewRequest is idiomatic and doesn't take ctx
+      #   errcheck — w.Write in a test JWKS stub server is fire-and-forget
+      #   godot    — test file section comments aren't sentences
+      #   nilnil   — mock returns intentionally model "not found" as (nil, nil)
+      - path: "_test\\.go$"
+        linters: [err113, noctx, errcheck, godot, nilnil, usestdlibvars]
 
 formatters:
   enable:

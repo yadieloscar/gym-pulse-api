@@ -28,6 +28,10 @@ const UserIDKey contextKey = "user_id"
 
 var (
 	errUnexpectedSignMethod = errors.New("unexpected signing method")
+	errJWKSStatus           = errors.New("unexpected JWKS status code")
+	errJWKSKeyNotFound      = errors.New("key not found in JWKS")
+	errMissingKidHeader     = errors.New("missing kid header in token")
+	errUnexpectedSigningAlg = errors.New("unexpected signing method alg")
 )
 
 type JWKSKey struct {
@@ -51,11 +55,7 @@ type keyCache struct {
 	mutex     sync.RWMutex
 }
 
-var jwksCache = &keyCache{
-	keys: make(map[string]any),
-}
-
-func (c *keyCache) getPublicKey(jwksURL string, kid string) (any, error) {
+func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string) (any, error) {
 	// Try read lock first
 	c.mutex.RLock()
 	key, ok := c.keys[kid]
@@ -75,14 +75,18 @@ func (c *keyCache) getPublicKey(jwksURL string, kid string) (any, error) {
 		return key, nil
 	}
 
-	resp, err := http.Get(jwksURL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("building JWKS request: %w", err)
+	}
+	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("fetching JWKS: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected JWKS status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("%w: %d", errJWKSStatus, resp.StatusCode)
 	}
 
 	var jwks JWKS
@@ -140,7 +144,7 @@ func (c *keyCache) getPublicKey(jwksURL string, kid string) (any, error) {
 
 	key, ok = c.keys[kid]
 	if !ok {
-		return nil, fmt.Errorf("key %s not found in JWKS", kid)
+		return nil, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
 	}
 	return key, nil
 }
@@ -159,6 +163,7 @@ func decodeCoordinateBytes(s string) ([]byte, error) {
 
 // AuthMiddleware validates the Bearer JWT and injects the user ID into the request context.
 func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Handler {
+	jwksCache := &keyCache{keys: make(map[string]any)}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -173,12 +178,15 @@ func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Ha
 				return
 			}
 
-			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
+			// jwt.Parse's keyFunc signature doesn't accept context, so we
+			// rely on the captured r.Context() below. contextcheck can't
+			// see through the closure — silence the false positive.
+			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) { //nolint:contextcheck
 				// 1. Asymmetric JWKS validation if configured
 				if jwksURL != "" {
 					kid, ok := t.Header["kid"].(string)
 					if !ok || kid == "" {
-						return nil, fmt.Errorf("missing kid header in token")
+						return nil, errMissingKidHeader
 					}
 
 					switch t.Method.(type) {
@@ -187,10 +195,10 @@ func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Ha
 					case *jwt.SigningMethodRSA:
 						// Expected alg RS256
 					default:
-						return nil, fmt.Errorf("unexpected signing method alg: %v", t.Header["alg"])
+						return nil, fmt.Errorf("%w: %v", errUnexpectedSigningAlg, t.Header["alg"])
 					}
 
-					return jwksCache.getPublicKey(jwksURL, kid)
+					return jwksCache.getPublicKey(r.Context(), jwksURL, kid)
 				}
 
 				// 2. Symmetric HMAC validation fallback
