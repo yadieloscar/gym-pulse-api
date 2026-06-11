@@ -105,7 +105,7 @@ func (r *templateDAO) GetByID(ctx context.Context, userID, templateID uuid.UUID)
 
 func (r *templateDAO) getExercises(ctx context.Context, templateID uuid.UUID) ([]model.Exercise, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, template_id, name, sort_order, sets, reps, weight, rest_seconds, notes
+		SELECT id, template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes
 		FROM exercises
 		WHERE template_id = $1
 		ORDER BY sort_order`,
@@ -120,8 +120,9 @@ func (r *templateDAO) getExercises(ctx context.Context, templateID uuid.UUID) ([
 	for rows.Next() {
 		var e model.Exercise
 		if err := rows.Scan(
-			&e.ID, &e.TemplateID, &e.Name, &e.SortOrder,
-			&e.Sets, &e.Reps, &e.Weight, &e.RestSeconds, &e.Notes,
+			&e.ID, &e.TemplateID, &e.CatalogID, &e.Name, &e.SortOrder,
+			&e.Sets, &e.Reps, &e.Weight, &e.RestSeconds,
+			&e.DurationMinutes, &e.Intensity, &e.Notes,
 		); err != nil {
 			return nil, fmt.Errorf("scanning exercise: %w", err)
 		}
@@ -157,11 +158,12 @@ func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.Wor
 		e.TemplateID = t.ID
 		e.SortOrder = i
 		err := tx.QueryRow(ctx, `
-			INSERT INTO exercises (template_id, name, sort_order, sets, reps, weight, rest_seconds, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			RETURNING id`,
-			e.TemplateID, e.Name, e.SortOrder,
-			e.Sets, e.Reps, e.Weight, e.RestSeconds, e.Notes,
+			e.TemplateID, e.CatalogID, e.Name, e.SortOrder,
+			e.Sets, e.Reps, e.Weight, e.RestSeconds,
+			e.DurationMinutes, e.Intensity, e.Notes,
 		).Scan(&e.ID)
 		if err != nil {
 			return fmt.Errorf("inserting exercise: %w", err)
@@ -211,11 +213,12 @@ func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.Wor
 		e.TemplateID = t.ID
 		e.SortOrder = i
 		err := tx.QueryRow(ctx, `
-			INSERT INTO exercises (template_id, name, sort_order, sets, reps, weight, rest_seconds, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			RETURNING id`,
-			e.TemplateID, e.Name, e.SortOrder,
-			e.Sets, e.Reps, e.Weight, e.RestSeconds, e.Notes,
+			e.TemplateID, e.CatalogID, e.Name, e.SortOrder,
+			e.Sets, e.Reps, e.Weight, e.RestSeconds,
+			e.DurationMinutes, e.Intensity, e.Notes,
 		).Scan(&e.ID)
 		if err != nil {
 			return fmt.Errorf("inserting exercise: %w", err)
