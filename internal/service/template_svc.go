@@ -99,6 +99,36 @@ func (s *templateService) validateRequest(req model.CreateTemplateRequest) error
 		if err := s.validator.Struct(e); err != nil {
 			return &model.ValidationError{Message: "invalid exercise data", Field: "exercises"}
 		}
+		if err := validateExerciseShape(e); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// validateExerciseShape enforces that an exercise is either strength
+// (sets+reps) or cardio (duration_minutes), never neither and never both.
+// Intensity is only meaningful for cardio exercises.
+func validateExerciseShape(e model.CreateExerciseRequest) error {
+	strength := e.Sets != nil && e.Reps != nil
+	cardio := e.DurationMinutes != nil
+
+	switch {
+	case !strength && !cardio:
+		return &model.ValidationError{
+			Message: "exercise requires either sets and reps or duration_minutes",
+			Field:   "exercises",
+		}
+	case strength && cardio:
+		return &model.ValidationError{
+			Message: "exercise cannot have both sets/reps and duration_minutes",
+			Field:   "exercises",
+		}
+	case e.Intensity != nil && !cardio:
+		return &model.ValidationError{
+			Message: "intensity is only valid with duration_minutes",
+			Field:   "exercises",
+		}
 	}
 	return nil
 }
@@ -107,13 +137,16 @@ func toExercises(reqs []model.CreateExerciseRequest) []model.Exercise {
 	exercises := make([]model.Exercise, len(reqs))
 	for i, r := range reqs {
 		exercises[i] = model.Exercise{
-			Name:        r.Name,
-			SortOrder:   i,
-			Sets:        r.Sets,
-			Reps:        r.Reps,
-			Weight:      r.Weight,
-			RestSeconds: r.RestSeconds,
-			Notes:       r.Notes,
+			CatalogID:       r.CatalogID,
+			Name:            r.Name,
+			SortOrder:       i,
+			Sets:            r.Sets,
+			Reps:            r.Reps,
+			Weight:          r.Weight,
+			RestSeconds:     r.RestSeconds,
+			DurationMinutes: r.DurationMinutes,
+			Intensity:       r.Intensity,
+			Notes:           r.Notes,
 		}
 	}
 	return exercises

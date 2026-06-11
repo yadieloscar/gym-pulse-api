@@ -97,6 +97,7 @@ func main() {
 	settingsRepo := dao.NewSettingsDAO(pool)
 	profileRepo := dao.NewProfileDAO(pool)
 	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
+	exerciseCatalogRepo := dao.NewExerciseCatalogDAO(pool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
@@ -104,6 +105,7 @@ func main() {
 	settingsSvc := service.NewSettingsService(settingsRepo, v)
 	profileSvc := service.NewProfileService(profileRepo, v)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
+	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 
 	templateHandler := handler.NewTemplateHandler(templateSvc)
 	logHandler := handler.NewLogHandler(logSvc)
@@ -111,9 +113,10 @@ func main() {
 	settingsHandler := handler.NewSettingsHandler(settingsSvc)
 	profileHandler := handler.NewProfileHandler(profileSvc)
 	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
+	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler)
+	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{
