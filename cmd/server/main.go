@@ -1,8 +1,19 @@
+// @title           Gym Pulse API
+// @version         1.0
+// @description     REST API for the Gym Pulse workout tracking app.
+// @host            localhost:8080
+// @BasePath        /
+// @securityDefinitions.apikey BearerAuth
+// @in              header
+// @name            Authorization
+// @description     JWT Bearer token — prefix value with "Bearer "
 package main
 
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -17,9 +28,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	_ "github.com/gym-pulse/gym-pulse-api/docs"
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 	"github.com/gym-pulse/gym-pulse-api/internal/router"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
@@ -64,7 +76,7 @@ func main() {
 
 	if err := pool.Ping(context.Background()); err != nil {
 		logger.Error("failed to ping database", "error", err)
-		os.Exit(1)
+		os.Exit(1) //nolint:gocritic // pool.Close defer intentionally skipped on fatal startup error
 	}
 	logger.Info("connected to database")
 
@@ -79,23 +91,29 @@ func main() {
 	v := validator.New()
 
 	// Build dependency graph.
-	templateRepo := repository.NewTemplateRepo(pool)
-	logRepo := repository.NewLogRepo(pool)
-	statsRepo := repository.NewStatsRepo(pool)
-	settingsRepo := repository.NewSettingsRepo(pool)
+	templateRepo := dao.NewTemplateDAO(pool)
+	logRepo := dao.NewLogDAO(pool)
+	statsRepo := dao.NewStatsDAO(pool)
+	settingsRepo := dao.NewSettingsDAO(pool)
+	profileRepo := dao.NewProfileDAO(pool)
+	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
 	statsSvc := service.NewStatsService(statsRepo, settingsRepo)
 	settingsSvc := service.NewSettingsService(settingsRepo, v)
+	profileSvc := service.NewProfileService(profileRepo, v)
+	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 
 	templateHandler := handler.NewTemplateHandler(templateSvc)
 	logHandler := handler.NewLogHandler(logSvc)
 	statsHandler := handler.NewStatsHandler(statsSvc)
 	settingsHandler := handler.NewSettingsHandler(settingsSvc)
+	profileHandler := handler.NewProfileHandler(profileSvc)
+	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler)
+	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{
@@ -121,7 +139,7 @@ func main() {
 	}()
 
 	logger.Info("server starting", "port", cfg.Port, "env", cfg.Environment)
-	if err := srv.ListenAndServe(); err != http.ErrServerClosed {
+	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server error", "error", err)
 		os.Exit(1)
 	}
@@ -131,22 +149,22 @@ func main() {
 func runMigrations(databaseURL string) error {
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
-		return err
+		return fmt.Errorf("opening migration db: %w", err)
 	}
 	defer db.Close()
 
 	driver, err := postgres.WithInstance(db, &postgres.Config{})
 	if err != nil {
-		return err
+		return fmt.Errorf("creating migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
 	if err != nil {
-		return err
+		return fmt.Errorf("creating migrator: %w", err)
 	}
 
-	if err := m.Up(); err != nil && err != migrate.ErrNoChange {
-		return err
+	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("running migrations: %w", err)
 	}
 
 	return nil

@@ -6,8 +6,8 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 )
 
 type SettingsService interface {
@@ -16,11 +16,11 @@ type SettingsService interface {
 }
 
 type settingsService struct {
-	repo      repository.SettingsRepository
+	repo      dao.SettingsDAO
 	validator *validator.Validate
 }
 
-func NewSettingsService(repo repository.SettingsRepository, v *validator.Validate) SettingsService {
+func NewSettingsService(repo dao.SettingsDAO, v *validator.Validate) SettingsService {
 	return &settingsService{repo: repo, validator: v}
 }
 

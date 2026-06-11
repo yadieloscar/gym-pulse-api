@@ -2,14 +2,13 @@ package service
 
 import (
 	"context"
-	"fmt"
 	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 )
 
 type LogService interface {
@@ -21,12 +20,12 @@ type LogService interface {
 }
 
 type logService struct {
-	repo         repository.LogRepository
-	templateRepo repository.TemplateRepository
+	repo         dao.LogDAO
+	templateRepo dao.TemplateDAO
 	validator    *validator.Validate
 }
 
-func NewLogService(repo repository.LogRepository, templateRepo repository.TemplateRepository, v *validator.Validate) LogService {
+func NewLogService(repo dao.LogDAO, templateRepo dao.TemplateDAO, v *validator.Validate) LogService {
 	return &logService{repo: repo, templateRepo: templateRepo, validator: v}
 }
 
@@ -62,10 +61,19 @@ func (s *logService) Create(ctx context.Context, userID uuid.UUID, req model.Cre
 	}
 
 	if !model.IsValidTypeID(req.TypeID) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid workout type: %s", req.TypeID), Field: "type_id"}
+		return nil, &model.ValidationError{Message: "invalid workout type: " + req.TypeID, Field: "type_id"}
 	}
 	if !model.IsValidSubtypeID(req.SubtypeID) {
-		return nil, &model.ValidationError{Message: fmt.Sprintf("invalid workout subtype: %s", req.SubtypeID), Field: "subtype_id"}
+		return nil, &model.ValidationError{Message: "invalid workout subtype: " + req.SubtypeID, Field: "subtype_id"}
+	}
+
+	if req.TypeID == "rest" {
+		if req.TemplateID != nil {
+			return nil, &model.ValidationError{Message: "rest days cannot have templates", Field: "template_id"}
+		}
+		if len(req.Overrides) > 0 {
+			return nil, &model.ValidationError{Message: "rest days cannot have exercise overrides", Field: "overrides"}
+		}
 	}
 
 	// Verify template ownership if provided.

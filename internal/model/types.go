@@ -1,10 +1,13 @@
 package model
 
-import "time"
+import (
+	"slices"
+	"time"
+)
 
 var ValidTypeIDs = []string{
 	"push", "pull", "legs", "cardio",
-	"upper", "lower", "full", "core", "other",
+	"upper", "lower", "full", "core", "other", "rest",
 }
 
 var ValidSubtypeIDs = []string{
@@ -13,21 +16,11 @@ var ValidSubtypeIDs = []string{
 }
 
 func IsValidTypeID(s string) bool {
-	for _, v := range ValidTypeIDs {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidTypeIDs, s)
 }
 
 func IsValidSubtypeID(s string) bool {
-	for _, v := range ValidSubtypeIDs {
-		if v == s {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(ValidSubtypeIDs, s)
 }
 
 // NotFoundError indicates a resource was not found (or not owned by user).
@@ -55,7 +48,7 @@ func (e *ConflictError) Error() string { return e.Message }
 // UserSettings holds per-user preferences.
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`
-	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=3,max=7"`
+	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=1,max=7"`
 }
 
 // DefaultUserSettings returns the default settings for new users.

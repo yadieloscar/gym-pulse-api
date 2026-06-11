@@ -1,0 +1,263 @@
+{
+  "info": {
+    "name": "Gym Pulse API",
+    "_postman_id": "gym-pulse-api",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8080" },
+    { "key": "token", "value": "" },
+    { "key": "templateId", "value": "" },
+    { "key": "date", "value": "2026-04-25" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{token}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health Check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": { "raw": "{{baseUrl}}/health", "host": ["{{baseUrl}}"], "path": ["health"] }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Templates",
+      "item": [
+        {
+          "name": "List Templates",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "templates"],
+              "query": [
+                { "key": "type", "value": "push", "disabled": true },
+                { "key": "subtype", "value": "hypertrophy", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Get Template",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/templates/{{templateId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "templates", "{{templateId}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Template",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "var res = pm.response.json();",
+                  "if (res.id) pm.collectionVariables.set('templateId', res.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/templates",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "templates"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Push Day A\",\n  \"type_id\": \"push\",\n  \"subtype_id\": \"hypertrophy\",\n  \"exercises\": [\n    {\n      \"name\": \"Bench Press\",\n      \"sets\": 4,\n      \"reps\": 8,\n      \"weight\": 185.0,\n      \"rest_seconds\": 120\n    },\n    {\n      \"name\": \"Incline Dumbbell Press\",\n      \"sets\": 3,\n      \"reps\": 10,\n      \"weight\": 65.0,\n      \"rest_seconds\": 90\n    },\n    {\n      \"name\": \"Tricep Pushdown\",\n      \"sets\": 3,\n      \"reps\": 12,\n      \"rest_seconds\": 60\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Template",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/templates/{{templateId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "templates", "{{templateId}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Push Day A (Updated)\",\n  \"type_id\": \"push\",\n  \"subtype_id\": \"strength\",\n  \"exercises\": [\n    {\n      \"name\": \"Bench Press\",\n      \"sets\": 5,\n      \"reps\": 5,\n      \"weight\": 205.0,\n      \"rest_seconds\": 180\n    },\n    {\n      \"name\": \"Overhead Press\",\n      \"sets\": 4,\n      \"reps\": 6,\n      \"weight\": 115.0,\n      \"rest_seconds\": 150\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Template",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/templates/{{templateId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "templates", "{{templateId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Logs",
+      "item": [
+        {
+          "name": "List Logs by Week",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs?week=2026-04-21",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs"],
+              "query": [{ "key": "week", "value": "2026-04-21" }]
+            }
+          }
+        },
+        {
+          "name": "Get Log by Date",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs/{{date}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs", "{{date}}"]
+            }
+          }
+        },
+        {
+          "name": "Create Log",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{date}}\",\n  \"type_id\": \"push\",\n  \"subtype_id\": \"hypertrophy\",\n  \"template_id\": \"{{templateId}}\",\n  \"session_notes\": \"Felt strong today\",\n  \"overrides\": []\n}"
+            }
+          }
+        },
+        {
+          "name": "Create Log (no template)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"date\": \"{{date}}\",\n  \"type_id\": \"cardio\",\n  \"subtype_id\": \"conditioning\",\n  \"session_notes\": \"30 min run\"\n}"
+            }
+          }
+        },
+        {
+          "name": "Update Log",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs/{{date}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs", "{{date}}"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_notes\": \"Great session, PR on bench\",\n  \"overrides\": [\n    {\n      \"exercise_id\": \"00000000-0000-0000-0000-000000000000\",\n      \"actual_sets\": 4,\n      \"actual_reps\": 8,\n      \"actual_weight\": 195.0,\n      \"skipped\": false\n    }\n  ]\n}"
+            }
+          }
+        },
+        {
+          "name": "Delete Log",
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/logs/{{date}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "logs", "{{date}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Stats",
+      "item": [
+        {
+          "name": "Get Summary",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stats/summary",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stats", "summary"]
+            }
+          }
+        },
+        {
+          "name": "Get Distribution",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/stats/distribution",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "stats", "distribution"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Settings",
+      "item": [
+        {
+          "name": "Get Settings",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "settings"]
+            }
+          }
+        },
+        {
+          "name": "Update Settings",
+          "request": {
+            "method": "PUT",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "url": {
+              "raw": "{{baseUrl}}/api/v1/settings",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "v1", "settings"]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"weight_unit\": \"lb\",\n  \"weekly_goal\": 5\n}"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

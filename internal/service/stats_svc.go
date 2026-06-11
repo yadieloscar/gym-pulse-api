@@ -6,8 +6,8 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
-	"github.com/gym-pulse/gym-pulse-api/internal/repository"
 )
 
 type StatsService interface {
@@ -16,11 +16,11 @@ type StatsService interface {
 }
 
 type statsService struct {
-	statsRepo    repository.StatsRepository
-	settingsRepo repository.SettingsRepository
+	statsRepo    dao.StatsDAO
+	settingsRepo dao.SettingsDAO
 }
 
-func NewStatsService(statsRepo repository.StatsRepository, settingsRepo repository.SettingsRepository) StatsService {
+func NewStatsService(statsRepo dao.StatsDAO, settingsRepo dao.SettingsDAO) StatsService {
 	return &statsService{statsRepo: statsRepo, settingsRepo: settingsRepo}
 }
 
@@ -49,12 +49,18 @@ func (s *statsService) GetSummary(ctx context.Context, userID uuid.UUID) (*model
 		return nil, err
 	}
 
+	dayStreak, err := s.statsRepo.GetDayStreak(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &model.StatsSummary{
 		ThisWeek: model.WeekProgress{
 			Completed: thisWeekCount,
 			Goal:      settings.WeeklyGoal,
 		},
 		StreakWeeks:   streak,
+		StreakDays:    dayStreak,
 		TotalWorkouts: totalWorkouts,
 	}, nil
 }

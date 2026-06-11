@@ -1,4 +1,4 @@
-package repository
+package dao
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
-type LogRepository interface {
+type LogDAO interface {
 	ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	Create(ctx context.Context, userID uuid.UUID, log *model.DayLog) error
@@ -22,15 +22,15 @@ type LogRepository interface {
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 }
 
-type logRepo struct {
+type logDAO struct {
 	pool *pgxpool.Pool
 }
 
-func NewLogRepo(pool *pgxpool.Pool) LogRepository {
-	return &logRepo{pool: pool}
+func NewLogDAO(pool *pgxpool.Pool) LogDAO {
+	return &logDAO{pool: pool}
 }
 
-func (r *logRepo) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {
+func (r *logDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
 	rows, err := r.pool.Query(ctx, `
@@ -67,7 +67,7 @@ func (r *logRepo) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart ti
 	return summaries, rows.Err()
 }
 
-func (r *logRepo) GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error) {
+func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error) {
 	dl := &model.DayLog{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, date, type_id, subtype_id, template_id, session_notes, logged_at
@@ -79,20 +79,18 @@ func (r *logRepo) GetByDate(ctx context.Context, userID uuid.UUID, date string) 
 		&dl.TemplateID, &dl.SessionNotes, &dl.LoggedAt,
 	)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &model.NotFoundError{Message: "log not found"}
 		}
 		return nil, fmt.Errorf("querying day log: %w", err)
 	}
 
-	// Load overrides.
 	overrides, err := r.getOverrides(ctx, dl.ID)
 	if err != nil {
 		return nil, err
 	}
 	dl.Overrides = overrides
 
-	// If linked to a template, load it.
 	if dl.TemplateID != nil {
 		tmpl, err := r.getTemplate(ctx, *dl.TemplateID)
 		if err != nil {
@@ -107,7 +105,7 @@ func (r *logRepo) GetByDate(ctx context.Context, userID uuid.UUID, date string) 
 	return dl, nil
 }
 
-func (r *logRepo) getOverrides(ctx context.Context, dayLogID uuid.UUID) ([]model.ExerciseOverride, error) {
+func (r *logDAO) getOverrides(ctx context.Context, dayLogID uuid.UUID) ([]model.ExerciseOverride, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, day_log_id, exercise_id, actual_sets, actual_reps, actual_weight, notes, skipped
 		FROM exercise_overrides
@@ -138,7 +136,7 @@ func (r *logRepo) getOverrides(ctx context.Context, dayLogID uuid.UUID) ([]model
 	return overrides, rows.Err()
 }
 
-func (r *logRepo) getTemplate(ctx context.Context, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
+func (r *logDAO) getTemplate(ctx context.Context, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
 	t := &model.WorkoutTemplate{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, name, type_id, subtype_id, created_at, updated_at
@@ -147,8 +145,8 @@ func (r *logRepo) getTemplate(ctx context.Context, templateID uuid.UUID) (*model
 		templateID,
 	).Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, nil
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, nil //nolint:nilnil
 		}
 		return nil, fmt.Errorf("querying template for log: %w", err)
 	}
@@ -182,7 +180,7 @@ func (r *logRepo) getTemplate(ctx context.Context, templateID uuid.UUID) (*model
 	return t, rows.Err()
 }
 
-func (r *logRepo) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog) error {
+func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -223,7 +221,7 @@ func (r *logRepo) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog
 	return tx.Commit(ctx)
 }
 
-func (r *logRepo) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error {
+func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -236,7 +234,7 @@ func (r *logRepo) Update(ctx context.Context, userID uuid.UUID, date string, ove
 		userID, date,
 	).Scan(&logID)
 	if err != nil {
-		if err == pgx.ErrNoRows {
+		if errors.Is(err, pgx.ErrNoRows) {
 			return &model.NotFoundError{Message: "log not found"}
 		}
 		return fmt.Errorf("querying log for update: %w", err)
@@ -250,7 +248,6 @@ func (r *logRepo) Update(ctx context.Context, userID uuid.UUID, date string, ove
 		return fmt.Errorf("updating session notes: %w", err)
 	}
 
-	// Replace overrides: delete existing, insert new.
 	_, err = tx.Exec(ctx, `DELETE FROM exercise_overrides WHERE day_log_id = $1`, logID)
 	if err != nil {
 		return fmt.Errorf("deleting overrides: %w", err)
@@ -275,7 +272,7 @@ func (r *logRepo) Update(ctx context.Context, userID uuid.UUID, date string, ove
 	return tx.Commit(ctx)
 }
 
-func (r *logRepo) Delete(ctx context.Context, userID uuid.UUID, date string) error {
+func (r *logDAO) Delete(ctx context.Context, userID uuid.UUID, date string) error {
 	result, err := r.pool.Exec(ctx, `
 		DELETE FROM day_logs WHERE user_id = $1 AND date = $2`,
 		userID, date,

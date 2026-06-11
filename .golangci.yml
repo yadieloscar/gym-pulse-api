@@ -1,0 +1,86 @@
+version: "2"
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - errcheck        # unchecked errors
+    - govet           # go vet passes
+    - staticcheck     # broad static analysis
+    - ineffassign     # assignments whose value is never read
+    - unused          # unused code
+    - bodyclose       # HTTP response body not closed
+    - nilerr          # returns nil when error is not nil
+    - nilnil          # simultaneous nil error + invalid value return
+    - makezero        # slice declared with non-zero length then indexed
+    - durationcheck   # two durations multiplied together
+    - errorlint       # error wrapping issues (Go 1.13+)
+    - forcetypeassert # unchecked type assertions
+    - rowserrcheck    # sql.Rows.Err not checked
+    - sqlclosecheck   # sql.Rows/Stmt not closed
+    - contextcheck    # non-inherited context passed to functions
+    - recvcheck       # inconsistent receiver types on a type
+
+    # Code quality
+    - revive          # drop-in golint replacement with more rules
+    - gocritic        # bugs, performance, and style diagnostics
+    - unparam         # unused function parameters
+    - wastedassign    # wasted assignment statements
+    - unconvert       # unnecessary type conversions
+    - predeclared     # shadows Go predeclared identifiers
+    - reassign        # package-level variable reassignment
+    - noctx           # HTTP requests missing context
+    - wrapcheck       # errors from external packages should be wrapped
+    - errname         # sentinel errors named Err*, error types named *Error
+    - err113          # avoid dynamic errors; use sentinel or wrapped errors
+
+    # Style / maintainability
+    - misspell        # common English misspellings
+    - nolintlint      # malformed or unnecessary nolint directives
+    - whitespace      # unnecessary blank lines at block boundaries
+    - nakedret        # naked returns in long functions
+    - godot           # comments should end with a period
+    - usestdlibvars   # prefer stdlib constants over string literals
+    - intrange        # use integer range in for loops (Go 1.22+)
+    - copyloopvar     # loop variable capture issues
+    - perfsprint      # replace fmt.Sprintf with faster alternatives
+    - modernize       # suggest modern Go idioms
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+        - name: package-comments
+          disabled: true
+
+  exclusions:
+    rules:
+      # tx.Rollback and db/body Close in defer are intentionally fire-and-forget
+      - linters: [errcheck]
+        text: "Error return value of `.*\\.Rollback` is not checked"
+      - linters: [errcheck]
+        text: "Error return value of `.*\\.Close` is not checked"
+      # internal packages wrap their own errors at the service boundary
+      - linters: [wrapcheck]
+        path: "internal/"
+      # generated swagger docs — not our code to fix
+      - path: "docs/"
+        linters: [godot, unused, staticcheck, revive]
+      # swag annotation lines end with route paths, not sentences
+      - linters: [godot]
+        source: "^// @"
+      # test files use ad-hoc errors as failure-injection fixtures — that's
+      # the whole point of a stub, no need for sentinels here. Same for the
+      # other "fine in production, noise in tests" rules:
+      #   noctx   — httptest.NewRequest is idiomatic and doesn't take ctx
+      #   errcheck — w.Write in a test JWKS stub server is fire-and-forget
+      #   godot    — test file section comments aren't sentences
+      #   nilnil   — mock returns intentionally model "not found" as (nil, nil)
+      - path: "_test\\.go$"
+        linters: [err113, noctx, errcheck, godot, nilnil, usestdlibvars]
+
+formatters:
+  enable:
+    - gofmt
+    - goimports

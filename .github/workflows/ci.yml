@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  pull_request:
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install swag
+        run: go install github.com/swaggo/swag/cmd/swag@v1.16.4
+
+      - name: Regenerate docs
+        run: swag init -g cmd/server/main.go --output docs
+
+      - name: Fail if docs are out of date
+        run: |
+          git diff --exit-code docs/ || \
+            (echo "Swagger docs are out of date — run 'swag init -g cmd/server/main.go --output docs' and commit the result." && exit 1)
+
+      - name: Contract drift gate
+        if: github.event_name == 'pull_request'
+        run: |
+          # If a PR changes validator tags, JSON field names, or handler
+          # response shapes, docs/CONTRACTS.md must change in the same PR.
+          # This is the bug class that cost us the most debug rounds:
+          # client and API drifting apart silently.
+          base="origin/${{ github.base_ref }}"
+          git fetch origin "${{ github.base_ref }}" --depth=50 2>/dev/null || true
+          contract_touching=$(git diff "$base"...HEAD -- internal/model internal/handler \
+            | grep -cE '^[+-].*(validate:|json:"|writeJSON)' || true)
+          contracts_updated=$(git diff --name-only "$base"...HEAD | grep -c 'docs/CONTRACTS.md' || true)
+          echo "contract-touching lines: $contract_touching; CONTRACTS.md updated: $contracts_updated"
+          if [ "$contract_touching" -gt 0 ] && [ "$contracts_updated" -eq 0 ]; then
+            echo "::error::This PR changes validator rules, JSON fields, or response shapes but does not update docs/CONTRACTS.md. Update the contract doc (or explain in it why the shape is unchanged) and re-push."
+            exit 1
+          fi
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.11.4
+
+      - name: Build
+        run: go build ./...
+
+      - name: Test (with coverage)
+        run: |
+          go test ./... -coverprofile=coverage.out -covermode=atomic
+          go tool cover -func=coverage.out | tail -20
+
+      - name: Coverage gate (>=90% on tested packages)
+        run: |
+          # Per CLAUDE.md: service + middleware must be ≥90%. Today handler,
+          # config, and router also clear the bar — assert each so a regression
+          # in any one of them fails CI loudly. DAO, model, cmd/server, docs are
+          # intentionally excluded.
+          fail=0
+          for pkg in service middleware handler router config; do
+            pct=$(go tool cover -func=coverage.out \
+              | awk -v p="internal/$pkg/" '$1 ~ p && $1 !~ /_test\.go/ {gsub("%","",$3); s+=$3; n+=1} END {if (n>0) printf "%.1f", s/n; else print "0"}')
+            printf "  %-12s  %s%%\n" "$pkg" "$pct"
+            awk -v v="$pct" 'BEGIN{exit !(v+0 >= 90)}' || { echo "  ↳ below 90%"; fail=1; }
+          done
+          [ "$fail" = "0" ] || exit 1
+
+  smoke:
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Boot API with JWKS disabled (HMAC test path)
+        working-directory: ${{ github.workspace }}
+        run: |
+          # Smoke needs HMAC, not JWKS. Compose lives in the parent repo
+          # directory in dev, but in CI we inline an override here.
+          cat > docker-compose.ci.yml <<'YAML'
+          services:
+            db:
+              image: postgres:16-alpine
+              environment:
+                POSTGRES_DB: gympulse
+                POSTGRES_USER: gympulse
+                POSTGRES_PASSWORD: gympulse
+              healthcheck:
+                test: ["CMD-SHELL", "pg_isready -U gympulse -d gympulse"]
+                interval: 3s
+                retries: 10
+            api:
+              build: .
+              environment:
+                DATABASE_URL: postgres://gympulse:gympulse@db:5432/gympulse
+                SUPABASE_JWT_SECRET: local-dev-secret-change-me
+                SUPABASE_JWKS_URL: ""
+                ENVIRONMENT: ci
+                LOG_LEVEL: warn
+              depends_on:
+                db:
+                  condition: service_healthy
+              ports: ["8080:8080"]
+          YAML
+          docker compose -f docker-compose.ci.yml up -d --build
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
+            [ "$code" = "200" ] && break
+            sleep 2
+          done
+          [ "$code" = "200" ] || { docker compose -f docker-compose.ci.yml logs api; exit 1; }
+
+      - name: Run smoke
+        run: ./scripts/smoke.sh
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.ci.yml down -v
