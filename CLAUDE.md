@@ -36,3 +36,4 @@ Follow the Google Go Style Guide at all times:
 - **`docs/CONTRACTS.md` is the client-facing source of truth** for request/response shapes and validator rules. If you change a `validate:` tag, `json:` field, or response shape, update CONTRACTS.md in the same commit — CI rejects PRs that don't.
 - Run `./scripts/smoke-toggle.sh` after any handler/validator/middleware change (4 wire-level contract assertions, ~10s).
 - Multi-file or cross-repo features: use the task brief at `../gym-pulse-app/docs/TASK_TEMPLATE.md` and the `gym-pulse-ship` skill.
+- Product specs live outside the repo at `../specs/` (kept on disk, intentionally not committed).
