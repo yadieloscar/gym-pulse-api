@@ -13,6 +13,21 @@ definitions:
       weight:
         type: number
     type: object
+  model.CatalogExercise:
+    properties:
+      category:
+        type: string
+      id:
+        type: string
+      mechanic:
+        type: string
+      modality:
+        type: string
+      name:
+        type: string
+      sort_order:
+        type: integer
+    type: object
   model.CreateBodyWeightRequest:
     properties:
       date:
@@ -52,6 +67,16 @@ definitions:
     type: object
   model.CreateExerciseRequest:
     properties:
+      catalog_id:
+        type: string
+      duration_minutes:
+        type: integer
+      intensity:
+        enum:
+        - easy
+        - moderate
+        - hard
+        type: string
       name:
         maxLength: 200
         minLength: 1
@@ -154,7 +179,13 @@ definitions:
     type: object
   model.Exercise:
     properties:
+      catalog_id:
+        type: string
+      duration_minutes:
+        type: integer
       id:
+        type: string
+      intensity:
         type: string
       name:
         maxLength: 200
@@ -430,6 +461,43 @@ paths:
       summary: Delete a body weight entry
       tags:
       - body-weight
+  /api/v1/exercises:
+    get:
+      description: Returns the curated exercise catalog, optionally filtered by workout
+        type category.
+      parameters:
+      - description: Workout type id to filter by (e.g. push, pull, legs, cardio)
+        in: query
+        name: category
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.CatalogExercise'
+              type: array
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List catalog exercises
+      tags:
+      - exercises
   /api/v1/logs:
     get:
       description: Returns all day logs in the week containing the given Monday date.

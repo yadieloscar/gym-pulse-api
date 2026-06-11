@@ -171,6 +171,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/exercises": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the curated exercise catalog, optionally filtered by workout type category.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "exercises"
+                ],
+                "summary": "List catalog exercises",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Workout type id to filter by (e.g. push, pull, legs, cardio)",
+                        "name": "category",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.CatalogExercise"
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "security": [
@@ -1054,6 +1111,29 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CatalogExercise": {
+            "type": "object",
+            "properties": {
+                "category": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mechanic": {
+                    "type": "string"
+                },
+                "modality": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "sort_order": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.CreateBodyWeightRequest": {
             "type": "object",
             "required": [
@@ -1114,6 +1194,20 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "catalog_id": {
+                    "type": "string"
+                },
+                "duration_minutes": {
+                    "type": "integer"
+                },
+                "intensity": {
+                    "type": "string",
+                    "enum": [
+                        "easy",
+                        "moderate",
+                        "hard"
+                    ]
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 200,
@@ -1266,7 +1360,16 @@ const docTemplate = `{
                 "name"
             ],
             "properties": {
+                "catalog_id": {
+                    "type": "string"
+                },
+                "duration_minutes": {
+                    "type": "integer"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "intensity": {
                     "type": "string"
                 },
                 "name": {
