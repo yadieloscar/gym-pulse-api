@@ -165,3 +165,14 @@ func (m *MockBodyWeightService) DeleteWeight(ctx context.Context, u uuid.UUID, e
 	}
 	return nil
 }
+
+type MockExerciseCatalogService struct {
+	ListFunc func(ctx context.Context, category string) ([]model.CatalogExercise, error)
+}
+
+func (m *MockExerciseCatalogService) List(ctx context.Context, category string) ([]model.CatalogExercise, error) {
+	if m.ListFunc != nil {
+		return m.ListFunc(ctx, category)
+	}
+	return []model.CatalogExercise{}, nil
+}

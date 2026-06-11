@@ -193,3 +193,14 @@ func (m *MockSettingsDAO) Upsert(ctx context.Context, userID uuid.UUID, settings
 	}
 	return nil
 }
+
+type MockExerciseCatalogDAO struct {
+	ListFunc func(ctx context.Context, category string) ([]model.CatalogExercise, error)
+}
+
+func (m *MockExerciseCatalogDAO) List(ctx context.Context, category string) ([]model.CatalogExercise, error) {
+	if m.ListFunc != nil {
+		return m.ListFunc(ctx, category)
+	}
+	return []model.CatalogExercise{}, nil
+}

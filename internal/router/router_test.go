@@ -92,14 +92,21 @@ func (fakeBodyWeightDAO) List(ctx context.Context, u uuid.UUID) ([]model.BodyWei
 }
 func (fakeBodyWeightDAO) Delete(ctx context.Context, u, e uuid.UUID) error { return nil }
 
+type fakeExerciseCatalogDAO struct{}
+
+func (fakeExerciseCatalogDAO) List(ctx context.Context, category string) ([]model.CatalogExercise, error) {
+	return []model.CatalogExercise{}, nil
+}
+
 // compile-time checks
 var (
-	_ dao.TemplateDAO   = fakeTemplateDAO{}
-	_ dao.LogDAO        = fakeLogDAO{}
-	_ dao.StatsDAO      = fakeStatsDAO{}
-	_ dao.SettingsDAO   = fakeSettingsDAO{}
-	_ dao.ProfileDAO    = fakeProfileDAO{}
-	_ dao.BodyWeightDAO = fakeBodyWeightDAO{}
+	_ dao.TemplateDAO        = fakeTemplateDAO{}
+	_ dao.LogDAO             = fakeLogDAO{}
+	_ dao.StatsDAO           = fakeStatsDAO{}
+	_ dao.SettingsDAO        = fakeSettingsDAO{}
+	_ dao.ProfileDAO         = fakeProfileDAO{}
+	_ dao.BodyWeightDAO      = fakeBodyWeightDAO{}
+	_ dao.ExerciseCatalogDAO = fakeExerciseCatalogDAO{}
 )
 
 func TestRouter_RoutesAndAuth(t *testing.T) {
@@ -113,6 +120,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, v))
 	profH := handler.NewProfileHandler(newProfileSvc(fakeProfileDAO{}, v))
 	bwH := handler.NewBodyWeightHandler(newBodyWeightSvc(fakeBodyWeightDAO{}, v))
+	exH := handler.NewExerciseCatalogHandler(newExerciseCatalogSvc(fakeExerciseCatalogDAO{}))
 
 	cfg := &config.Config{
 		SupabaseJWTSecret: "test-secret",
@@ -120,7 +128,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH)
+	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH)
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
