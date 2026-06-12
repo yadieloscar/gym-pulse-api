@@ -106,4 +106,33 @@ func TestLogService_Update_Replacement(t *testing.T) {
 			t.Fatalf("want ValidationError, got %v", err)
 		}
 	})
+
+	t.Run("replacing to rest with overrides rejected (mirrors Create)", func(t *testing.T) {
+		var rep *model.LogReplacement
+		_, err := newSvc(&rep).Update(context.Background(), uid, "2026-06-10",
+			model.UpdateDayLogRequest{
+				TypeID:    strPtr("rest"),
+				SubtypeID: strPtr("general"),
+				Overrides: []model.CreateOverrideRequest{{ExerciseID: uuid.New(), Skipped: true}},
+			})
+		var v *model.ValidationError
+		if !errors.As(err, &v) {
+			t.Fatalf("want ValidationError, got %v", err)
+		}
+		if rep != nil {
+			t.Fatalf("guard must reject before reaching the DAO, got replacement %+v", rep)
+		}
+	})
+
+	t.Run("replacing to rest without overrides is allowed", func(t *testing.T) {
+		var rep *model.LogReplacement
+		_, err := newSvc(&rep).Update(context.Background(), uid, "2026-06-10",
+			model.UpdateDayLogRequest{TypeID: strPtr("rest"), SubtypeID: strPtr("general")})
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if rep == nil || rep.TypeID != "rest" {
+			t.Fatalf("replacement = %+v", rep)
+		}
+	})
 }

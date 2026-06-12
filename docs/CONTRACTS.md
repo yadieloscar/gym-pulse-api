@@ -143,6 +143,12 @@ Body:
 - An update always rewrites the override set from the request body — a
   replacement without `overrides` therefore clears them (old overrides
   reference the old workout's exercises).
+- ⚠️ **This applies to EVERY PUT, not just replacements.** A notes-only
+  `PUT {"session_notes":"..."}` with no `overrides` field wipes all existing
+  overrides for that day. The client must always re-send the full override
+  set on any `PUT /logs/{date}`.
+- Replacing a day to `type_id: "rest"` while sending `overrides` → 422
+  (rest days carry no overrides, mirroring POST).
 
 ---
 

@@ -109,6 +109,13 @@ func (s *logService) Update(ctx context.Context, userID uuid.UUID, date string, 
 		return nil, err
 	}
 
+	// Mirror Create's invariant: a rest day carries no exercise overrides.
+	// Without this, replacing a day to rest while sending overrides would
+	// persist a rest log with overrides — a state Create forbids.
+	if replace != nil && replace.TypeID == "rest" && len(req.Overrides) > 0 {
+		return nil, &model.ValidationError{Message: "rest days cannot have exercise overrides", Field: "overrides"}
+	}
+
 	overrides := toOverrides(req.Overrides)
 	if err := s.repo.Update(ctx, userID, date, overrides, req.SessionNotes, replace); err != nil {
 		return nil, err
