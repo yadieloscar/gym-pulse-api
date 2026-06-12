@@ -106,6 +106,24 @@ else
   bad "catalog missing, under-seeded (<=50), or shape drift" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 6. weekly plan round-trip ----------
+step "6. PUT /api/v1/plan/weekly then GET /api/v1/plan returns it"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/plan/weekly" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d '{"days":[{"weekday":1,"rest":true},{"weekday":3,"rest":true}]}')
+body=$(cat /tmp/smoke.body)
+if [ "$resp" != "200" ]; then
+  bad "PUT weekly plan expected 200, got $resp" "$body"
+else
+  resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/plan" "${auth[@]}")
+  body=$(cat /tmp/smoke.body)
+  if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d.get('weekly'), list) and len(d['weekly'])==2 and isinstance(d.get('overrides'), list)" "$body" 2>/dev/null; then
+    ok "weekly plan stored and returned (body: $(echo "$body" | head -c 120)...)"
+  else
+    bad "GET plan shape drift or wrong count" "$(echo "$body" | head -c 200)"
+  fi
+fi
+
 # ---------- summary ----------
 printf "\n\033[1m%d passed, %d failed\033[0m\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

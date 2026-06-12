@@ -124,7 +124,9 @@ func (s *logService) Update(ctx context.Context, userID uuid.UUID, date string, 
 // known type/subtype ids.
 func (s *logService) resolveReplacement(ctx context.Context, userID uuid.UUID, req model.UpdateDayLogRequest) (*model.LogReplacement, error) {
 	if req.TemplateID == nil && req.TypeID == nil && req.SubtypeID == nil {
-		return nil, nil
+		// nil replacement is the documented "nothing to replace" signal the
+		// DAO branches on; a sentinel error would conflate it with failure.
+		return nil, nil //nolint:nilnil
 	}
 
 	if req.TemplateID != nil {

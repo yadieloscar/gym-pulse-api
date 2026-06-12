@@ -78,7 +78,7 @@ linters:
       #   godot    — test file section comments aren't sentences
       #   nilnil   — mock returns intentionally model "not found" as (nil, nil)
       - path: "_test\\.go$"
-        linters: [err113, noctx, errcheck, godot, nilnil, usestdlibvars]
+        linters: [err113, noctx, errcheck, godot, nilnil, usestdlibvars, modernize]
 
 formatters:
   enable:
