@@ -104,12 +104,47 @@ func (s *logService) Update(ctx context.Context, userID uuid.UUID, date string, 
 		return nil, &model.ValidationError{Message: "invalid date format, expected YYYY-MM-DD", Field: "date"}
 	}
 
+	replace, err := s.resolveReplacement(ctx, userID, req)
+	if err != nil {
+		return nil, err
+	}
+
 	overrides := toOverrides(req.Overrides)
-	if err := s.repo.Update(ctx, userID, date, overrides, req.SessionNotes); err != nil {
+	if err := s.repo.Update(ctx, userID, date, overrides, req.SessionNotes, replace); err != nil {
 		return nil, err
 	}
 
 	return s.repo.GetByDate(ctx, userID, date)
+}
+
+// resolveReplacement validates the optional workout-replacement fields on an
+// update. When a template is given it is authoritative: ownership is checked
+// and type/subtype derive from the template, ignoring any drifting values in
+// the request. Type-only replacement (quick logs) is validated against the
+// known type/subtype ids.
+func (s *logService) resolveReplacement(ctx context.Context, userID uuid.UUID, req model.UpdateDayLogRequest) (*model.LogReplacement, error) {
+	if req.TemplateID == nil && req.TypeID == nil && req.SubtypeID == nil {
+		return nil, nil
+	}
+
+	if req.TemplateID != nil {
+		tpl, err := s.templateRepo.GetByID(ctx, userID, *req.TemplateID)
+		if err != nil {
+			return nil, err
+		}
+		return &model.LogReplacement{TypeID: tpl.TypeID, SubtypeID: tpl.SubtypeID, TemplateID: req.TemplateID}, nil
+	}
+
+	if req.TypeID == nil || req.SubtypeID == nil {
+		return nil, &model.ValidationError{Message: "replacing a workout requires type_id and subtype_id (or a template_id)", Field: "type_id"}
+	}
+	if !model.IsValidTypeID(*req.TypeID) {
+		return nil, &model.ValidationError{Message: "invalid workout type: " + *req.TypeID, Field: "type_id"}
+	}
+	if !model.IsValidSubtypeID(*req.SubtypeID) {
+		return nil, &model.ValidationError{Message: "invalid workout subtype: " + *req.SubtypeID, Field: "subtype_id"}
+	}
+	return &model.LogReplacement{TypeID: *req.TypeID, SubtypeID: *req.SubtypeID, TemplateID: nil}, nil
 }
 
 func (s *logService) Delete(ctx context.Context, userID uuid.UUID, date string) error {

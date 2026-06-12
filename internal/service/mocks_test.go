@@ -58,7 +58,7 @@ type MockLogDAO struct {
 	ListByWeekFunc func(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDateFunc  func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	CreateFunc     func(ctx context.Context, userID uuid.UUID, l *model.DayLog) error
-	UpdateFunc     func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error
+	UpdateFunc     func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error
 	DeleteFunc     func(ctx context.Context, userID uuid.UUID, date string) error
 }
 
@@ -83,9 +83,9 @@ func (m *MockLogDAO) Create(ctx context.Context, userID uuid.UUID, l *model.DayL
 	return nil
 }
 
-func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error {
+func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error {
 	if m.UpdateFunc != nil {
-		return m.UpdateFunc(ctx, userID, date, overrides, sessionNotes)
+		return m.UpdateFunc(ctx, userID, date, overrides, sessionNotes, replace)
 	}
 	return nil
 }
@@ -203,4 +203,47 @@ func (m *MockExerciseCatalogDAO) List(ctx context.Context, category string) ([]m
 		return m.ListFunc(ctx, category)
 	}
 	return []model.CatalogExercise{}, nil
+}
+
+type MockPlanDAO struct {
+	GetWeeklyFunc      func(ctx context.Context, userID uuid.UUID) ([]model.WeeklyPlanDay, error)
+	GetOverridesFunc   func(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]model.PlanOverride, error)
+	PutWeeklyFunc      func(ctx context.Context, userID uuid.UUID, days []model.WeeklyPlanDay) error
+	UpsertOverrideFunc func(ctx context.Context, userID uuid.UUID, date string, o model.PutPlanOverrideRequest) error
+	DeleteOverrideFunc func(ctx context.Context, userID uuid.UUID, date string) error
+}
+
+func (m *MockPlanDAO) GetWeekly(ctx context.Context, userID uuid.UUID) ([]model.WeeklyPlanDay, error) {
+	if m.GetWeeklyFunc != nil {
+		return m.GetWeeklyFunc(ctx, userID)
+	}
+	return []model.WeeklyPlanDay{}, nil
+}
+
+func (m *MockPlanDAO) GetOverrides(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]model.PlanOverride, error) {
+	if m.GetOverridesFunc != nil {
+		return m.GetOverridesFunc(ctx, userID, from, to)
+	}
+	return []model.PlanOverride{}, nil
+}
+
+func (m *MockPlanDAO) PutWeekly(ctx context.Context, userID uuid.UUID, days []model.WeeklyPlanDay) error {
+	if m.PutWeeklyFunc != nil {
+		return m.PutWeeklyFunc(ctx, userID, days)
+	}
+	return nil
+}
+
+func (m *MockPlanDAO) UpsertOverride(ctx context.Context, userID uuid.UUID, date string, o model.PutPlanOverrideRequest) error {
+	if m.UpsertOverrideFunc != nil {
+		return m.UpsertOverrideFunc(ctx, userID, date, o)
+	}
+	return nil
+}
+
+func (m *MockPlanDAO) DeleteOverride(ctx context.Context, userID uuid.UUID, date string) error {
+	if m.DeleteOverrideFunc != nil {
+		return m.DeleteOverrideFunc(ctx, userID, date)
+	}
+	return nil
 }

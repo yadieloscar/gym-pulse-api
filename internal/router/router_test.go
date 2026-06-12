@@ -48,7 +48,7 @@ func (fakeLogDAO) GetByDate(ctx context.Context, u uuid.UUID, d string) (*model.
 	return &model.DayLog{Date: d}, nil
 }
 func (fakeLogDAO) Create(ctx context.Context, u uuid.UUID, l *model.DayLog) error { return nil }
-func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, o []model.ExerciseOverride, n *string) error {
+func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, o []model.ExerciseOverride, n *string, rep *model.LogReplacement) error {
 	return nil
 }
 func (fakeLogDAO) Delete(ctx context.Context, u uuid.UUID, d string) error { return nil }
@@ -92,6 +92,22 @@ func (fakeBodyWeightDAO) List(ctx context.Context, u uuid.UUID) ([]model.BodyWei
 }
 func (fakeBodyWeightDAO) Delete(ctx context.Context, u, e uuid.UUID) error { return nil }
 
+type fakePlanDAO struct{}
+
+func (fakePlanDAO) GetWeekly(ctx context.Context, u uuid.UUID) ([]model.WeeklyPlanDay, error) {
+	return []model.WeeklyPlanDay{}, nil
+}
+func (fakePlanDAO) GetOverrides(ctx context.Context, u uuid.UUID, from, to time.Time) ([]model.PlanOverride, error) {
+	return []model.PlanOverride{}, nil
+}
+func (fakePlanDAO) PutWeekly(ctx context.Context, u uuid.UUID, days []model.WeeklyPlanDay) error {
+	return nil
+}
+func (fakePlanDAO) UpsertOverride(ctx context.Context, u uuid.UUID, date string, o model.PutPlanOverrideRequest) error {
+	return nil
+}
+func (fakePlanDAO) DeleteOverride(ctx context.Context, u uuid.UUID, date string) error { return nil }
+
 type fakeExerciseCatalogDAO struct{}
 
 func (fakeExerciseCatalogDAO) List(ctx context.Context, category string) ([]model.CatalogExercise, error) {
@@ -107,6 +123,7 @@ var (
 	_ dao.ProfileDAO         = fakeProfileDAO{}
 	_ dao.BodyWeightDAO      = fakeBodyWeightDAO{}
 	_ dao.ExerciseCatalogDAO = fakeExerciseCatalogDAO{}
+	_ dao.PlanDAO            = fakePlanDAO{}
 )
 
 func TestRouter_RoutesAndAuth(t *testing.T) {
@@ -121,6 +138,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	profH := handler.NewProfileHandler(newProfileSvc(fakeProfileDAO{}, v))
 	bwH := handler.NewBodyWeightHandler(newBodyWeightSvc(fakeBodyWeightDAO{}, v))
 	exH := handler.NewExerciseCatalogHandler(newExerciseCatalogSvc(fakeExerciseCatalogDAO{}))
+	planH := handler.NewPlanHandler(newPlanSvc(fakePlanDAO{}, fakeTemplateDAO{}, v))
 
 	cfg := &config.Config{
 		SupabaseJWTSecret: "test-secret",
@@ -128,7 +146,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH)
+	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH)
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
