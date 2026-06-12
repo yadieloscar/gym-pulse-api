@@ -93,6 +93,19 @@ else
   bad "shape drift — client unwrap will break" "$body"
 fi
 
+# ---------- 5. exercise catalog ----------
+step "5. GET /api/v1/exercises returns {exercises: [...]} with seeded catalog"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" != "200" ]; then
+  bad "expected 200, got $resp" "$body"
+elif python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d, dict) and isinstance(d.get('exercises'), list) and len(d['exercises']) > 50 and {'name','category','modality'} <= set(d['exercises'][0])" "$body" 2>/dev/null; then
+  count=$(python3 -c "import json,sys; print(len(json.loads(sys.argv[1])['exercises']))" "$body")
+  ok "catalog seeded with $count entries in documented shape"
+else
+  bad "catalog missing, under-seeded (<=50), or shape drift" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- summary ----------
 printf "\n\033[1m%d passed, %d failed\033[0m\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

@@ -66,6 +66,27 @@ Body — **all fields optional** (uses `omitempty`):
 
 ---
 
+## Exercise catalog (read-only v1)
+
+### `GET /api/v1/exercises` (optional `?category=<type_id>`)
+Response 200 — **wraps the array under an `exercises` key** (same wrapper
+convention as `/stats/distribution`):
+```json
+{
+  "exercises": [
+    { "id": "<uuid>", "name": "Barbell Bench Press", "category": "push",
+      "modality": "strength", "mechanic": "compound", "sort_order": 1 }
+  ]
+}
+```
+- `modality`: `"strength" | "cardio"`. `mechanic`: `"compound" | "isolation"`,
+  **null for cardio entries** — client prefill keys off these two fields.
+- Unknown `category` → 422 `VALIDATION_ERROR`. Valid categories are the
+  workout type ids (push, pull, legs, upper, lower, full, core, cardio, …).
+- Catalog is seeded by migration (~80 entries); no write endpoints in v1.
+
+---
+
 ## Templates
 
 ### `GET /api/v1/templates` → `TemplateSummary[]`
@@ -77,10 +98,16 @@ Body:
   "type_id": "string (required)",
   "subtype_id": "string (required)",
   "exercises": [
-    { "name": "string (1-100)", "type_id": "...", "subtype_id": "...", "sort_order": 1, "sets": 4, "reps": 8 }
+    { "name": "string (1-100)", "sort_order": 1, "sets": 4, "reps": 8,
+      "catalog_id": "uuid (optional)", "duration_minutes": 20, "intensity": "easy|moderate|hard" }
   ]
 }
 ```
+**Exercise shape rule (enforced server-side, 422 on violation):** each
+exercise is EITHER strength (`sets` + `reps`) OR cardio (`duration_minutes`)
+— never neither, never both. `intensity` is only valid alongside
+`duration_minutes`. `catalog_id` is optional; free-text `name`-only
+exercises (legacy payloads) keep working unchanged.
 
 ### `PUT /api/v1/templates/{id}` — same body as POST.
 ### `DELETE /api/v1/templates/{id}` → 204.
