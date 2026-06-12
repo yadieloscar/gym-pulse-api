@@ -54,9 +54,24 @@ type CreateDayLogRequest struct {
 }
 
 // UpdateDayLogRequest is the request body for PUT /api/v1/logs/:date.
+// TypeID/SubtypeID/TemplateID, when present, REPLACE the day's workout
+// (e.g. "logged Push but actually did Legs"). Replacing always rewrites the
+// override set from this request — pass none to clear them, which is what a
+// replacement implies since old overrides reference the old exercises.
 type UpdateDayLogRequest struct {
+	TypeID       *string                 `json:"type_id,omitempty"`
+	SubtypeID    *string                 `json:"subtype_id,omitempty"`
+	TemplateID   *uuid.UUID              `json:"template_id,omitempty"`
 	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
 	SessionNotes *string                 `json:"session_notes,omitempty"`
+}
+
+// LogReplacement is the resolved "this day was actually a different workout"
+// change applied during an update. TemplateID nil means a template-less log.
+type LogReplacement struct {
+	TypeID     string
+	SubtypeID  string
+	TemplateID *uuid.UUID
 }
 
 // CreateOverrideRequest is a single override in a create/update log request.

@@ -29,3 +29,6 @@ func newBodyWeightSvc(r dao.BodyWeightDAO, v *validator.Validate) service.BodyWe
 func newExerciseCatalogSvc(r dao.ExerciseCatalogDAO) service.ExerciseCatalogService {
 	return service.NewExerciseCatalogService(r)
 }
+func newPlanSvc(r dao.PlanDAO, tr dao.TemplateDAO, v *validator.Validate) service.PlanService {
+	return service.NewPlanService(r, tr, v)
+}

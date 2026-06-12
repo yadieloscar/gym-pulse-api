@@ -225,6 +225,42 @@ definitions:
     required:
     - exercise_id
     type: object
+  model.PlanOverride:
+    properties:
+      date:
+        type: string
+      rest:
+        type: boolean
+      template_id:
+        type: string
+    required:
+    - date
+    type: object
+  model.PlanResponse:
+    properties:
+      overrides:
+        items:
+          $ref: '#/definitions/model.PlanOverride'
+        type: array
+      weekly:
+        items:
+          $ref: '#/definitions/model.WeeklyPlanDay'
+        type: array
+    type: object
+  model.PutPlanOverrideRequest:
+    properties:
+      rest:
+        type: boolean
+      template_id:
+        type: string
+    type: object
+  model.PutWeeklyPlanRequest:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/model.WeeklyPlanDay'
+        type: array
+    type: object
   model.StatsSummary:
     properties:
       streak_days:
@@ -283,6 +319,12 @@ definitions:
         type: array
       session_notes:
         type: string
+      subtype_id:
+        type: string
+      template_id:
+        type: string
+      type_id:
+        type: string
     type: object
   model.UpdateProfileRequest:
     properties:
@@ -327,6 +369,19 @@ definitions:
         type: integer
       goal:
         type: integer
+    type: object
+  model.WeeklyPlanDay:
+    properties:
+      rest:
+        type: boolean
+      template_id:
+        type: string
+      weekday:
+        maximum: 7
+        minimum: 1
+        type: integer
+    required:
+    - weekday
     type: object
   model.WorkoutTemplate:
     properties:
@@ -684,6 +739,176 @@ paths:
       summary: Update a day log
       tags:
       - logs
+  /api/v1/plan:
+    get:
+      description: 'Returns the recurring weekly plan plus per-date overrides in the
+        requested window (default: ±4 weeks around today). Effective-day resolution
+        is the client''s responsibility.'
+      parameters:
+      - description: Window start (YYYY-MM-DD)
+        in: query
+        name: from
+        type: string
+      - description: Window end (YYYY-MM-DD)
+        in: query
+        name: to
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.PlanResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get the training plan
+      tags:
+      - plan
+  /api/v1/plan/overrides/{date}:
+    delete:
+      description: Deletes the override; the date falls back to the recurring weekly
+        plan.
+      parameters:
+      - description: Date (YYYY-MM-DD)
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a one-day plan override
+      tags:
+      - plan
+    put:
+      consumes:
+      - application/json
+      description: Overrides the weekly plan for one date without changing the recurring
+        plan.
+      parameters:
+      - description: Date (YYYY-MM-DD)
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Override
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.PutPlanOverrideRequest'
+      produces:
+      - application/json
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Upsert a one-day plan override
+      tags:
+      - plan
+  /api/v1/plan/weekly:
+    put:
+      consumes:
+      - application/json
+      description: Fully replaces the recurring plan. Sparse is allowed; weekdays
+        missing from the request become unplanned.
+      parameters:
+      - description: Weekly plan
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.PutWeeklyPlanRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.WeeklyPlanDay'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Replace the recurring weekly plan
+      tags:
+      - plan
   /api/v1/profile:
     get:
       description: Returns the authenticated user's profile (display name, avatar,

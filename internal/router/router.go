@@ -23,6 +23,7 @@ func New(
 	profileHandler *handler.ProfileHandler,
 	bodyWeightHandler *handler.BodyWeightHandler,
 	exerciseCatalogHandler *handler.ExerciseCatalogHandler,
+	planHandler *handler.PlanHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -77,6 +78,14 @@ func New(
 
 			// Exercise catalog (read-only v1)
 			r.Get("/exercises", exerciseCatalogHandler.List)
+
+			// Weekly plan
+			r.Route("/plan", func(r chi.Router) {
+				r.Get("/", planHandler.Get)
+				r.Put("/weekly", planHandler.PutWeekly)
+				r.Put("/overrides/{date}", planHandler.PutOverride)
+				r.Delete("/overrides/{date}", planHandler.DeleteOverride)
+			})
 
 			// Body Weight
 			r.Route("/body/weight", func(r chi.Router) {

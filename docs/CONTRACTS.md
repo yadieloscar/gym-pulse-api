@@ -134,6 +134,50 @@ Body:
 
 ### `GET|PUT|DELETE /api/v1/logs/{date}` — `date` is `YYYY-MM-DD`.
 
+**PUT also replaces the day's workout** when any of `type_id`, `subtype_id`,
+`template_id` are present:
+- `template_id` given → it is **authoritative**: ownership checked (404 if
+  not yours), `type_id`/`subtype_id` derive from the template, anything sent
+  in the body is ignored.
+- type-only replacement requires BOTH `type_id` and `subtype_id` (valid ids) → 422 otherwise.
+- An update always rewrites the override set from the request body — a
+  replacement without `overrides` therefore clears them (old overrides
+  reference the old workout's exercises).
+- ⚠️ **This applies to EVERY PUT, not just replacements.** A notes-only
+  `PUT {"session_notes":"..."}` with no `overrides` field wipes all existing
+  overrides for that day. The client must always re-send the full override
+  set on any `PUT /logs/{date}`.
+- Replacing a day to `type_id: "rest"` while sending `overrides` → 422
+  (rest days carry no overrides, mirroring POST).
+
+---
+
+## Weekly plan
+
+### `GET /api/v1/plan?from=YYYY-MM-DD&to=YYYY-MM-DD`
+Response 200 (window defaults to today ±4 weeks; applies to overrides only):
+```json
+{
+  "weekly":    [ { "weekday": 1, "template_id": "uuid|null", "rest": false } ],
+  "overrides": [ { "date": "2026-06-15", "template_id": null, "rest": true } ]
+}
+```
+- `weekday` is ISO: 1=Monday … 7=Sunday. Missing weekday = unplanned.
+- **Effective plan for a date = override ?? weekly[isoWeekday] — resolved
+  CLIENT-side.** The API stores, never resolves.
+- `rest: true` ⇔ `template_id: null` (enforced, 422).
+
+### `PUT /api/v1/plan/weekly`
+Body `{ "days": [{weekday, template_id|null, rest}] }` — **full replace**,
+sparse allowed. Duplicate weekdays → 422; foreign/unknown template → 404.
+Response 200 echoes the stored plan.
+
+### `PUT /api/v1/plan/overrides/{date}` → 204
+Body `{ "template_id": "uuid|null", "rest": bool }` — upsert one-day override.
+
+### `DELETE /api/v1/plan/overrides/{date}` → 204 (404 if no override)
+Date falls back to the recurring weekly plan.
+
 ---
 
 ## Stats

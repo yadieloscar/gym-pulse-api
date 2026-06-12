@@ -18,7 +18,7 @@ type LogDAO interface {
 	ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	Create(ctx context.Context, userID uuid.UUID, log *model.DayLog) error
-	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error
+	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 }
 
@@ -221,7 +221,7 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	return tx.Commit(ctx)
 }
 
-func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string) error {
+func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -240,12 +240,21 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 		return fmt.Errorf("querying log for update: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `
-		UPDATE day_logs SET session_notes = $1 WHERE id = $2`,
-		sessionNotes, logID,
-	)
+	if replace != nil {
+		_, err = tx.Exec(ctx, `
+			UPDATE day_logs
+			SET type_id = $1, subtype_id = $2, template_id = $3, session_notes = $4
+			WHERE id = $5`,
+			replace.TypeID, replace.SubtypeID, replace.TemplateID, sessionNotes, logID,
+		)
+	} else {
+		_, err = tx.Exec(ctx, `
+			UPDATE day_logs SET session_notes = $1 WHERE id = $2`,
+			sessionNotes, logID,
+		)
+	}
 	if err != nil {
-		return fmt.Errorf("updating session notes: %w", err)
+		return fmt.Errorf("updating day log: %w", err)
 	}
 
 	_, err = tx.Exec(ctx, `DELETE FROM exercise_overrides WHERE day_log_id = $1`, logID)

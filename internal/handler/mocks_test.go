@@ -176,3 +176,38 @@ func (m *MockExerciseCatalogService) List(ctx context.Context, category string) 
 	}
 	return []model.CatalogExercise{}, nil
 }
+
+type MockPlanService struct {
+	GetFunc            func(ctx context.Context, userID uuid.UUID, from, to string) (*model.PlanResponse, error)
+	PutWeeklyFunc      func(ctx context.Context, userID uuid.UUID, req model.PutWeeklyPlanRequest) ([]model.WeeklyPlanDay, error)
+	PutOverrideFunc    func(ctx context.Context, userID uuid.UUID, date string, req model.PutPlanOverrideRequest) error
+	DeleteOverrideFunc func(ctx context.Context, userID uuid.UUID, date string) error
+}
+
+func (m *MockPlanService) Get(ctx context.Context, userID uuid.UUID, from, to string) (*model.PlanResponse, error) {
+	if m.GetFunc != nil {
+		return m.GetFunc(ctx, userID, from, to)
+	}
+	return &model.PlanResponse{Weekly: []model.WeeklyPlanDay{}, Overrides: []model.PlanOverride{}}, nil
+}
+
+func (m *MockPlanService) PutWeekly(ctx context.Context, userID uuid.UUID, req model.PutWeeklyPlanRequest) ([]model.WeeklyPlanDay, error) {
+	if m.PutWeeklyFunc != nil {
+		return m.PutWeeklyFunc(ctx, userID, req)
+	}
+	return []model.WeeklyPlanDay{}, nil
+}
+
+func (m *MockPlanService) PutOverride(ctx context.Context, userID uuid.UUID, date string, req model.PutPlanOverrideRequest) error {
+	if m.PutOverrideFunc != nil {
+		return m.PutOverrideFunc(ctx, userID, date, req)
+	}
+	return nil
+}
+
+func (m *MockPlanService) DeleteOverride(ctx context.Context, userID uuid.UUID, date string) error {
+	if m.DeleteOverrideFunc != nil {
+		return m.DeleteOverrideFunc(ctx, userID, date)
+	}
+	return nil
+}
