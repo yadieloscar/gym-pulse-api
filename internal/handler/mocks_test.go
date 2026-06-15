@@ -49,11 +49,12 @@ func (m *MockTemplateService) Delete(ctx context.Context, userID, tID uuid.UUID)
 }
 
 type MockLogService struct {
-	ListByWeekFunc func(ctx context.Context, userID uuid.UUID, week string) ([]model.DayLogSummary, error)
-	GetByDateFunc  func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
-	CreateFunc     func(ctx context.Context, userID uuid.UUID, req model.CreateDayLogRequest) (*model.DayLog, error)
-	UpdateFunc     func(ctx context.Context, userID uuid.UUID, date string, req model.UpdateDayLogRequest) (*model.DayLog, error)
-	DeleteFunc     func(ctx context.Context, userID uuid.UUID, date string) error
+	ListByWeekFunc      func(ctx context.Context, userID uuid.UUID, week string) ([]model.DayLogSummary, error)
+	GetByDateFunc       func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
+	CreateFunc          func(ctx context.Context, userID uuid.UUID, req model.CreateDayLogRequest) (*model.DayLog, error)
+	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, req model.UpdateDayLogRequest) (*model.DayLog, error)
+	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
+	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
 }
 
 func (m *MockLogService) ListByWeek(ctx context.Context, u uuid.UUID, w string) ([]model.DayLogSummary, error) {
@@ -85,6 +86,12 @@ func (m *MockLogService) Delete(ctx context.Context, u uuid.UUID, d string) erro
 		return m.DeleteFunc(ctx, u, d)
 	}
 	return nil
+}
+func (m *MockLogService) ExerciseHistory(ctx context.Context, u uuid.UUID, ids string) ([]model.ExerciseHistory, error) {
+	if m.ExerciseHistoryFunc != nil {
+		return m.ExerciseHistoryFunc(ctx, u, ids)
+	}
+	return []model.ExerciseHistory{}, nil
 }
 
 type MockStatsService struct {

@@ -78,6 +78,8 @@ func New(
 
 			// Exercise catalog (read-only v1)
 			r.Get("/exercises", exerciseCatalogHandler.List)
+			// Per-exercise set history ("last time you did X")
+			r.Get("/exercises/history", logHandler.ExerciseHistory)
 
 			// Weekly plan
 			r.Route("/plan", func(r chi.Router) {

@@ -48,10 +48,13 @@ func (fakeLogDAO) GetByDate(ctx context.Context, u uuid.UUID, d string) (*model.
 	return &model.DayLog{Date: d}, nil
 }
 func (fakeLogDAO) Create(ctx context.Context, u uuid.UUID, l *model.DayLog) error { return nil }
-func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, o []model.ExerciseOverride, n *string, rep *model.LogReplacement) error {
+func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, o []model.ExerciseOverride, sl []model.SetLog, n *string, rep *model.LogReplacement) error {
 	return nil
 }
 func (fakeLogDAO) Delete(ctx context.Context, u uuid.UUID, d string) error { return nil }
+func (fakeLogDAO) ExerciseHistory(ctx context.Context, u uuid.UUID, ids []uuid.UUID) ([]model.ExerciseHistory, error) {
+	return []model.ExerciseHistory{}, nil
+}
 
 type fakeStatsDAO struct{}
 

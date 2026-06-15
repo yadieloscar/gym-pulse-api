@@ -28,7 +28,7 @@ func TestLogService_Update_Replacement(t *testing.T) {
 
 	newSvc := func(captured **model.LogReplacement) LogService {
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, date string, o []model.ExerciseOverride, n *string, rep *model.LogReplacement) error {
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, date string, o []model.ExerciseOverride, sl []model.SetLog, n *string, rep *model.LogReplacement) error {
 				*captured = rep
 				return nil
 			},

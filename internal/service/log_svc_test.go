@@ -418,7 +418,7 @@ func TestLogService_Update(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		updateCalled := false
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, notesParam *string, replace *model.LogReplacement) error {
+			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, notesParam *string, replace *model.LogReplacement) error {
 				if uid != userID {
 					t.Errorf("expected userID %s, got %s", userID, uid)
 				}
@@ -469,7 +469,7 @@ func TestLogService_Update(t *testing.T) {
 
 	t.Run("db error", func(t *testing.T) {
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, notesParam *string, replace *model.LogReplacement) error {
+			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, notesParam *string, replace *model.LogReplacement) error {
 				return errors.New("db error")
 			},
 		}
