@@ -228,6 +228,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/exercises/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns, for each comma-separated exercise id, the completed sets from the most recent day that exercise was performed — powers \"last time you did X\" hints.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Most recent completed sets per exercise",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated exercise UUIDs",
+                        "name": "ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.ExerciseHistory"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "security": [
@@ -1435,6 +1490,12 @@ const docTemplate = `{
                 "session_notes": {
                     "type": "string"
                 },
+                "set_logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CreateSetLogRequest"
+                    }
+                },
                 "subtype_id": {
                     "type": "string"
                 },
@@ -1514,6 +1575,40 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CreateSetLogRequest": {
+            "type": "object",
+            "required": [
+                "exercise_id",
+                "set_index"
+            ],
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "set_index": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
         "model.CreateTemplateRequest": {
             "type": "object",
             "required": [
@@ -1565,6 +1660,12 @@ const docTemplate = `{
                 },
                 "session_notes": {
                     "type": "string"
+                },
+                "set_logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SetLog"
+                    }
                 },
                 "subtype_id": {
                     "type": "string"
@@ -1655,6 +1756,23 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExerciseHistory": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SetLog"
+                    }
+                }
+            }
+        },
         "model.ExerciseOverride": {
             "type": "object",
             "required": [
@@ -1737,6 +1855,43 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.WeeklyPlanDay"
                     }
+                }
+            }
+        },
+        "model.SetLog": {
+            "type": "object",
+            "required": [
+                "exercise_id",
+                "set_index"
+            ],
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "set_index": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
                 }
             }
         },
@@ -1828,6 +1983,12 @@ const docTemplate = `{
                 },
                 "session_notes": {
                     "type": "string"
+                },
+                "set_logs": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CreateSetLogRequest"
+                    }
                 },
                 "subtype_id": {
                     "type": "string"

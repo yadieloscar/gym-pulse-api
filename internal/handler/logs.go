@@ -135,6 +135,29 @@ func (h *LogHandler) Update(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, log)
 }
 
+// ExerciseHistory godoc
+// @Summary     Most recent completed sets per exercise
+// @Description Returns, for each comma-separated exercise id, the completed sets from the most recent day that exercise was performed — powers "last time you did X" hints.
+// @Tags        logs
+// @Produce     json
+// @Param       ids query string true "Comma-separated exercise UUIDs"
+// @Success     200 {array}  model.ExerciseHistory
+// @Failure     401 {object} map[string]string
+// @Failure     422 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/exercises/history [get]
+func (h *LogHandler) ExerciseHistory(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.MustGetUserID(r.Context())
+
+	history, err := h.svc.ExerciseHistory(r.Context(), userID, r.URL.Query().Get("ids"))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, history)
+}
+
 // Delete godoc
 // @Summary     Delete a day log
 // @Description Permanently deletes the day log for the given date.

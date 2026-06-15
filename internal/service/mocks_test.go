@@ -55,11 +55,12 @@ func (m *MockBodyWeightDAO) Delete(ctx context.Context, userID uuid.UUID, entryI
 }
 
 type MockLogDAO struct {
-	ListByWeekFunc func(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
-	GetByDateFunc  func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
-	CreateFunc     func(ctx context.Context, userID uuid.UUID, l *model.DayLog) error
-	UpdateFunc     func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error
-	DeleteFunc     func(ctx context.Context, userID uuid.UUID, date string) error
+	ListByWeekFunc      func(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
+	GetByDateFunc       func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
+	CreateFunc          func(ctx context.Context, userID uuid.UUID, l *model.DayLog) error
+	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
+	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
+	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 }
 
 func (m *MockLogDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {
@@ -83,9 +84,9 @@ func (m *MockLogDAO) Create(ctx context.Context, userID uuid.UUID, l *model.DayL
 	return nil
 }
 
-func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error {
+func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error {
 	if m.UpdateFunc != nil {
-		return m.UpdateFunc(ctx, userID, date, overrides, sessionNotes, replace)
+		return m.UpdateFunc(ctx, userID, date, overrides, setLogs, sessionNotes, replace)
 	}
 	return nil
 }
@@ -95,6 +96,13 @@ func (m *MockLogDAO) Delete(ctx context.Context, userID uuid.UUID, date string) 
 		return m.DeleteFunc(ctx, userID, date)
 	}
 	return nil
+}
+
+func (m *MockLogDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error) {
+	if m.ExerciseHistoryFunc != nil {
+		return m.ExerciseHistoryFunc(ctx, userID, exerciseIDs)
+	}
+	return []model.ExerciseHistory{}, nil
 }
 
 type MockTemplateDAO struct {

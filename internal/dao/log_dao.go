@@ -18,8 +18,9 @@ type LogDAO interface {
 	ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	Create(ctx context.Context, userID uuid.UUID, log *model.DayLog) error
-	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error
+	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
+	ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 }
 
 type logDAO struct {
@@ -91,6 +92,12 @@ func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (
 	}
 	dl.Overrides = overrides
 
+	setLogs, err := r.getSetLogs(ctx, dl.ID)
+	if err != nil {
+		return nil, err
+	}
+	dl.SetLogs = setLogs
+
 	if dl.TemplateID != nil {
 		tmpl, err := r.getTemplate(ctx, *dl.TemplateID)
 		if err != nil {
@@ -134,6 +141,125 @@ func (r *logDAO) getOverrides(ctx context.Context, dayLogID uuid.UUID) ([]model.
 		overrides = []model.ExerciseOverride{}
 	}
 	return overrides, rows.Err()
+}
+
+func (r *logDAO) getSetLogs(ctx context.Context, dayLogID uuid.UUID) ([]model.SetLog, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT id, day_log_id, exercise_id, set_index,
+		       target_reps, target_weight, actual_reps, actual_weight,
+		       duration_seconds, completed
+		FROM set_logs
+		WHERE day_log_id = $1
+		ORDER BY exercise_id, set_index`,
+		dayLogID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying set logs: %w", err)
+	}
+	defer rows.Close()
+
+	var sets []model.SetLog
+	for rows.Next() {
+		var s model.SetLog
+		if err := rows.Scan(
+			&s.ID, &s.DayLogID, &s.ExerciseID, &s.SetIndex,
+			&s.TargetReps, &s.TargetWeight, &s.ActualReps, &s.ActualWeight,
+			&s.DurationSeconds, &s.Completed,
+		); err != nil {
+			return nil, fmt.Errorf("scanning set log: %w", err)
+		}
+		sets = append(sets, s)
+	}
+
+	if sets == nil {
+		sets = []model.SetLog{}
+	}
+	return sets, rows.Err()
+}
+
+// insertSetLogs writes the day's sets within the caller's transaction. Callers
+// delete existing rows first (replace semantics), mirroring overrides.
+func insertSetLogs(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, setLogs []model.SetLog) error {
+	for i := range setLogs {
+		s := &setLogs[i]
+		s.DayLogID = dayLogID
+		err := tx.QueryRow(ctx, `
+			INSERT INTO set_logs (day_log_id, exercise_id, set_index, target_reps, target_weight, actual_reps, actual_weight, duration_seconds, completed)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			RETURNING id`,
+			s.DayLogID, s.ExerciseID, s.SetIndex,
+			s.TargetReps, s.TargetWeight, s.ActualReps, s.ActualWeight,
+			s.DurationSeconds, s.Completed,
+		).Scan(&s.ID)
+		if err != nil {
+			return fmt.Errorf("inserting set log: %w", err)
+		}
+	}
+	return nil
+}
+
+// ExerciseHistory returns, per requested exercise, the completed sets from the
+// most recent day they were performed — the "last time you did X" data.
+func (r *logDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error) {
+	if len(exerciseIDs) == 0 {
+		return []model.ExerciseHistory{}, nil
+	}
+
+	rows, err := r.pool.Query(ctx, `
+		WITH ranked AS (
+			SELECT sl.exercise_id, to_char(dl.date, 'YYYY-MM-DD') AS date, sl.set_index,
+			       sl.target_reps, sl.target_weight, sl.actual_reps, sl.actual_weight,
+			       sl.duration_seconds, sl.completed,
+			       DENSE_RANK() OVER (PARTITION BY sl.exercise_id ORDER BY dl.date DESC) AS rnk
+			FROM set_logs sl
+			JOIN day_logs dl ON dl.id = sl.day_log_id
+			WHERE dl.user_id = $1 AND sl.exercise_id = ANY($2) AND sl.completed = true
+		)
+		SELECT exercise_id, date, set_index, target_reps, target_weight,
+		       actual_reps, actual_weight, duration_seconds, completed
+		FROM ranked
+		WHERE rnk = 1
+		ORDER BY exercise_id, set_index`,
+		userID, exerciseIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying exercise history: %w", err)
+	}
+	defer rows.Close()
+
+	byExercise := map[uuid.UUID]*model.ExerciseHistory{}
+	order := []uuid.UUID{}
+	for rows.Next() {
+		var (
+			exID uuid.UUID
+			date string
+			s    model.SetLog
+		)
+		if err := rows.Scan(
+			&exID, &date, &s.SetIndex,
+			&s.TargetReps, &s.TargetWeight, &s.ActualReps, &s.ActualWeight,
+			&s.DurationSeconds, &s.Completed,
+		); err != nil {
+			return nil, fmt.Errorf("scanning exercise history: %w", err)
+		}
+		s.ExerciseID = exID
+		h, ok := byExercise[exID]
+		if !ok {
+			h = &model.ExerciseHistory{ExerciseID: exID, Date: date, Sets: []model.SetLog{}}
+			byExercise[exID] = h
+			order = append(order, exID)
+		}
+		h.Sets = append(h.Sets, s)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating exercise history: %w", err)
+	}
+
+	history := make([]model.ExerciseHistory, 0, len(order))
+	for _, id := range order {
+		history = append(history, *byExercise[id])
+	}
+	return history, nil
 }
 
 func (r *logDAO) getTemplate(ctx context.Context, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
@@ -218,10 +344,14 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 		}
 	}
 
+	if err := insertSetLogs(ctx, tx, dl.ID, dl.SetLogs); err != nil {
+		return err
+	}
+
 	return tx.Commit(ctx)
 }
 
-func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, sessionNotes *string, replace *model.LogReplacement) error {
+func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -276,6 +406,15 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 		if err != nil {
 			return fmt.Errorf("inserting override: %w", err)
 		}
+	}
+
+	// Set logs follow the same replace semantics as overrides: a PUT rewrites
+	// the day's whole set list.
+	if _, err = tx.Exec(ctx, `DELETE FROM set_logs WHERE day_log_id = $1`, logID); err != nil {
+		return fmt.Errorf("deleting set logs: %w", err)
+	}
+	if err := insertSetLogs(ctx, tx, logID, setLogs); err != nil {
+		return err
 	}
 
 	return tx.Commit(ctx)
