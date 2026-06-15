@@ -124,6 +124,17 @@ else
   fi
 fi
 
+# ---------- 7. exercise set history wired ----------
+step "7. GET /api/v1/exercises/history returns an array"
+rand=$(python3 -c "import uuid; print(uuid.uuid4())")
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/history?ids=$rand" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d, list)" "$body" 2>/dev/null; then
+  ok "exercise history endpoint returns an array (body: $(echo "$body" | head -c 80))"
+else
+  bad "GET exercises/history expected 200 array, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- summary ----------
 printf "\n\033[1m%d passed, %d failed\033[0m\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

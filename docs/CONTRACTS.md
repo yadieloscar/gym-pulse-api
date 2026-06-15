@@ -128,11 +128,24 @@ Body:
   "overrides": [
     { "exercise_id": "uuid", "sets": 4, "reps": 8, "weight": 0 }
   ],
+  "set_logs": [
+    { "exercise_id": "uuid", "set_index": 1, "target_reps": 8, "target_weight": 135,
+      "actual_reps": 8, "actual_weight": 135, "duration_seconds": null, "completed": true }
+  ],
   "session_notes": "string|null"
 }
 ```
 
+`set_logs` is the per-set history behind the active workout player.
+`set_index` is 1-based (≥ 1). A `completed: true` set must include `actual_reps`
+or `duration_seconds` (cardio) → 422 otherwise. `target_*` snapshot the plan at
+session start; `actual_*` are what was performed. `overrides` (per-exercise
+aggregates: notes/skipped) and `set_logs` coexist.
+
 ### `GET|PUT|DELETE /api/v1/logs/{date}` — `date` is `YYYY-MM-DD`.
+
+`GET` returns the full `DayLog` including a `set_logs[]` array (flat; group by
+`exercise_id` client-side).
 
 **PUT also replaces the day's workout** when any of `type_id`, `subtype_id`,
 `template_id` are present:
@@ -149,6 +162,21 @@ Body:
   set on any `PUT /logs/{date}`.
 - Replacing a day to `type_id: "rest"` while sending `overrides` → 422
   (rest days carry no overrides, mirroring POST).
+- ⚠️ **`set_logs` follow the SAME replace rule as overrides** — every `PUT`
+  rewrites the day's entire set list, so the client must re-send all sets on
+  any `PUT /logs/{date}`. Rest day + `set_logs` → 422.
+
+### `GET /api/v1/exercises/history?ids=<uuid,uuid>` → `ExerciseHistory[]`
+For each requested exercise id, returns the completed sets from the **most
+recent day** that exercise was performed — powers "last time you did X" hints.
+One round-trip for a whole workout. Unknown ids are simply omitted; a malformed
+id → 422.
+```json
+[
+  { "exercise_id": "uuid", "date": "2026-06-10",
+    "sets": [ { "set_index": 1, "actual_reps": 8, "actual_weight": 135, "completed": true } ] }
+]
+```
 
 ---
 
