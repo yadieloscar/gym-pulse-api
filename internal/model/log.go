@@ -27,6 +27,7 @@ type DayLog struct {
 	TemplateName *string            `json:"template_name,omitempty"`
 	Template     *WorkoutTemplate   `json:"template,omitempty"`
 	Overrides    []ExerciseOverride `json:"overrides,omitempty"`
+	SetLogs      []SetLog           `json:"set_logs,omitempty"`
 	SessionNotes *string            `json:"session_notes,omitempty"`
 	LoggedAt     time.Time          `json:"logged_at"`
 }
@@ -50,6 +51,7 @@ type CreateDayLogRequest struct {
 	SubtypeID    string                  `json:"subtype_id" validate:"required"`
 	TemplateID   *uuid.UUID              `json:"template_id,omitempty"`
 	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
+	SetLogs      []CreateSetLogRequest   `json:"set_logs,omitempty"`
 	SessionNotes *string                 `json:"session_notes,omitempty"`
 }
 
@@ -63,6 +65,7 @@ type UpdateDayLogRequest struct {
 	SubtypeID    *string                 `json:"subtype_id,omitempty"`
 	TemplateID   *uuid.UUID              `json:"template_id,omitempty"`
 	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
+	SetLogs      []CreateSetLogRequest   `json:"set_logs,omitempty"`
 	SessionNotes *string                 `json:"session_notes,omitempty"`
 }
 
