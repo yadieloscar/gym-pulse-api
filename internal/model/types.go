@@ -64,6 +64,14 @@ func ParseDate(s string) (time.Time, error) {
 	return time.Parse("2006-01-02", s)
 }
 
+// UTCToday returns midnight of the current UTC calendar day. Date validation
+// compares against this so it matches ParseDate (UTC) and the client's
+// UTC `toISOString` dates, rather than skewing by a day at local midnight.
+func UTCToday() time.Time {
+	now := time.Now().UTC()
+	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, time.UTC)
+}
+
 // MondayOfWeek returns the Monday of the week containing t.
 func MondayOfWeek(t time.Time) time.Time {
 	weekday := t.Weekday()

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"strings"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -57,8 +56,11 @@ func (s *logService) Create(ctx context.Context, userID uuid.UUID, req model.Cre
 		return nil, &model.ValidationError{Message: "invalid date format, expected YYYY-MM-DD", Field: "date"}
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
-	if parsedDate.After(today) {
+	// Compare against today as a UTC calendar date — request dates are parsed as
+	// UTC (model.ParseDate) and the client sends UTC `toISOString` dates, so both
+	// sides must use the same basis (a local "today" would skew by a day past
+	// UTC midnight).
+	if parsedDate.After(model.UTCToday()) {
 		return nil, &model.ValidationError{Message: "cannot log future dates", Field: "date"}
 	}
 
