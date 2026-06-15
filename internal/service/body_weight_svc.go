@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -38,8 +37,8 @@ func (s *bodyWeightService) LogWeight(ctx context.Context, userID uuid.UUID, req
 		return nil, &model.ValidationError{Message: "invalid date format, expected YYYY-MM-DD", Field: "date"}
 	}
 
-	today := time.Now().Truncate(24 * time.Hour)
-	if parsedDate.After(today) {
+	// UTC calendar basis — see model.UTCToday.
+	if parsedDate.After(model.UTCToday()) {
 		return nil, &model.ValidationError{Message: "cannot log future dates", Field: "date"}
 	}
 

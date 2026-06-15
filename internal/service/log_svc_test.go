@@ -244,7 +244,9 @@ func TestLogService_Create(t *testing.T) {
 	})
 
 	t.Run("future date rejection", func(t *testing.T) {
-		tomorrowStr := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+		// UTC so "tomorrow" is a genuine future date in the server's basis at any
+		// wall-clock time (a local AddDate skewed this past UTC midnight).
+		tomorrowStr := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
 		req := model.CreateDayLogRequest{
 			Date:      tomorrowStr,
 			TypeID:    "push",

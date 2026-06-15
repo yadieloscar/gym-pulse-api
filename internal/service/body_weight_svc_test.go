@@ -118,7 +118,8 @@ func TestBodyWeightService_LogWeight(t *testing.T) {
 	})
 
 	t.Run("future date rejection", func(t *testing.T) {
-		tomorrowStr := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
+		// UTC basis — matches model.UTCToday, stable at any wall-clock time.
+		tomorrowStr := time.Now().UTC().AddDate(0, 0, 1).Format("2006-01-02")
 		req := model.CreateBodyWeightRequest{
 			Date:   tomorrowStr,
 			Weight: 150,
