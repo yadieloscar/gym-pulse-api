@@ -267,6 +267,25 @@ definitions:
     required:
     - exercise_id
     type: object
+  model.ExerciseRecord:
+    properties:
+      best_e1rm:
+        type: number
+      e1rm_date:
+        type: string
+      e1rm_reps:
+        type: integer
+      e1rm_weight:
+        type: number
+      exercise_id:
+        type: string
+      max_weight:
+        type: number
+      max_weight_date:
+        type: string
+      max_weight_reps:
+        type: integer
+    type: object
   model.PlanOverride:
     properties:
       date:
@@ -453,6 +472,13 @@ definitions:
         type: integer
     required:
     - weekday
+    type: object
+  model.WeeklyVolume:
+    properties:
+      volume:
+        type: number
+      week_start:
+        type: string
     type: object
   model.WorkoutTemplate:
     properties:
@@ -659,6 +685,42 @@ paths:
       security:
       - BearerAuth: []
       summary: Most recent completed sets per exercise
+      tags:
+      - logs
+  /api/v1/exercises/records:
+    get:
+      description: Returns each comma-separated exercise's heaviest weight and best
+        estimated 1RM (Epley), from completed weighted sets.
+      parameters:
+      - description: Comma-separated exercise UUIDs
+        in: query
+        name: ids
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.ExerciseRecord'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: All-time records per exercise
       tags:
       - logs
   /api/v1/logs:
@@ -1183,6 +1245,41 @@ paths:
       security:
       - BearerAuth: []
       summary: Get stats summary
+      tags:
+      - stats
+  /api/v1/stats/volume:
+    get:
+      description: Total lifted volume (Σ weight × reps) per week for the last N weeks
+        (default 8), oldest first; weeks with no data are 0.
+      parameters:
+      - description: Number of weeks (default 8, max 52)
+        in: query
+        name: weeks
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/model.WeeklyVolume'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Weekly training volume
       tags:
       - stats
   /api/v1/templates:
