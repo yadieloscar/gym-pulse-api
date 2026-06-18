@@ -231,3 +231,55 @@ func TestStatsService_GetDistribution(t *testing.T) {
 		}
 	})
 }
+
+func TestStatsService_GetVolume(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+
+	t.Run("pads to a continuous N-week series, oldest first", func(t *testing.T) {
+		// DAO returns volume for only the current week; the rest pad to 0.
+		thisMonday := model.MondayOfWeek(time.Now()).Format("2006-01-02")
+		repo := &MockStatsDAO{
+			GetWeeklyVolumeFunc: func(ctx context.Context, uid uuid.UUID, since time.Time) ([]model.WeeklyVolume, error) {
+				return []model.WeeklyVolume{{WeekStart: thisMonday, Volume: 5000}}, nil
+			},
+		}
+		svc := NewStatsService(repo, &MockSettingsDAO{})
+
+		series, err := svc.GetVolume(ctx, userID, "4")
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if len(series) != 4 {
+			t.Fatalf("expected 4 weeks, got %d", len(series))
+		}
+		if series[3].WeekStart != thisMonday || series[3].Volume != 5000 {
+			t.Errorf("last week: got %+v", series[3])
+		}
+		if series[0].Volume != 0 {
+			t.Errorf("padded week should be 0, got %v", series[0].Volume)
+		}
+	})
+
+	t.Run("defaults to 8 weeks and clamps to 52", func(t *testing.T) {
+		repo := &MockStatsDAO{}
+		svc := NewStatsService(repo, &MockSettingsDAO{})
+		def, _ := svc.GetVolume(ctx, userID, "")
+		if len(def) != 8 {
+			t.Errorf("default weeks: got %d want 8", len(def))
+		}
+		big, _ := svc.GetVolume(ctx, userID, "999")
+		if len(big) != 52 {
+			t.Errorf("clamp: got %d want 52", len(big))
+		}
+	})
+
+	t.Run("rejects a non-positive weeks param", func(t *testing.T) {
+		svc := NewStatsService(&MockStatsDAO{}, &MockSettingsDAO{})
+		_, err := svc.GetVolume(ctx, userID, "0")
+		var verr *model.ValidationError
+		if !errors.As(err, &verr) {
+			t.Fatalf("expected ValidationError, got %v", err)
+		}
+	})
+}

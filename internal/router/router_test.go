@@ -55,6 +55,9 @@ func (fakeLogDAO) Delete(ctx context.Context, u uuid.UUID, d string) error { ret
 func (fakeLogDAO) ExerciseHistory(ctx context.Context, u uuid.UUID, ids []uuid.UUID) ([]model.ExerciseHistory, error) {
 	return []model.ExerciseHistory{}, nil
 }
+func (fakeLogDAO) RecordSets(ctx context.Context, u uuid.UUID, ids []uuid.UUID) ([]model.SetPerf, error) {
+	return []model.SetPerf{}, nil
+}
 
 type fakeStatsDAO struct{}
 
@@ -66,6 +69,9 @@ func (fakeStatsDAO) GetDistribution(ctx context.Context, u uuid.UUID) ([]model.T
 	return nil, nil
 }
 func (fakeStatsDAO) GetDayStreak(ctx context.Context, u uuid.UUID) (int, error) { return 0, nil }
+func (fakeStatsDAO) GetWeeklyVolume(ctx context.Context, u uuid.UUID, since time.Time) ([]model.WeeklyVolume, error) {
+	return []model.WeeklyVolume{}, nil
+}
 
 type fakeSettingsDAO struct{}
 

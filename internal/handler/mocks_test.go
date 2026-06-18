@@ -55,6 +55,7 @@ type MockLogService struct {
 	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, req model.UpdateDayLogRequest) (*model.DayLog, error)
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
+	ExerciseRecordsFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
 }
 
 func (m *MockLogService) ListByWeek(ctx context.Context, u uuid.UUID, w string) ([]model.DayLogSummary, error) {
@@ -93,10 +94,17 @@ func (m *MockLogService) ExerciseHistory(ctx context.Context, u uuid.UUID, ids s
 	}
 	return []model.ExerciseHistory{}, nil
 }
+func (m *MockLogService) ExerciseRecords(ctx context.Context, u uuid.UUID, ids string) ([]model.ExerciseRecord, error) {
+	if m.ExerciseRecordsFunc != nil {
+		return m.ExerciseRecordsFunc(ctx, u, ids)
+	}
+	return []model.ExerciseRecord{}, nil
+}
 
 type MockStatsService struct {
 	GetSummaryFunc      func(ctx context.Context, userID uuid.UUID) (*model.StatsSummary, error)
 	GetDistributionFunc func(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
+	GetVolumeFunc       func(ctx context.Context, userID uuid.UUID, weeksParam string) ([]model.WeeklyVolume, error)
 }
 
 func (m *MockStatsService) GetSummary(ctx context.Context, u uuid.UUID) (*model.StatsSummary, error) {
@@ -110,6 +118,12 @@ func (m *MockStatsService) GetDistribution(ctx context.Context, u uuid.UUID) ([]
 		return m.GetDistributionFunc(ctx, u)
 	}
 	return nil, nil
+}
+func (m *MockStatsService) GetVolume(ctx context.Context, u uuid.UUID, weeksParam string) ([]model.WeeklyVolume, error) {
+	if m.GetVolumeFunc != nil {
+		return m.GetVolumeFunc(ctx, u, weeksParam)
+	}
+	return []model.WeeklyVolume{}, nil
 }
 
 type MockSettingsService struct {

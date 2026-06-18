@@ -22,3 +22,10 @@ type SubtypeDistribution struct {
 	SubtypeID string `json:"subtype_id"`
 	Count     int    `json:"count"`
 }
+
+// WeeklyVolume is total lifted volume (Σ weight × reps over completed sets) for
+// one week, keyed by its Monday. Drives the Profile volume chart.
+type WeeklyVolume struct {
+	WeekStart string  `json:"week_start"`
+	Volume    float64 `json:"volume"`
+}

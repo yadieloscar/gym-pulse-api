@@ -38,3 +38,26 @@ type ExerciseHistory struct {
 	Date       string    `json:"date"`
 	Sets       []SetLog  `json:"sets"`
 }
+
+// SetPerf is one completed strength set's load, used to compute records. The
+// DAO returns these raw; the service reduces them to ExerciseRecord.
+type SetPerf struct {
+	ExerciseID uuid.UUID
+	Weight     float64
+	Reps       int
+	Date       string
+}
+
+// ExerciseRecord is a user's all-time bests for one exercise: heaviest weight
+// lifted, and best estimated 1RM (Epley). Pointers are nil when the exercise
+// has no completed weighted sets yet.
+type ExerciseRecord struct {
+	ExerciseID    uuid.UUID `json:"exercise_id"`
+	MaxWeight     *float64  `json:"max_weight"`
+	MaxWeightReps *int      `json:"max_weight_reps"`
+	MaxWeightDate *string   `json:"max_weight_date,omitempty"`
+	BestE1RM      *float64  `json:"best_e1rm"`
+	E1RMWeight    *float64  `json:"e1rm_weight"`
+	E1RMReps      *int      `json:"e1rm_reps"`
+	E1RMDate      *string   `json:"e1rm_date,omitempty"`
+}

@@ -16,6 +16,7 @@ type StatsDAO interface {
 	GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error)
 	GetDistribution(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
 	GetDayStreak(ctx context.Context, userID uuid.UUID) (int, error)
+	GetWeeklyVolume(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.WeeklyVolume, error)
 }
 
 type statsDAO struct {
@@ -136,4 +137,34 @@ func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, err
 		return 0, fmt.Errorf("calculating day streak from yesterday: %w", err)
 	}
 	return count, nil
+}
+
+// GetWeeklyVolume returns total lifted volume per ISO week (Monday-keyed) since
+// the given date, ordered oldest-first.
+func (r *statsDAO) GetWeeklyVolume(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.WeeklyVolume, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT to_char(date_trunc('week', dl.date), 'YYYY-MM-DD') AS week_start,
+		       COALESCE(SUM(sl.actual_weight * sl.actual_reps), 0) AS volume
+		FROM set_logs sl
+		JOIN day_logs dl ON dl.id = sl.day_log_id
+		WHERE dl.user_id = $1 AND dl.date >= $2 AND sl.completed = true
+		  AND sl.actual_weight IS NOT NULL AND sl.actual_reps IS NOT NULL
+		GROUP BY week_start
+		ORDER BY week_start`,
+		userID, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying weekly volume: %w", err)
+	}
+	defer rows.Close()
+
+	volumes := []model.WeeklyVolume{}
+	for rows.Next() {
+		var v model.WeeklyVolume
+		if err := rows.Scan(&v.WeekStart, &v.Volume); err != nil {
+			return nil, fmt.Errorf("scanning weekly volume: %w", err)
+		}
+		volumes = append(volumes, v)
+	}
+	return volumes, rows.Err()
 }
