@@ -135,6 +135,26 @@ else
   bad "GET exercises/history expected 200 array, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8. exercise records wired ----------
+step "8. GET /api/v1/exercises/records returns an array"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/records?ids=$rand" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d, list)" "$body" 2>/dev/null; then
+  ok "exercise records endpoint returns an array (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercises/records expected 200 array, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
+# ---------- 9. weekly volume series ----------
+step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d, list) and len(d)==4 and {'week_start','volume'} <= set(d[0])" "$body" 2>/dev/null; then
+  ok "volume returns a continuous 4-week series (body: $(echo "$body" | head -c 80))"
+else
+  bad "GET stats/volume expected 200 4-week series, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- summary ----------
 printf "\n\033[1m%d passed, %d failed\033[0m\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

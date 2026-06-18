@@ -158,6 +158,29 @@ func (h *LogHandler) ExerciseHistory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, history)
 }
 
+// ExerciseRecords godoc
+// @Summary     All-time records per exercise
+// @Description Returns each comma-separated exercise's heaviest weight and best estimated 1RM (Epley), from completed weighted sets.
+// @Tags        logs
+// @Produce     json
+// @Param       ids query string true "Comma-separated exercise UUIDs"
+// @Success     200 {array}  model.ExerciseRecord
+// @Failure     401 {object} map[string]string
+// @Failure     422 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/exercises/records [get]
+func (h *LogHandler) ExerciseRecords(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.MustGetUserID(r.Context())
+
+	records, err := h.svc.ExerciseRecords(r.Context(), userID, r.URL.Query().Get("ids"))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, records)
+}
+
 // Delete godoc
 // @Summary     Delete a day log
 // @Description Permanently deletes the day log for the given date.

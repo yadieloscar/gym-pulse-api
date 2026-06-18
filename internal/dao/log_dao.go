@@ -21,6 +21,7 @@ type LogDAO interface {
 	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
+	RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
 }
 
 type logDAO struct {
@@ -196,6 +197,38 @@ func insertSetLogs(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, setLogs [
 		}
 	}
 	return nil
+}
+
+// RecordSets returns every completed weighted set (weight + reps) for the
+// requested exercises, for the user — the raw data the service reduces into
+// per-exercise records.
+func (r *logDAO) RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error) {
+	if len(exerciseIDs) == 0 {
+		return []model.SetPerf{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, to_char(dl.date, 'YYYY-MM-DD')
+		FROM set_logs sl
+		JOIN day_logs dl ON dl.id = sl.day_log_id
+		WHERE dl.user_id = $1 AND sl.exercise_id = ANY($2)
+		  AND sl.completed = true
+		  AND sl.actual_weight IS NOT NULL AND sl.actual_reps IS NOT NULL AND sl.actual_reps > 0`,
+		userID, exerciseIDs,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying record sets: %w", err)
+	}
+	defer rows.Close()
+
+	perfs := []model.SetPerf{}
+	for rows.Next() {
+		var p model.SetPerf
+		if err := rows.Scan(&p.ExerciseID, &p.Weight, &p.Reps, &p.Date); err != nil {
+			return nil, fmt.Errorf("scanning record set: %w", err)
+		}
+		perfs = append(perfs, p)
+	}
+	return perfs, rows.Err()
 }
 
 // ExerciseHistory returns, per requested exercise, the completed sets from the

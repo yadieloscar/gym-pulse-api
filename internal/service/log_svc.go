@@ -18,6 +18,7 @@ type LogService interface {
 	Update(ctx context.Context, userID uuid.UUID, date string, req model.UpdateDayLogRequest) (*model.DayLog, error)
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
+	ExerciseRecords(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
 }
 
 type logService struct {
@@ -187,6 +188,28 @@ func (s *logService) Delete(ctx context.Context, userID uuid.UUID, date string) 
 // in the comma-separated idsParam (e.g. "uuid,uuid"). Unknown/empty ids yield
 // no rows rather than an error.
 func (s *logService) ExerciseHistory(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error) {
+	ids, err := parseExerciseIDs(idsParam)
+	if err != nil {
+		return nil, err
+	}
+	return s.repo.ExerciseHistory(ctx, userID, ids)
+}
+
+// ExerciseRecords returns each requested exercise's all-time bests (heaviest
+// weight + best estimated 1RM), computed from its completed weighted sets.
+func (s *logService) ExerciseRecords(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error) {
+	ids, err := parseExerciseIDs(idsParam)
+	if err != nil {
+		return nil, err
+	}
+	perfs, err := s.repo.RecordSets(ctx, userID, ids)
+	if err != nil {
+		return nil, err
+	}
+	return reduceRecords(perfs, ids), nil
+}
+
+func parseExerciseIDs(idsParam string) ([]uuid.UUID, error) {
 	ids := []uuid.UUID{}
 	for raw := range strings.SplitSeq(idsParam, ",") {
 		raw = strings.TrimSpace(raw)
@@ -199,7 +222,48 @@ func (s *logService) ExerciseHistory(ctx context.Context, userID uuid.UUID, idsP
 		}
 		ids = append(ids, id)
 	}
-	return s.repo.ExerciseHistory(ctx, userID, ids)
+	return ids, nil
+}
+
+// estimate1RM is the Epley formula — one number that rises with heavier loads
+// and with more reps.
+func estimate1RM(weight float64, reps int) float64 {
+	return weight * (1 + float64(reps)/30)
+}
+
+// reduceRecords collapses raw sets into one record per exercise that has any:
+// the heaviest weight (ties broken by more reps) and the best estimated 1RM,
+// each with the set and date that produced it. Order follows ids.
+func reduceRecords(perfs []model.SetPerf, ids []uuid.UUID) []model.ExerciseRecord {
+	byID := map[uuid.UUID][]model.SetPerf{}
+	for _, p := range perfs {
+		byID[p.ExerciseID] = append(byID[p.ExerciseID], p)
+	}
+
+	records := []model.ExerciseRecord{}
+	for _, id := range ids {
+		sets := byID[id]
+		if len(sets) == 0 {
+			continue
+		}
+		rec := model.ExerciseRecord{ExerciseID: id}
+		var bestE1RM float64
+		for i := range sets {
+			p := sets[i]
+			if rec.MaxWeight == nil || p.Weight > *rec.MaxWeight ||
+				(p.Weight == *rec.MaxWeight && rec.MaxWeightReps != nil && p.Reps > *rec.MaxWeightReps) {
+				w, r, d := p.Weight, p.Reps, p.Date
+				rec.MaxWeight, rec.MaxWeightReps, rec.MaxWeightDate = &w, &r, &d
+			}
+			if e := estimate1RM(p.Weight, p.Reps); rec.BestE1RM == nil || e > bestE1RM {
+				bestE1RM = e
+				w, r, d := p.Weight, p.Reps, p.Date
+				rec.BestE1RM, rec.E1RMWeight, rec.E1RMReps, rec.E1RMDate = &bestE1RM, &w, &r, &d
+			}
+		}
+		records = append(records, rec)
+	}
+	return records
 }
 
 // validateSetLogs enforces struct rules plus the invariant that a completed set

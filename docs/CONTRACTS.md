@@ -178,6 +178,20 @@ id → 422.
 ]
 ```
 
+### `GET /api/v1/exercises/records?ids=<uuid,uuid>` → `ExerciseRecord[]`
+Per requested exercise, the all-time bests from completed weighted sets:
+heaviest weight (ties broken by more reps) and best estimated 1RM
+(Epley: `weight × (1 + reps/30)`). Exercises with no weighted sets are omitted;
+a malformed id → 422. The client compares this to the just-finished session to
+detect PRs, and shows "top lifts".
+```json
+[
+  { "exercise_id": "uuid",
+    "max_weight": 185, "max_weight_reps": 1, "max_weight_date": "2026-06-05",
+    "best_e1rm": 196.3, "e1rm_weight": 155, "e1rm_reps": 8, "e1rm_date": "2026-06-10" }
+]
+```
+
 ---
 
 ## Weekly plan
@@ -224,6 +238,15 @@ Response 200 — **wraps the array under a `types` key**:
 `types` may be `null` for a new user. The client must unwrap and coerce:
 ```ts
 const safe = Array.isArray(resp?.types) ? resp.types : [];
+```
+
+### `GET /api/v1/stats/volume?weeks=N` → `WeeklyVolume[]`
+Total lifted volume (Σ `actual_weight × actual_reps` over completed sets) per
+week for the last `N` weeks (default 8, max 52, `N<1` → 422), **oldest first**.
+The series is **continuous** — weeks with no logged volume are returned as `0`,
+so the chart has no gaps. `week_start` is the Monday of each week.
+```json
+[ { "week_start": "2026-06-08", "volume": 0 }, { "week_start": "2026-06-15", "volume": 5400 } ]
 ```
 
 > ⚠️ Drift gotcha: WorkoutSplit.tsx originally crashed on `.reduce` because the

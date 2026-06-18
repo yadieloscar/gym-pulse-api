@@ -283,6 +283,61 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/exercises/records": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns each comma-separated exercise's heaviest weight and best estimated 1RM (Epley), from completed weighted sets.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "All-time records per exercise",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated exercise UUIDs",
+                        "name": "ids",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.ExerciseRecord"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "security": [
@@ -1088,6 +1143,60 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/stats/volume": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Total lifted volume (Σ weight × reps) per week for the last N weeks (default 8), oldest first; weeks with no data are 0.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "stats"
+                ],
+                "summary": "Weekly training volume",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Number of weeks (default 8, max 52)",
+                        "name": "weeks",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.WeeklyVolume"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/templates": {
             "get": {
                 "security": [
@@ -1802,6 +1911,35 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExerciseRecord": {
+            "type": "object",
+            "properties": {
+                "best_e1rm": {
+                    "type": "number"
+                },
+                "e1rm_date": {
+                    "type": "string"
+                },
+                "e1rm_reps": {
+                    "type": "integer"
+                },
+                "e1rm_weight": {
+                    "type": "number"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "max_weight": {
+                    "type": "number"
+                },
+                "max_weight_date": {
+                    "type": "string"
+                },
+                "max_weight_reps": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.PlanOverride": {
             "type": "object",
             "required": [
@@ -2082,6 +2220,17 @@ const docTemplate = `{
                     "type": "integer",
                     "maximum": 7,
                     "minimum": 1
+                }
+            }
+        },
+        "model.WeeklyVolume": {
+            "type": "object",
+            "properties": {
+                "volume": {
+                    "type": "number"
+                },
+                "week_start": {
+                    "type": "string"
                 }
             }
         },

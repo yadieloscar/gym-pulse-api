@@ -67,6 +67,7 @@ func New(
 			r.Get("/stats", statsHandler.Summary)
 			r.Get("/stats/summary", statsHandler.Summary)
 			r.Get("/stats/distribution", statsHandler.Distribution)
+			r.Get("/stats/volume", statsHandler.Volume)
 
 			// Settings
 			r.Get("/settings", settingsHandler.Get)
@@ -80,6 +81,8 @@ func New(
 			r.Get("/exercises", exerciseCatalogHandler.List)
 			// Per-exercise set history ("last time you did X")
 			r.Get("/exercises/history", logHandler.ExerciseHistory)
+			// Per-exercise all-time records (heaviest + best e1RM)
+			r.Get("/exercises/records", logHandler.ExerciseRecords)
 
 			// Weekly plan
 			r.Route("/plan", func(r chi.Router) {

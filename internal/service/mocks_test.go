@@ -61,6 +61,7 @@ type MockLogDAO struct {
 	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
+	RecordSetsFunc      func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
 }
 
 func (m *MockLogDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {
@@ -103,6 +104,13 @@ func (m *MockLogDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exer
 		return m.ExerciseHistoryFunc(ctx, userID, exerciseIDs)
 	}
 	return []model.ExerciseHistory{}, nil
+}
+
+func (m *MockLogDAO) RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error) {
+	if m.RecordSetsFunc != nil {
+		return m.RecordSetsFunc(ctx, userID, exerciseIDs)
+	}
+	return []model.SetPerf{}, nil
 }
 
 type MockTemplateDAO struct {
@@ -153,6 +161,7 @@ type MockStatsDAO struct {
 	GetTotalWorkoutsFunc func(ctx context.Context, userID uuid.UUID) (int, error)
 	GetDistributionFunc  func(ctx context.Context, userID uuid.UUID) ([]model.TypeDistribution, error)
 	GetDayStreakFunc     func(ctx context.Context, userID uuid.UUID) (int, error)
+	GetWeeklyVolumeFunc  func(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.WeeklyVolume, error)
 }
 
 func (m *MockStatsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error) {
@@ -181,6 +190,13 @@ func (m *MockStatsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int,
 		return m.GetDayStreakFunc(ctx, userID)
 	}
 	return 0, nil
+}
+
+func (m *MockStatsDAO) GetWeeklyVolume(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.WeeklyVolume, error) {
+	if m.GetWeeklyVolumeFunc != nil {
+		return m.GetWeeklyVolumeFunc(ctx, userID, since)
+	}
+	return []model.WeeklyVolume{}, nil
 }
 
 type MockSettingsDAO struct {
