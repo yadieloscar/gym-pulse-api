@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -11,6 +12,9 @@ import (
 
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 )
+
+// ErrSupabaseAdmin marks non-success responses from the Supabase Admin API.
+var ErrSupabaseAdmin = errors.New("supabase admin api error")
 
 // AuthUserDeleter removes the user from the auth provider. Separate interface
 // so the Supabase admin call is mockable and optional.
@@ -78,11 +82,11 @@ func (a *SupabaseAdmin) DeleteAuthUser(ctx context.Context, userID uuid.UUID) er
 	if err != nil {
 		return fmt.Errorf("calling supabase admin api: %w", err)
 	}
-	defer resp.Body.Close() //nolint:errcheck
+	defer resp.Body.Close()
 
 	// 404 means the auth user is already gone — that's the desired end state.
 	if resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotFound {
-		return fmt.Errorf("supabase admin api returned %d", resp.StatusCode)
+		return fmt.Errorf("%w: status %d", ErrSupabaseAdmin, resp.StatusCode)
 	}
 	return nil
 }

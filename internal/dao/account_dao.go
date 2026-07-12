@@ -28,7 +28,8 @@ func (r *accountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error
 	if err != nil {
 		return fmt.Errorf("beginning account delete: %w", err)
 	}
-	defer tx.Rollback(ctx) //nolint:errcheck // rollback after commit is a no-op
+	// Rollback after a successful commit is a no-op.
+	defer tx.Rollback(ctx)
 
 	// day_logs before workout_templates: set_logs cascade from both sides.
 	// auth.users last: user_profiles cascades from it.
