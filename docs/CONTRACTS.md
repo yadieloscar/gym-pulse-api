@@ -269,6 +269,23 @@ Validator: `weight gt=0`, `unit oneof=lb kg`.
 
 ---
 
+## Account
+
+### `DELETE /api/v1/account` → 204
+
+**Irreversible.** Deletes every row belonging to the authenticated user
+(templates + exercises, day logs + set logs + overrides, plans, settings,
+body weights, profile) in one transaction, then — when the server is
+configured with `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — deletes the
+Supabase auth user via the Admin API. An auth-provider failure after data
+deletion is logged server-side, not surfaced: the response is still 204 and
+the client must sign out and clear local state.
+
+Client flow: confirm twice → `DELETE /account` → `supabase.auth.signOut()` →
+`clearCache()`.
+
+---
+
 ## Auth contract for the client
 
 JWT must have:

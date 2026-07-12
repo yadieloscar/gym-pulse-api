@@ -512,6 +512,26 @@ info:
   title: Gym Pulse API
   version: "1.0"
 paths:
+  /api/v1/account:
+    delete:
+      description: |-
+        Permanently deletes the authenticated user's account: all
+        application data and, when the server is configured with
+        Supabase admin credentials, the auth user itself. Irreversible.
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete account
+      tags:
+      - account
   /api/v1/body/weight:
     get:
       description: Returns all body weight entries for the authenticated user, ordered

@@ -109,6 +109,13 @@ func main() {
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
 
+	accountRepo := dao.NewAccountDAO(pool)
+	var authDeleter service.AuthUserDeleter
+	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
+		authDeleter = service.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
+	}
+	accountSvc := service.NewAccountService(accountRepo, authDeleter, logger)
+
 	templateHandler := handler.NewTemplateHandler(templateSvc)
 	logHandler := handler.NewLogHandler(logSvc)
 	statsHandler := handler.NewStatsHandler(statsSvc)
@@ -117,9 +124,10 @@ func main() {
 	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
+	accountHandler := handler.NewAccountHandler(accountSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler)
+	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{

@@ -155,6 +155,22 @@ else
   bad "GET stats/volume expected 200 4-week series, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 10. account deletion (LAST: wipes the smoke user) ----------
+step "10. DELETE /api/v1/account returns 204 and clears the user's data"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
+if [ "$resp" = "204" ]; then
+  # After deletion the user's templates must be gone (empty list or null).
+  resp2=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/templates" "${auth[@]}")
+  body=$(cat /tmp/smoke.body)
+  if [ "$resp2" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d in (None, [])" "$body" 2>/dev/null; then
+    ok "account deleted; templates now empty (this also cleans up smoke data)"
+  else
+    bad "post-delete templates expected empty, got $resp2" "$(echo "$body" | head -c 200)"
+  fi
+else
+  bad "DELETE /account expected 204, got $resp" "$(cat /tmp/smoke.body | head -c 200)"
+fi
+
 # ---------- summary ----------
 printf "\n\033[1m%d passed, %d failed\033[0m\n" "$pass" "$fail"
 [ "$fail" -eq 0 ] || exit 1

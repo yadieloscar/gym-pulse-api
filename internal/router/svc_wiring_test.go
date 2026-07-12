@@ -1,6 +1,8 @@
 package router
 
 import (
+	"log/slog"
+
 	"github.com/go-playground/validator/v10"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
@@ -31,4 +33,7 @@ func newExerciseCatalogSvc(r dao.ExerciseCatalogDAO) service.ExerciseCatalogServ
 }
 func newPlanSvc(r dao.PlanDAO, tr dao.TemplateDAO, v *validator.Validate) service.PlanService {
 	return service.NewPlanService(r, tr, v)
+}
+func newAccountSvc(r dao.AccountDAO, logger *slog.Logger) service.AccountService {
+	return service.NewAccountService(r, nil, logger)
 }

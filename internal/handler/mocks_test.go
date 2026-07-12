@@ -232,3 +232,14 @@ func (m *MockPlanService) DeleteOverride(ctx context.Context, userID uuid.UUID, 
 	}
 	return nil
 }
+
+type MockAccountService struct {
+	DeleteFunc func(ctx context.Context, userID uuid.UUID) error
+}
+
+func (m *MockAccountService) Delete(ctx context.Context, userID uuid.UUID) error {
+	if m.DeleteFunc != nil {
+		return m.DeleteFunc(ctx, userID)
+	}
+	return nil
+}
