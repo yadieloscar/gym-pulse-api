@@ -123,8 +123,15 @@ func (fakeExerciseCatalogDAO) List(ctx context.Context, category string) ([]mode
 	return []model.CatalogExercise{}, nil
 }
 
+type fakeAccountDAO struct{}
+
+func (fakeAccountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error {
+	return nil
+}
+
 // compile-time checks
 var (
+	_ dao.AccountDAO         = fakeAccountDAO{}
 	_ dao.TemplateDAO        = fakeTemplateDAO{}
 	_ dao.LogDAO             = fakeLogDAO{}
 	_ dao.StatsDAO           = fakeStatsDAO{}
@@ -148,6 +155,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	bwH := handler.NewBodyWeightHandler(newBodyWeightSvc(fakeBodyWeightDAO{}, v))
 	exH := handler.NewExerciseCatalogHandler(newExerciseCatalogSvc(fakeExerciseCatalogDAO{}))
 	planH := handler.NewPlanHandler(newPlanSvc(fakePlanDAO{}, fakeTemplateDAO{}, v))
+	acctH := handler.NewAccountHandler(newAccountSvc(fakeAccountDAO{}, slog.New(slog.NewTextHandler(io.Discard, nil))))
 
 	cfg := &config.Config{
 		SupabaseJWTSecret: "test-secret",
@@ -155,7 +163,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH)
+	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH)
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 
@@ -211,6 +219,26 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("DELETE /api/v1/account", func(t *testing.T) {
+		resp := authed("DELETE", "/api/v1/account", "")
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusNoContent {
+			t.Errorf("expected 204, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("DELETE /api/v1/account without token -> 401", func(t *testing.T) {
+		req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/v1/account", nil)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("expected 401, got %d", resp.StatusCode)
 		}
 	})
 

@@ -18,9 +18,13 @@ type Config struct {
 	DatabaseURL       string
 	SupabaseJWTSecret string
 	SupabaseJWKSURL   string
-	AllowedOrigins    []string
-	Environment       string
-	LogLevel          string
+	// Optional: enables deleting the Supabase auth user on account deletion.
+	// Without them, DELETE /account removes application data only.
+	SupabaseURL            string
+	SupabaseServiceRoleKey string
+	AllowedOrigins         []string
+	Environment            string
+	LogLevel               string
 }
 
 // Load reads configuration from environment variables.
@@ -62,12 +66,14 @@ func Load() (*Config, error) {
 	jwksURL := os.Getenv("SUPABASE_JWKS_URL")
 
 	return &Config{
-		Port:              port,
-		DatabaseURL:       dbURL,
-		SupabaseJWTSecret: jwtSecret,
-		SupabaseJWKSURL:   jwksURL,
-		AllowedOrigins:    origins,
-		Environment:       env,
-		LogLevel:          logLevel,
+		Port:                   port,
+		DatabaseURL:            dbURL,
+		SupabaseJWTSecret:      jwtSecret,
+		SupabaseJWKSURL:        jwksURL,
+		SupabaseURL:            os.Getenv("SUPABASE_URL"),
+		SupabaseServiceRoleKey: os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
+		AllowedOrigins:         origins,
+		Environment:            env,
+		LogLevel:               logLevel,
 	}, nil
 }

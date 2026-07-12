@@ -24,6 +24,7 @@ func New(
 	bodyWeightHandler *handler.BodyWeightHandler,
 	exerciseCatalogHandler *handler.ExerciseCatalogHandler,
 	planHandler *handler.PlanHandler,
+	accountHandler *handler.AccountHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -62,6 +63,9 @@ func New(
 					r.Delete("/", logHandler.Delete)
 				})
 			})
+
+			// Account
+			r.Delete("/account", accountHandler.Delete)
 
 			// Stats
 			r.Get("/stats", statsHandler.Summary)
