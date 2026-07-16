@@ -29,9 +29,11 @@ func NewStatsDAO(pool *pgxpool.Pool) StatsDAO {
 
 func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekStart, weekEnd time.Time) (int, error) {
 	var count int
+	// Rest days are logged intent, not workouts — they must not tick the
+	// weekly goal (and therefore the week streak).
 	err := r.pool.QueryRow(ctx, `
 		SELECT COUNT(*) FROM day_logs
-		WHERE user_id = $1 AND date BETWEEN $2 AND $3`,
+		WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND type_id <> 'rest'`,
 		userID, weekStart, weekEnd,
 	).Scan(&count)
 	if err != nil {
@@ -43,7 +45,7 @@ func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSta
 func (r *statsDAO) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM day_logs WHERE user_id = $1`,
+		SELECT COUNT(*) FROM day_logs WHERE user_id = $1 AND type_id <> 'rest'`,
 		userID,
 	).Scan(&count)
 	if err != nil {
@@ -103,7 +105,7 @@ func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, err
 	var count int
 	err := r.pool.QueryRow(ctx, `
 		WITH logged_dates AS (
-			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 ORDER BY date DESC
+			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 AND type_id <> 'rest' ORDER BY date DESC
 		),
 		streaks AS (
 			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
@@ -123,7 +125,7 @@ func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, err
 	// If today has no log, check from yesterday.
 	err = r.pool.QueryRow(ctx, `
 		WITH logged_dates AS (
-			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 ORDER BY date DESC
+			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 AND type_id <> 'rest' ORDER BY date DESC
 		),
 		streaks AS (
 			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
