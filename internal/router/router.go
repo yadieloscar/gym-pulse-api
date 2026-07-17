@@ -25,6 +25,11 @@ func New(
 	exerciseCatalogHandler *handler.ExerciseCatalogHandler,
 	planHandler *handler.PlanHandler,
 	accountHandler *handler.AccountHandler,
+	trainingProfileHandler *handler.TrainingProfileHandler,
+	programHandler *handler.ProgramHandler,
+	scheduleHandler *handler.ScheduleHandler,
+	workoutSessionHandler *handler.WorkoutSessionHandler,
+	participationHandler *handler.ParticipationHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -42,6 +47,38 @@ func New(
 		r.Use(middleware.AuthMiddleware(cfg.SupabaseJWTSecret, cfg.SupabaseJWKSURL))
 
 		r.Route("/api/v1", func(r chi.Router) {
+			// Goal-based training
+			r.Get("/training-profile", trainingProfileHandler.Get)
+			r.Put("/training-profile", trainingProfileHandler.Update)
+			r.Get("/starter-programs", programHandler.ListStarters)
+			r.Route("/programs", func(r chi.Router) {
+				r.Get("/", programHandler.List)
+				r.Post("/", programHandler.Create)
+				r.Post("/from-starter", programHandler.CloneStarter)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", programHandler.Get)
+					r.Put("/", programHandler.Update)
+				})
+			})
+			r.Get("/schedule", scheduleHandler.List)
+			r.Post("/schedule/materialize", scheduleHandler.Materialize)
+			r.Post("/schedule/regenerate", scheduleHandler.Regenerate)
+			r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
+				r.Patch("/", scheduleHandler.Patch)
+				r.Put("/sets/{set_id}", scheduleHandler.PutSet)
+				r.Post("/extra-sets", scheduleHandler.AddExtra)
+				r.Post("/complete", scheduleHandler.Complete)
+			})
+			r.Route("/workout-sessions", func(r chi.Router) {
+				r.Get("/", workoutSessionHandler.List)
+				r.Post("/", workoutSessionHandler.Create)
+				r.Route("/{id}", func(r chi.Router) {
+					r.Get("/", workoutSessionHandler.Get)
+					r.Patch("/", workoutSessionHandler.Patch)
+				})
+			})
+			r.Get("/participation", participationHandler.List)
+
 			// Templates
 			r.Route("/templates", func(r chi.Router) {
 				r.Get("/", templateHandler.List)

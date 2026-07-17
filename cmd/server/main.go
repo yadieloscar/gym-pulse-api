@@ -99,6 +99,14 @@ func main() {
 	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
 	exerciseCatalogRepo := dao.NewExerciseCatalogDAO(pool)
 	planRepo := dao.NewPlanDAO(pool)
+	trainingProfileRepo := dao.NewTrainingProfileDAO(pool)
+	starterProgramRepo := dao.NewStarterProgramDAO(pool)
+	programRepo := dao.NewProgramDAO(pool)
+	scheduleRepo := dao.NewScheduleDAO(pool)
+	workoutSessionRepo := dao.NewWorkoutSessionDAO(pool)
+	performedSetRepo := dao.NewPerformedSetDAO(pool)
+	participationRepo := dao.NewParticipationDAO(pool)
+	idempotencyRepo := dao.NewIdempotencyDAO(pool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
@@ -108,6 +116,11 @@ func main() {
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
+	trainingProfileSvc := service.NewTrainingProfileService(trainingProfileRepo)
+	programSvc := service.NewProgramService(starterProgramRepo, programRepo, idempotencyRepo, v)
+	scheduleSvc := service.NewScheduleService(scheduleRepo, programRepo, trainingProfileRepo, workoutSessionRepo, performedSetRepo, participationRepo, idempotencyRepo, v)
+	workoutSessionSvc := service.NewWorkoutSessionService(workoutSessionRepo, scheduleRepo, idempotencyRepo, v)
+	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 
 	accountRepo := dao.NewAccountDAO(pool)
 	var authDeleter service.AuthUserDeleter
@@ -125,9 +138,14 @@ func main() {
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
+	trainingProfileHandler := handler.NewTrainingProfileHandler(trainingProfileSvc)
+	programHandler := handler.NewProgramHandler(programSvc)
+	scheduleHandler := handler.NewScheduleHandler(scheduleSvc)
+	workoutSessionHandler := handler.NewWorkoutSessionHandler(workoutSessionSvc)
+	participationHandler := handler.NewParticipationHandler(participationSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler)
+	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, trainingProfileHandler, programHandler, scheduleHandler, workoutSessionHandler, participationHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{

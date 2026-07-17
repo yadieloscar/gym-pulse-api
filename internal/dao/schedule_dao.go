@@ -17,7 +17,28 @@ type ScheduleDAO interface {
 	Get(ctx context.Context, userID, workoutID uuid.UUID) (*model.ScheduledWorkout, error)
 	Create(ctx context.Context, userID uuid.UUID, workouts []model.ScheduledWorkout) error
 	ReplaceSnapshot(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64) error
+	UpdateOutcome(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64) error
 	DeleteUnstartedRange(ctx context.Context, userID uuid.UUID, from, to string) ([]uuid.UUID, error)
+}
+
+func (r *scheduleDAO) UpdateOutcome(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout, expectedRevision int64) error {
+	err := r.pool.QueryRow(ctx, `
+		UPDATE scheduled_workouts SET status=$3, finalized_at=$4,
+		       revision=revision+1, updated_at=now()
+		WHERE id=$1 AND user_id=$2 AND revision=$5
+		RETURNING revision, updated_at`, w.ID, userID, w.Status, w.FinalizedAt,
+		expectedRevision).Scan(&w.Revision, &w.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		current, getErr := r.Get(ctx, userID, w.ID)
+		if getErr != nil {
+			return getErr
+		}
+		return &model.ConflictError{Message: "scheduled workout revision conflict", Expected: expectedRevision, Actual: current.Revision, Authoritative: current}
+	}
+	if err != nil {
+		return fmt.Errorf("updating scheduled workout outcome: %w", err)
+	}
+	return nil
 }
 
 type scheduleDAO struct {

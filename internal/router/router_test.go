@@ -163,7 +163,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
-	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH)
+	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil)
 	srv := httptest.NewServer(r)
 	defer srv.Close()
 

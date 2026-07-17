@@ -351,6 +351,57 @@ type RevisionRequest struct {
 	ExpectedRevision int64  `json:"expected_revision" validate:"required,min=1"`
 }
 
+type MaterializeScheduleRequest struct {
+	ProgramID        uuid.UUID `json:"program_id" validate:"required"`
+	From             string    `json:"from" validate:"required"`
+	To               string    `json:"to" validate:"required"`
+	OperationKey     string    `json:"operation_key" validate:"required"`
+	ExpectedRevision int64     `json:"expected_revision" validate:"required,min=1"`
+}
+
+type RegenerateScheduleRequest struct {
+	ProgramID        uuid.UUID `json:"program_id" validate:"required"`
+	From             string    `json:"from" validate:"required"`
+	To               string    `json:"to" validate:"required"`
+	Apply            bool      `json:"apply"`
+	PreviewToken     string    `json:"preview_token,omitempty"`
+	OperationKey     string    `json:"operation_key" validate:"required"`
+	ExpectedRevision int64     `json:"expected_revision" validate:"required,min=1"`
+}
+
+type RegenerateScheduleResponse struct {
+	PreviewToken      string             `json:"preview_token"`
+	RetainedFrom      *string            `json:"retained_from,omitempty"`
+	RetainedTo        *string            `json:"retained_to,omitempty"`
+	ReplacedFrom      *string            `json:"replaced_from,omitempty"`
+	ReplacedTo        *string            `json:"replaced_to,omitempty"`
+	ScheduledWorkouts []ScheduledWorkout `json:"scheduled_workouts"`
+}
+
+type PatchScheduledWorkoutRequest struct {
+	Name             *string         `json:"name,omitempty"`
+	RequiredSets     *[]ScheduledSet `json:"required_sets,omitempty"`
+	OperationKey     string          `json:"operation_key" validate:"required"`
+	ExpectedRevision int64           `json:"expected_revision" validate:"required,min=1"`
+}
+
+type CreateWorkoutSessionRequest struct {
+	ScheduledWorkoutID *uuid.UUID `json:"scheduled_workout_id,omitempty"`
+	Date               string     `json:"date" validate:"required"`
+	Name               string     `json:"name" validate:"required"`
+	Notes              *string    `json:"notes,omitempty"`
+	OperationKey       string     `json:"operation_key" validate:"required"`
+	ExpectedRevision   int64      `json:"expected_revision" validate:"gte=0"`
+}
+
+type PatchWorkoutSessionRequest struct {
+	Name             *string `json:"name,omitempty"`
+	Notes            *string `json:"notes,omitempty"`
+	Status           *string `json:"status,omitempty"`
+	OperationKey     string  `json:"operation_key" validate:"required"`
+	ExpectedRevision int64   `json:"expected_revision" validate:"required,min=1"`
+}
+
 type DayParticipation struct {
 	ID                   uuid.UUID `json:"id"`
 	Date                 string    `json:"date"`
