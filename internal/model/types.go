@@ -40,7 +40,10 @@ func (e *ValidationError) Error() string { return e.Message }
 
 // ConflictError indicates a uniqueness constraint violation.
 type ConflictError struct {
-	Message string
+	Message       string
+	Expected      int64
+	Actual        int64
+	Authoritative any
 }
 
 func (e *ConflictError) Error() string { return e.Message }
