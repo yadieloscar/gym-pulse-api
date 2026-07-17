@@ -230,6 +230,11 @@ Response 200:
 { "current_streak": 0, "longest_streak": 0, "weekly_goal": 5, "total_workouts": 0 }
 ```
 
+**Counting semantics:** `rest`-type day logs are logged intent, not workouts.
+They are excluded from `this_week.completed`, the week streak, the day
+streak, and `total_workouts` (this matches the client mock's behavior).
+A day with no non-rest log never extends a streak.
+
 ### `GET /api/v1/stats/distribution`
 Response 200 — **wraps the array under a `types` key**:
 ```json
