@@ -27,14 +27,9 @@ func TestAuthMiddleware_JWKS_MalformedAndUnsupportedKeys(t *testing.T) {
 	}
 	body, _ := json.Marshal(jwks)
 
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(body)
-	}))
-	defer srv.Close()
+	installHTTPResponse(t, http.StatusOK, string(body))
 
-	mw := AuthMiddleware("", srv.URL)
+	mw := AuthMiddleware("", "https://malformed-jwks.example.test")
 	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))

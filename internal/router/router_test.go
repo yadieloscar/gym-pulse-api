@@ -164,8 +164,11 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 
 	r := New(cfg, logger, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil)
-	srv := httptest.NewServer(r)
-	defer srv.Close()
+	do := func(req *http.Request) *http.Response {
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Result()
+	}
 
 	mintToken := func(sub string) string {
 		claims := jwt.MapClaims{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()}
@@ -178,10 +181,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	token := mintToken(userID)
 
 	t.Run("health is public", func(t *testing.T) {
-		resp, err := http.Get(srv.URL + "/health")
-		if err != nil {
-			t.Fatal(err)
-		}
+		resp := do(httptest.NewRequest(http.MethodGet, "/health", nil))
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
@@ -189,10 +189,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	})
 
 	t.Run("protected without token -> 401", func(t *testing.T) {
-		resp, err := http.Get(srv.URL + "/api/v1/settings")
-		if err != nil {
-			t.Fatal(err)
-		}
+		resp := do(httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil))
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -204,14 +201,10 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 		if body != "" {
 			rdr = strings.NewReader(body)
 		}
-		req, _ := http.NewRequest(method, srv.URL+path, rdr)
+		req := httptest.NewRequest(method, path, rdr)
 		req.Header.Set("Authorization", "Bearer "+token)
 		req.Header.Set("Content-Type", "application/json")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return resp
+		return do(req)
 	}
 
 	t.Run("GET /api/v1/settings", func(t *testing.T) {
@@ -231,11 +224,8 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	})
 
 	t.Run("DELETE /api/v1/account without token -> 401", func(t *testing.T) {
-		req, _ := http.NewRequest(http.MethodDelete, srv.URL+"/api/v1/account", nil)
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/account", nil)
+		resp := do(req)
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusUnauthorized {
 			t.Errorf("expected 401, got %d", resp.StatusCode)
@@ -306,14 +296,11 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	})
 
 	t.Run("CORS preflight handled", func(t *testing.T) {
-		req, _ := http.NewRequest("OPTIONS", srv.URL+"/api/v1/settings", nil)
+		req := httptest.NewRequest("OPTIONS", "/api/v1/settings", nil)
 		req.Header.Set("Origin", "https://app.example.com")
 		req.Header.Set("Access-Control-Request-Method", "GET")
 		req.Header.Set("Access-Control-Request-Headers", "Authorization")
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			t.Fatal(err)
-		}
+		resp := do(req)
 		defer resp.Body.Close()
 		// chi/cors returns 204 for preflight
 		if resp.StatusCode >= 400 {

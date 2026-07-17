@@ -7,7 +7,8 @@
 #   3. PUT /api/v1/settings accepts weekly_goal=1 (regression for the
 #      bug where validator required min=3 and broke onboarding)
 #   4. GET /api/v1/stats/distribution returns either an array or `null`
-#      (client must coerce; this asserts the documented contract)
+#   5. goal profile → starter copy → dated scheduled workout → required and
+#      extra sets → incomplete outcome → participation remains separate
 #
 # Requirements:
 #   - API container running on :8080 (see gym-pulse-dev-loop skill)
@@ -155,8 +156,104 @@ else
   bad "GET stats/volume expected 200 4-week series, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
-# ---------- 10. account deletion (LAST: wipes the smoke user) ----------
-step "10. DELETE /api/v1/account returns 204 and clears the user's data"
+# ---------- 10. goal-based training happy path ----------
+step "10. Goal profile → starter program → scheduled workout → participation"
+profile_op="smoke-profile-v1"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $profile_op" \
+  -d "{\"primary_goal\":\"strength\",\"available_days\":[1,4],\"usual_activity\":\"moderate\",\"experience\":\"beginner\",\"equipment\":[\"bodyweight\"],\"session_duration_minutes\":45,\"timezone\":\"UTC\",\"preferences\":{},\"expected_revision\":0}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" != "200" ] || ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['primary_goal']=='strength' and d['revision']>=1" "$body" 2>/dev/null; then
+  bad "training profile expected 200 with primary_goal=strength, got $resp" "$(echo "$body" | head -c 240)"
+else
+  ok "training profile persisted primary_goal=strength"
+
+  resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/starter-programs?primary_goal=strength&available_days=2&experience=beginner&equipment=bodyweight&session_duration_minutes=45" "${auth[@]}")
+  body=$(cat /tmp/smoke.body)
+  starter_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['starter_programs'][0]['id'])" "$body" 2>/dev/null || true)
+  starter_version=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['starter_programs'][0]['version'])" "$body" 2>/dev/null || true)
+  if [ "$resp" != "200" ] || [ -z "$starter_id" ]; then
+    bad "starter-programs returned no deterministic strength candidate" "$(echo "$body" | head -c 240)"
+  else
+    clone_op="smoke-clone-strength-v1"
+    resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs/from-starter" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $clone_op" \
+      -d "{\"starter_program_id\":\"$starter_id\",\"starter_version\":$starter_version,\"name\":\"Smoke Strength\",\"operation_key\":\"$clone_op\"}")
+    body=$(cat /tmp/smoke.body)
+    program_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$body" 2>/dev/null || true)
+    program_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
+    if [ "$resp" != "201" ] || [ -z "$program_id" ]; then
+      bad "starter copy expected 201 Program, got $resp" "$(echo "$body" | head -c 240)"
+    else
+      read -r week_from week_to <<EOF
+$(python3 - <<'PY'
+from datetime import date, timedelta
+today=date.today(); monday=today+timedelta(days=(7-today.weekday())%7)
+print(monday.isoformat(), (monday+timedelta(days=6)).isoformat())
+PY
+)
+EOF
+      materialize_op="smoke-materialize-week-v1"
+      resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/schedule/materialize" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $materialize_op" \
+        -d "{\"program_id\":\"$program_id\",\"from\":\"$week_from\",\"to\":\"$week_to\",\"operation_key\":\"$materialize_op\",\"expected_revision\":$program_revision}")
+      body=$(cat /tmp/smoke.body)
+      workout_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['id'])" "$body" 2>/dev/null || true)
+      set_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['required_sets'][0]['id'])" "$body" 2>/dev/null || true)
+      workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['revision'])" "$body" 2>/dev/null || true)
+      if [ "$resp" != "201" ] || [ -z "$workout_id" ] || [ -z "$set_id" ]; then
+        bad "schedule materialize expected dated scheduled_workout, got $resp" "$(echo "$body" | head -c 280)"
+      else
+        set_op="smoke-check-required-v1"
+        resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$set_id" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $set_op" \
+          -d "{\"operation_key\":\"$set_op\",\"expected_revision\":$workout_revision,\"actual_reps\":10,\"completed\":true}")
+        body=$(cat /tmp/smoke.body)
+        workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
+        extra_op="smoke-extra-set-v1"
+        resp_extra=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/extra-sets" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $extra_op" \
+          -d "{\"operation_key\":\"$extra_op\",\"expected_revision\":$workout_revision,\"exercise_name\":\"Air Squat\",\"exercise_category\":\"legs\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":20,\"completed\":true}")
+        body=$(cat /tmp/smoke.body)
+        workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
+        complete_op="smoke-complete-incomplete-v1"
+        resp_complete=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/complete" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $complete_op" \
+          -d "{\"operation_key\":\"$complete_op\",\"expected_revision\":$workout_revision}")
+        body=$(cat /tmp/smoke.body)
+        status=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['status'])" "$body" 2>/dev/null || true)
+        resp_part=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/participation?from=$week_from&to=$week_to" "${auth[@]}")
+        participation_body=$(cat /tmp/smoke.body)
+        if [ "$resp" = "200" ] && [ "$resp_extra" = "201" ] && [ "$resp_complete" = "200" ] && [ "$status" = "incomplete" ] && [ "$resp_part" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert any(x['participated'] for x in d['participation'])" "$participation_body" 2>/dev/null; then
+          ok "required + extra sets produced incomplete scheduled workout and separate participation=true"
+        else
+          bad "goal training lifecycle failed (set=$resp extra=$resp_extra complete=$resp_complete status=$status participation=$resp_part)" "$(echo "$participation_body" | head -c 280)"
+        fi
+      fi
+    fi
+  fi
+fi
+
+# ---------- 11. off-plan session keeps date identity separate ----------
+step "11. POST two off-plan workout_sessions on one date returns distinct UUIDs"
+session_date=$(python3 -c "from datetime import date; print(date.today().isoformat())")
+session_ids=""
+for suffix in a b; do
+  session_op="smoke-off-plan-$suffix-v1"
+  resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/workout-sessions" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_op" \
+    -d "{\"scheduled_workout_id\":null,\"date\":\"$session_date\",\"name\":\"Off-plan $suffix\",\"operation_key\":\"$session_op\",\"expected_revision\":0}")
+  body=$(cat /tmp/smoke.body)
+  [ "$resp" = "201" ] && session_ids="$session_ids $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$body" 2>/dev/null || true)"
+done
+if [ "$(echo "$session_ids" | xargs -n1 | sort -u | wc -l | tr -d ' ')" = "2" ]; then
+  ok "multiple off-plan session UUIDs coexist on one date"
+else
+  bad "expected two distinct off-plan workout session IDs" "$session_ids"
+fi
+
+# ---------- 12. account deletion (LAST: wipes the smoke user) ----------
+step "12. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then
   # After deletion the user's templates must be gone (empty list or null).
