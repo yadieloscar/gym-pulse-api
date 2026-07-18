@@ -280,9 +280,11 @@ func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, re
 		recovered.RequiredSets[i].ActualWeight = nil
 		recovered.RequiredSets[i].ActualDurationSeconds = nil
 	}
-	if err := s.schedules.Create(ctx, userID, []model.ScheduledWorkout{recovered}); err != nil {
+	created := []model.ScheduledWorkout{recovered}
+	if err := s.schedules.Create(ctx, userID, created); err != nil {
 		return nil, err
 	}
+	recovered = created[0]
 	if err := recordResource(ctx, s.idempotency, userID, "schedule/recover", req.OperationKey, hash, "scheduled_workout", recovered.ID, recovered.Revision); err != nil {
 		return nil, err
 	}
