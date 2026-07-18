@@ -52,12 +52,13 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	if errors.As(err, &conflict) {
 		code := "CONFLICT"
 		var details any
-		if conflict.Actual > 0 {
+		switch {
+		case conflict.Actual > 0:
 			code = "REVISION_CONFLICT"
 			details = map[string]int64{"expected_revision": conflict.Expected, "actual_revision": conflict.Actual}
-		} else if strings.Contains(conflict.Message, "idempotency") {
+		case strings.Contains(conflict.Message, "idempotency"):
 			code = "IDEMPOTENCY_CONFLICT"
-		} else if strings.Contains(conflict.Message, "active session") {
+		case strings.Contains(conflict.Message, "active session"):
 			code = "ACTIVE_SESSION_CONFLICT"
 		}
 		writeJSON(w, http.StatusConflict, apiError{Error: conflict.Message, Code: code, Details: details, Resource: conflict.Authoritative})

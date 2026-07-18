@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -261,31 +262,31 @@ func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, re
 	if source == nil {
 		return nil, &model.NotFoundError{Message: "no missed workout to recover"}
 	}
-	copy := *source
-	copy.ID = uuid.Nil
-	copy.Date = req.Date
-	copy.Status = model.WorkoutStatusPlanned
-	copy.FinalizedAt = nil
-	copy.Revision = 0
-	copy.CreatedAt = time.Time{}
-	copy.UpdatedAt = time.Time{}
-	copy.ExtraSets = []model.PerformedSet{}
-	copy.RequiredSets = append([]model.ScheduledSet(nil), source.RequiredSets...)
-	for i := range copy.RequiredSets {
-		copy.RequiredSets[i].ID = uuid.Nil
-		copy.RequiredSets[i].Checked = false
-		copy.RequiredSets[i].PerformedSetID = nil
-		copy.RequiredSets[i].ActualReps = nil
-		copy.RequiredSets[i].ActualWeight = nil
-		copy.RequiredSets[i].ActualDurationSeconds = nil
+	recovered := *source
+	recovered.ID = uuid.Nil
+	recovered.Date = req.Date
+	recovered.Status = model.WorkoutStatusPlanned
+	recovered.FinalizedAt = nil
+	recovered.Revision = 0
+	recovered.CreatedAt = time.Time{}
+	recovered.UpdatedAt = time.Time{}
+	recovered.ExtraSets = []model.PerformedSet{}
+	recovered.RequiredSets = append([]model.ScheduledSet(nil), source.RequiredSets...)
+	for i := range recovered.RequiredSets {
+		recovered.RequiredSets[i].ID = uuid.Nil
+		recovered.RequiredSets[i].Checked = false
+		recovered.RequiredSets[i].PerformedSetID = nil
+		recovered.RequiredSets[i].ActualReps = nil
+		recovered.RequiredSets[i].ActualWeight = nil
+		recovered.RequiredSets[i].ActualDurationSeconds = nil
 	}
-	if err := s.schedules.Create(ctx, userID, []model.ScheduledWorkout{copy}); err != nil {
+	if err := s.schedules.Create(ctx, userID, []model.ScheduledWorkout{recovered}); err != nil {
 		return nil, err
 	}
-	if err := recordResource(ctx, s.idempotency, userID, "schedule/recover", req.OperationKey, hash, "scheduled_workout", copy.ID, copy.Revision); err != nil {
+	if err := recordResource(ctx, s.idempotency, userID, "schedule/recover", req.OperationKey, hash, "scheduled_workout", recovered.ID, recovered.Revision); err != nil {
 		return nil, err
 	}
-	return s.schedules.Get(ctx, userID, copy.ID)
+	return s.schedules.Get(ctx, userID, recovered.ID)
 }
 
 func sequenceBefore(a, b *model.ScheduledWorkout) bool {
@@ -472,10 +473,6 @@ func materializeProgram(p *model.Program, from, to string) ([]model.ScheduledWor
 	return model.MaterializeProgramForWeekdays(p, days, from, to)
 }
 
-func snapshotSets(exercises []model.ProgramExercise) []model.ScheduledSet {
-	return model.SnapshotScheduledSets(exercises)
-}
-
 func (s *workoutSessionService) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.WorkoutSession, error) {
 	if err := model.ValidateDateRange(from, to); err != nil {
 		return nil, err
@@ -579,6 +576,6 @@ func recordResource(ctx context.Context, repo dao.IdempotencyDAO, userID uuid.UU
 }
 
 func isConflict(err error) bool {
-	_, ok := err.(*model.ConflictError)
-	return ok
+	var conflict *model.ConflictError
+	return errors.As(err, &conflict)
 }

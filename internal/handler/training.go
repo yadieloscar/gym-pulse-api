@@ -79,7 +79,7 @@ func (h *ProgramHandler) ListStarters(w http.ResponseWriter, r *http.Request) {
 		filter.AvailableDays, _ = strconv.Atoi(raw)
 	}
 	if raw := r.URL.Query().Get("available_weekdays"); raw != "" {
-		for _, value := range strings.Split(raw, ",") {
+		for value := range strings.SplitSeq(raw, ",") {
 			if day, err := strconv.Atoi(value); err == nil {
 				filter.AvailableWeekdays = append(filter.AvailableWeekdays, day)
 			}

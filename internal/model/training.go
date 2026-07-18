@@ -1,7 +1,6 @@
 package model
 
 import (
-	"fmt"
 	"slices"
 	"time"
 
@@ -500,7 +499,7 @@ func ValidateDateRange(from, to string) error {
 		return validationError("to", "to must be YYYY-MM-DD")
 	}
 	if toDate.Before(fromDate) {
-		return validationError("to", fmt.Sprintf("to must not be before %s", from))
+		return validationError("to", "to must not be before "+from)
 	}
 	return nil
 }

@@ -3,7 +3,6 @@ package service
 import (
 	"context"
 	"errors"
-	"fmt"
 	"slices"
 	"sort"
 
@@ -274,8 +273,4 @@ func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 func isNotFound(err error) bool {
 	var notFound *model.NotFoundError
 	return errors.As(err, &notFound)
-}
-
-func wrapAction(action string, err error) error {
-	return fmt.Errorf("%s: %w", action, err)
 }

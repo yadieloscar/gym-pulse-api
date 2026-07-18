@@ -19,8 +19,8 @@ func (r *trainingProfileRepoStub) Get(context.Context, uuid.UUID) (*model.Traini
 	if r.profile == nil {
 		return nil, &model.NotFoundError{Message: "not found"}
 	}
-	copy := *r.profile
-	return &copy, nil
+	profileCopy := *r.profile
+	return &profileCopy, nil
 }
 
 func (r *trainingProfileRepoStub) Put(_ context.Context, userID uuid.UUID, profile *model.TrainingProfile, revision int64) error {

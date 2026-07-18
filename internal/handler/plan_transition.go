@@ -1,10 +1,11 @@
 package handler
 
 import (
+	"net/http"
+
 	"github.com/gym-pulse/gym-pulse-api/internal/middleware"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
-	"net/http"
 )
 
 type PlanTransitionHandler struct{ svc service.PlanTransitionService }
