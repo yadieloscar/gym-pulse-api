@@ -207,12 +207,12 @@ func (r *logDAO) RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs [
 		return []model.SetPerf{}, nil
 	}
 	rows, err := r.pool.Query(ctx, `
-		SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, to_char(dl.date, 'YYYY-MM-DD')
-		FROM set_logs sl
-		JOIN day_logs dl ON dl.id = sl.day_log_id
-		WHERE dl.user_id = $1 AND sl.exercise_id = ANY($2)
-		  AND sl.completed = true
-		  AND sl.actual_weight IS NOT NULL AND sl.actual_reps IS NOT NULL AND sl.actual_reps > 0`,
+		SELECT exercise_id, actual_weight, actual_reps, to_char(date, 'YYYY-MM-DD') FROM (
+		  SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, dl.date FROM set_logs sl JOIN day_logs dl ON dl.id=sl.day_log_id WHERE dl.user_id=$1 AND sl.completed=true
+		  UNION ALL
+		  SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, ws.date FROM set_logs sl JOIN workout_sessions ws ON ws.id=sl.workout_session_id WHERE ws.user_id=$1 AND ws.status <> 'discarded' AND sl.completed=true
+		) performed
+		WHERE exercise_id = ANY($2) AND actual_weight IS NOT NULL AND actual_reps IS NOT NULL AND actual_reps > 0`,
 		userID, exerciseIDs,
 	)
 	if err != nil {
@@ -239,14 +239,17 @@ func (r *logDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exercise
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		WITH ranked AS (
-			SELECT sl.exercise_id, to_char(dl.date, 'YYYY-MM-DD') AS date, sl.set_index,
+		WITH performed AS (
+			SELECT sl.exercise_id, dl.date, sl.set_index, sl.target_reps, sl.target_weight, sl.actual_reps, sl.actual_weight, sl.duration_seconds, sl.completed FROM set_logs sl JOIN day_logs dl ON dl.id=sl.day_log_id WHERE dl.user_id=$1
+			UNION ALL
+			SELECT sl.exercise_id, ws.date, sl.set_index, sl.target_reps, sl.target_weight, sl.actual_reps, sl.actual_weight, sl.duration_seconds, sl.completed FROM set_logs sl JOIN workout_sessions ws ON ws.id=sl.workout_session_id WHERE ws.user_id=$1 AND ws.status <> 'discarded'
+		), ranked AS (
+			SELECT exercise_id, to_char(date, 'YYYY-MM-DD') AS date, set_index,
 			       sl.target_reps, sl.target_weight, sl.actual_reps, sl.actual_weight,
 			       sl.duration_seconds, sl.completed,
-			       DENSE_RANK() OVER (PARTITION BY sl.exercise_id ORDER BY dl.date DESC) AS rnk
-			FROM set_logs sl
-			JOIN day_logs dl ON dl.id = sl.day_log_id
-			WHERE dl.user_id = $1 AND sl.exercise_id = ANY($2) AND sl.completed = true
+			       DENSE_RANK() OVER (PARTITION BY exercise_id ORDER BY date DESC) AS rnk
+			FROM performed sl
+			WHERE exercise_id = ANY($2) AND completed = true
 		)
 		SELECT exercise_id, date, set_index, target_reps, target_weight,
 		       actual_reps, actual_weight, duration_seconds, completed

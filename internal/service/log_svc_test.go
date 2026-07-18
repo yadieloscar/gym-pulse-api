@@ -14,7 +14,7 @@ import (
 func TestLogService_ListByWeek(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
-	todayStr := time.Now().Format("2006-01-02")
+	todayStr := model.UTCToday().Format("2006-01-02")
 
 	t.Run("success", func(t *testing.T) {
 		mockSummaries := []model.DayLogSummary{
@@ -488,7 +488,7 @@ func TestLogService_Update(t *testing.T) {
 func TestLogService_Delete(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
-	todayStr := time.Now().Format("2006-01-02")
+	todayStr := model.UTCToday().Format("2006-01-02")
 
 	t.Run("success", func(t *testing.T) {
 		deleteCalled := false
@@ -525,6 +525,23 @@ func TestLogService_Delete(t *testing.T) {
 		err := svc.Delete(ctx, userID, "invalid-date")
 		if err == nil {
 			t.Fatal("expected error, got nil")
+		}
+	})
+
+	t.Run("historical workout is immutable", func(t *testing.T) {
+		called := false
+		repo := &MockLogDAO{DeleteFunc: func(context.Context, uuid.UUID, string) error {
+			called = true
+			return nil
+		}}
+		svc := NewLogService(repo, &MockTemplateDAO{}, validator.New())
+		err := svc.Delete(ctx, userID, "2020-01-01")
+		var conflict *model.ConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("want ConflictError, got %v", err)
+		}
+		if called {
+			t.Fatal("historical delete reached persistence")
 		}
 	})
 }

@@ -5,14 +5,16 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
 type apiError struct {
-	Error   string `json:"error"`
-	Code    string `json:"code,omitempty"`
-	Details any    `json:"details,omitempty"`
+	Error    string `json:"error"`
+	Code     string `json:"code,omitempty"`
+	Details  any    `json:"details,omitempty"`
+	Resource any    `json:"resource,omitempty"`
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
@@ -48,7 +50,18 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 	var conflict *model.ConflictError
 	if errors.As(err, &conflict) {
-		writeError(w, http.StatusConflict, conflict.Message, "CONFLICT", nil)
+		code := "CONFLICT"
+		var details any
+		switch {
+		case conflict.Actual > 0:
+			code = "REVISION_CONFLICT"
+			details = map[string]int64{"expected_revision": conflict.Expected, "actual_revision": conflict.Actual}
+		case strings.Contains(conflict.Message, "idempotency"):
+			code = "IDEMPOTENCY_CONFLICT"
+		case strings.Contains(conflict.Message, "active session"):
+			code = "ACTIVE_SESSION_CONFLICT"
+		}
+		writeJSON(w, http.StatusConflict, apiError{Error: conflict.Message, Code: code, Details: details, Resource: conflict.Authoritative})
 		return
 	}
 

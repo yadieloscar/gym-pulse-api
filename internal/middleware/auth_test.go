@@ -9,14 +9,29 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+type middlewareRoundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f middlewareRoundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) { return f(req) }
+
+func installHTTPResponse(t *testing.T, status int, body string) {
+	t.Helper()
+	previous := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: middlewareRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: status, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	t.Cleanup(func() { http.DefaultClient = previous })
+}
 
 func TestAuthMiddleware_Symmetric(t *testing.T) {
 	secret := "test-secret-key"
@@ -178,16 +193,10 @@ func TestAuthMiddleware_AsymmetricJWKS(t *testing.T) {
 		t.Fatalf("failed to marshal JWKS: %v", err)
 	}
 
-	// Start local JWKS server
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		w.Write(jwksJSON)
-	}))
-	defer srv.Close()
+	installHTTPResponse(t, http.StatusOK, string(jwksJSON))
 
 	userID := uuid.New().String()
-	middleware := AuthMiddleware("", srv.URL)
+	middleware := AuthMiddleware("", "https://jwks.example.test")
 	nextHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		uid := MustGetUserID(r.Context())
 		if uid.String() != userID {
@@ -320,7 +329,8 @@ func TestAuthMiddleware_AsymmetricJWKS(t *testing.T) {
 	})
 
 	t.Run("JWKS server status error", func(t *testing.T) {
-		errMiddleware := AuthMiddleware("", srv.URL+"/non-existent")
+		installHTTPResponse(t, http.StatusInternalServerError, "")
+		errMiddleware := AuthMiddleware("", "https://jwks-error.example.test")
 		errHandler := errMiddleware(nextHandler)
 
 		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
@@ -362,13 +372,8 @@ func TestAuthMiddleware_AsymmetricJWKS(t *testing.T) {
 	})
 
 	t.Run("JWKS decode error (invalid json)", func(t *testing.T) {
-		badJSONSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusOK)
-			w.Write([]byte("invalid json"))
-		}))
-		defer badJSONSrv.Close()
-
-		errMiddleware := AuthMiddleware("", badJSONSrv.URL)
+		installHTTPResponse(t, http.StatusOK, "invalid json")
+		errMiddleware := AuthMiddleware("", "https://bad-jwks.example.test")
 		errHandler := errMiddleware(nextHandler)
 
 		token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{

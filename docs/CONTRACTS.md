@@ -66,6 +66,416 @@ Body — **all fields optional** (uses `omitempty`):
 
 ---
 
+## Goal-based training
+
+These resources use UUID identity. Dates are filters and snapshot attributes,
+never mutation URLs. Every owned-resource lookup is scoped to the authenticated
+user; a missing or foreign UUID returns the same `404` shape.
+
+All mutations below require `Idempotency-Key: <stable client operation key>`.
+The identical key and identical JSON payload returns the originally stored
+status/body. Reusing a key with a different payload returns:
+```json
+{
+  "error": "idempotency key was already used with a different payload",
+  "code": "IDEMPOTENCY_CONFLICT",
+  "details": { "operation_key": "op-uuid-or-client-stable-string" }
+}
+```
+Revisioned mutation bodies also carry `expected_revision` (`0` only when
+creating a singleton training profile, otherwise ≥1). A stale revision returns:
+```json
+{
+  "error": "resource revision conflict",
+  "code": "REVISION_CONFLICT",
+  "details": { "expected_revision": 3, "actual_revision": 4 },
+  "resource": { "id": "<uuid>", "revision": 4 }
+}
+```
+Both conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
+`404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
+`{"error":"string","code":"CODE","details":{}}` shape.
+
+### Training profile
+
+#### `GET /api/v1/training-profile`
+
+Response 200:
+```json
+{
+  "primary_goal": "general_health|strength|hypertrophy|conditioning|power|body_composition",
+  "available_days": [1, 3, 5],
+  "usual_activity": "sedentary|light|moderate|high",
+  "experience": "beginner|intermediate|advanced",
+  "equipment": ["bodyweight|bands|dumbbells|barbell|machines|cardio_machine|full_gym"],
+  "session_duration_minutes": 60,
+  "timezone": "America/New_York",
+  "preferences": {},
+  "revision": 1,
+  "created_at": "<RFC3339>",
+  "updated_at": "<RFC3339>"
+}
+```
+
+No saved profile returns `404 NOT_FOUND`; clients then create it with revision
+0. `available_days` contains 1..7 unique ISO weekdays (Monday=1), duration is
+20..120, equipment values are unique, and `timezone` must be an IANA name.
+
+#### `PUT /api/v1/training-profile`
+
+Partial body; omitted profile fields retain their value. The merged complete
+profile is validated. First creation must still supply every profile field.
+```json
+{
+  "primary_goal": "strength",
+  "available_days": [1, 3, 5],
+  "usual_activity": "moderate",
+  "experience": "intermediate",
+  "equipment": ["barbell", "dumbbells"],
+  "session_duration_minutes": 60,
+  "timezone": "America/New_York",
+  "preferences": {},
+  "expected_revision": 0
+}
+```
+Response 200 is the full training-profile shape at its authoritative revision.
+
+### Starter programs
+
+#### `GET /api/v1/starter-programs`
+
+Optional filters: `primary_goal`, `available_days` (1..7),
+`available_weekdays` (comma-separated unique ISO weekdays), `usual_activity`,
+`experience`, `equipment` (comma-separated canonical values), and
+`session_duration_minutes` (20..120). Matching goal and constraints rank first;
+the response remains a catalog, not medical advice. Response 200:
+```json
+{
+  "starter_programs": [{
+    "id": "<uuid>", "slug": "strength-3-day", "version": 2,
+    "name": "Three-day Strength", "description": "string",
+    "primary_goal": "strength", "min_days": 3, "max_days": 4,
+    "experience": ["beginner", "intermediate"],
+    "equipment": ["barbell"], "duration_minutes": 60,
+    "rationale": "string", "roadmap": {},
+    "workouts": [{
+      "id": "<uuid>", "name": "Full Body A", "preferred_weekday": 1,
+      "sequence_position": 1,
+      "exercises": [{
+        "id": "<uuid>", "catalog_id": "<uuid|null>",
+        "name": "Back Squat", "category": "legs", "modality": "strength",
+        "exercise_order": 1, "target_sets": 3, "target_reps": 5,
+        "target_weight": null, "target_duration_seconds": null,
+        "rest_seconds": 180, "notes": null
+      }]
+    }]
+  }]
+}
+```
+The list is `[]`, never `null`. Catalog versions are immutable; choosing one
+copies it and later starter updates never change a user program.
+
+### Programs
+
+#### `GET /api/v1/programs`
+
+Response 200: `{ "programs": [Program] }`, where `Program` is:
+```json
+{
+  "id": "<uuid>", "starter_program_id": "<uuid|null>",
+  "starter_version": 2, "name": "My Strength Plan", "primary_goal": "strength",
+  "roadmap": {}, "active": true, "revision": 1,
+  "workouts": [{
+    "id": "<uuid>", "name": "Full Body A", "preferred_weekday": 1,
+    "sequence_position": 1,
+    "exercises": [{
+      "id": "<uuid>", "catalog_id": "<uuid|null>",
+      "source_starter_exercise_id": "<uuid|null>", "name": "Back Squat",
+      "category": "legs", "modality": "strength", "exercise_order": 1,
+      "target_sets": 3, "target_reps": 5, "target_weight": null,
+      "target_duration_seconds": null, "rest_seconds": 180, "notes": null
+    }]
+  }],
+  "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+#### `GET /api/v1/programs/{id}`
+
+Response 200: one full `Program`. Foreign/missing ID → 404.
+
+#### `POST /api/v1/programs`
+
+Creates a custom owned program. Body is `name`, `primary_goal`, optional
+`roadmap`, and one or more `workouts` using the nested shape above but omitting
+server IDs/source fields. Response 201: full `Program`.
+
+#### `POST /api/v1/programs/from-starter`
+
+```json
+{
+  "starter_program_id": "<uuid>", "starter_version": 2,
+  "name": "optional override", "operation_key": "choose-starter-123"
+}
+```
+`operation_key` must equal the `Idempotency-Key` header. Response 201: the
+owned copied `Program`. Unknown ID/version → 404; key/payload mismatch → 409.
+
+#### `PUT /api/v1/programs/{id}`
+
+Full replacement body: `name`, `primary_goal`, `roadmap`, `active`, `workouts`,
+and `expected_revision`. Response 200: full authoritative `Program`. Replacing
+the program never changes already materialized scheduled workouts.
+
+#### `POST /api/v1/programs/adopt-legacy`
+
+```json
+{ "operation_key": "adopt-legacy-123", "expected_revision": 0 }
+```
+Idempotently copies owned legacy templates/weekly assignments to one program and
+the next eligible future week. It never deletes legacy rows. Response 200 is
+`{"program":Program,"schedule":[ScheduledWorkout],"adopted":true}`; replay may
+return `adopted:false` with the same authoritative resources.
+
+### Schedule and scheduled workouts
+
+#### `GET /api/v1/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Both bounds are required and inclusive. Response 200:
+```json
+{ "scheduled_workouts": [ScheduledWorkout] }
+```
+`ScheduledWorkout` is:
+```json
+{
+  "id": "<uuid>", "program_id": "<uuid|null>",
+  "program_workout_id": "<uuid|null>", "date": "2026-07-20",
+  "name": "Full Body A", "sequence_position": 1,
+  "status": "planned|in_progress|completed|incomplete|missed",
+  "finalized_at": "<RFC3339|null>", "revision": 3,
+  "required_sets": [{
+    "id": "<uuid>", "program_exercise_id": "<uuid|null>",
+    "catalog_id": "<uuid|null>", "exercise_name": "Back Squat",
+    "exercise_category": "legs", "exercise_modality": "strength",
+    "exercise_order": 1, "set_index": 1, "target_reps": 5,
+    "target_weight": null, "target_duration_seconds": null,
+    "rest_seconds": 180, "notes": null, "checked": false,
+    "performed_set_id": null, "actual_reps": null,
+    "actual_weight": null, "actual_duration_seconds": null
+  }],
+  "extra_sets": [PerformedSet],
+  "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+Exercise name/category/modality and targets are immutable snapshots. Nullable
+program/catalog IDs are provenance only and deletion never erases history.
+
+#### `POST /api/v1/schedule/materialize`
+
+```json
+{
+  "program_id": "<uuid>", "from": "2026-07-20", "to": "2026-07-26",
+  "operation_key": "materialize-week-123", "expected_revision": 4
+}
+```
+Response 201: `{ "scheduled_workouts": [ScheduledWorkout] }`. A matching replay
+returns the stored result and cannot advance the program sequence twice.
+
+#### `POST /api/v1/schedule/regenerate`
+
+Preview body:
+```json
+{
+  "program_id": "<uuid>", "from": "2026-07-27", "to": "2026-08-09",
+  "apply": false, "operation_key": "regen-preview-123", "expected_revision": 4
+}
+```
+Response 200:
+```json
+{
+  "preview_token": "opaque", "retained_from": "2026-07-27",
+  "retained_to": "2026-07-29", "replaced_from": "2026-07-30",
+  "replaced_to": "2026-08-09", "scheduled_workouts": [ScheduledWorkout]
+}
+```
+Apply repeats the body with `apply:true` and `preview_token`. It atomically
+replaces only unstarted future work. Any active session → 409
+`ACTIVE_SESSION_CONFLICT` with the authoritative session in `resource`.
+
+#### `POST /api/v1/plan-transitions/preview`
+
+Previews a primary-goal/profile change together with its target program and
+dated replacement. It is read-only and authenticated.
+```json
+{
+  "proposed_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "intermediate",
+    "equipment": ["barbell"], "session_duration_minutes": 60,
+    "timezone": "America/New_York", "preferences": {}
+  },
+  "program_id": "<owned-program-uuid|null>",
+  "starter_program_id": "<starter-uuid|null>", "starter_version": 2,
+  "from": "2026-07-20", "to": "2026-08-02"
+}
+```
+When no program/starter is supplied, the highest-ranked goal-matching starter
+is selected. Response 200 contains `preview_token`, `proposed_profile`, the full
+`target_program`, nullable `recommended_starter_program`, nullable
+`first_affected_date`, and `scheduled_workouts`. Materialization uses the exact
+ISO weekdays in `proposed_profile.available_days`.
+
+#### `POST /api/v1/plan-transitions/apply`
+
+Repeats the exact preview request and adds `preview_token`, `operation_key`, and
+`expected_profile_revision`; the operation key must match `Idempotency-Key`.
+The server verifies the opaque preview, then atomically saves the profile,
+deactivates the prior plan, activates exactly one target plan, and replaces
+only unstarted workouts in the requested range. A stale preview or profile
+revision returns 409. A matching replay returns the authoritative target plan.
+
+#### `POST /api/v1/schedule/recover`
+
+```json
+{ "date": "2026-07-21", "operation_key": "recover-123" }
+```
+Explicitly creates a new planned occurrence on the requested date from the
+earliest unresolved missed sequence item. The missed historical occurrence is
+not moved or rewritten. Response 201 is the new `ScheduledWorkout`; no missed
+workout returns 404.
+
+#### `PATCH /api/v1/scheduled-workouts/{id}`
+
+Body contains optional `name` and full `required_sets`, plus `operation_key` and
+`expected_revision`. Response 200: full `ScheduledWorkout`. The edit affects
+only this date snapshot. A past finalized workout cannot be deleted; this API
+does not expose a scheduled-workout delete route.
+
+#### `PUT /api/v1/scheduled-workouts/{id}/sets/{set_id}`
+
+```json
+{
+  "operation_key": "check-set-123", "expected_revision": 3,
+  "actual_reps": 5, "actual_weight": 185,
+  "duration_seconds": null, "completed": true
+}
+```
+Response 200: authoritative `ScheduledWorkout`. Before finalization zero checked
+sets is `planned`, some is `in_progress`; extra sets never alter this count.
+The returned required set restores its nullable `actual_reps`, `actual_weight`,
+and `actual_duration_seconds` from the performed set.
+
+#### `PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target`
+
+```json
+{
+  "target_reps": 3, "target_weight": 200,
+  "target_duration_seconds": null, "rest_seconds": 180, "notes": null,
+  "operation_key": "target-edit-123", "expected_revision": 4
+}
+```
+Updates one dated scheduled-set target without replacing set identity or
+changing the program/template. Response 200 is the authoritative workout.
+Revision conflicts return 409. If the workout was already finalized, its
+derived status remains one of `completed|incomplete|missed`, never a live state.
+
+#### `POST /api/v1/scheduled-workouts/{id}/extra-sets`
+
+```json
+{
+  "operation_key": "extra-set-123", "expected_revision": 4,
+  "exercise_id": "<uuid|null>", "exercise_name": "Push-Up",
+  "exercise_category": "push", "exercise_modality": "strength",
+  "set_index": 1, "actual_reps": 20, "actual_weight": null,
+  "duration_seconds": null, "completed": true
+}
+```
+Response 201: authoritative `ScheduledWorkout`; the returned set always has
+`is_extra:true` and `scheduled_set_id:null`.
+
+#### `POST /api/v1/scheduled-workouts/{id}/complete`
+
+```json
+{ "operation_key": "complete-workout-123", "expected_revision": 5 }
+```
+Response 200: finalized `ScheduledWorkout`. All required sets → `completed`,
+some → `incomplete`, none → `missed`. Clients cannot submit a status directly.
+
+### Workout sessions
+
+#### `GET /api/v1/workout-sessions?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response 200: `{ "workout_sessions": [WorkoutSession] }`. Multiple UUIDs may
+share a date. `WorkoutSession` is:
+```json
+{
+  "id": "<uuid>", "scheduled_workout_id": "<uuid|null>",
+  "date": "2026-07-20", "name": "Evening accessories",
+  "status": "draft|active|completed|discarded", "notes": null,
+  "started_at": "<RFC3339|null>", "completed_at": "<RFC3339|null>",
+  "revision": 2,
+  "sets": [{
+    "id": "<uuid>", "scheduled_set_id": "<uuid|null>",
+    "exercise_id": "<uuid|null>", "is_extra": true,
+    "exercise_name": "Push-Up", "exercise_category": "push",
+    "exercise_modality": "strength", "set_index": 1,
+    "target_reps": null, "target_weight": null, "actual_reps": 20,
+    "actual_weight": null, "duration_seconds": null, "completed": true,
+    "operation_key": "extra-set-123", "revision": 1
+  }],
+  "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+#### `POST /api/v1/workout-sessions`
+
+```json
+{
+  "scheduled_workout_id": "<uuid|null>", "date": "2026-07-20",
+  "name": "Off-plan workout", "notes": null,
+  "operation_key": "session-123", "expected_revision": 0
+}
+```
+Response 201: full `WorkoutSession`. Null `scheduled_workout_id` is off-plan and
+never rewrites the plan. A foreign scheduled workout ID → 404.
+
+#### `GET /api/v1/workout-sessions/{id}`
+
+Response 200: full `WorkoutSession`.
+
+#### `PATCH /api/v1/workout-sessions/{id}`
+
+Optional `name`, `notes`, and `status`, plus required `operation_key` and
+`expected_revision`. Response 200: full authoritative session. Past sessions
+cannot be deleted; only a current-day unfinalized draft may become `discarded`.
+
+### Participation
+
+#### `GET /api/v1/participation?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response 200:
+```json
+{
+  "participation": [{
+    "id": "<uuid>", "date": "2026-07-20",
+    "scheduled_opportunity": true, "participated": true,
+    "finalized_at": "<RFC3339>", "timezone": "America/New_York",
+    "local_date": "2026-07-20", "revision": 1
+  }]
+}
+```
+Participation is server-derived and has no public write route. Any performed set
+on a scheduled day yields `participated:true`, even when the planned workout is
+missed. Zero performed sets yields false. Rest/unscheduled dates are neutral and
+omitted. Finalized timezone/date basis is immutable.
+
+Completing an off-plan workout preserves participation for that local date but
+does not rewrite a missed scheduled outcome. Stats, record, history, and volume
+queries union legacy day logs with UUID workout sessions; an off-plan session is
+counted as its own performed workout while weekly participation remains date-based.
+
+---
+
 ## Exercise catalog (read-only v1)
 
 ### `GET /api/v1/exercises` (optional `?category=<type_id>`)
@@ -233,7 +643,11 @@ Response 200:
 **Counting semantics:** `rest`-type day logs are logged intent, not workouts.
 They are excluded from `this_week.completed`, the week streak, the day
 streak, and `total_workouts` (this matches the client mock's behavior).
-A day with no non-rest log never extends a streak.
+For goal-based training, the participation streak counts consecutive finalized
+scheduled opportunities with participation. Incomplete and completed outcomes
+count; a finalized missed opportunity without off-plan participation resets it.
+Rest and unscheduled dates are skipped rather than breaking the streak, and an
+unfinalized current opportunity does not yet extend or reset it.
 
 ### `GET /api/v1/stats/distribution`
 Response 200 — **wraps the array under a `types` key**:
