@@ -28,6 +28,22 @@ definitions:
       sort_order:
         type: integer
     type: object
+  model.CloneStarterProgramRequest:
+    properties:
+      name:
+        type: string
+      operation_key:
+        type: string
+      starter_program_id:
+        type: string
+      starter_version:
+        minimum: 1
+        type: integer
+    required:
+    - operation_key
+    - starter_program_id
+    - starter_version
+    type: object
   model.CreateBodyWeightRequest:
     properties:
       date:
@@ -115,6 +131,27 @@ definitions:
     required:
     - exercise_id
     type: object
+  model.CreateProgramRequest:
+    properties:
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      primary_goal:
+        type: string
+      roadmap:
+        additionalProperties: {}
+        type: object
+      workouts:
+        items:
+          $ref: '#/definitions/model.ProgramWorkout'
+        minItems: 1
+        type: array
+    required:
+    - name
+    - primary_goal
+    - workouts
+    type: object
   model.CreateSetLogRequest:
     properties:
       actual_reps:
@@ -156,6 +193,26 @@ definitions:
     - name
     - subtype_id
     - type_id
+    type: object
+  model.CreateWorkoutSessionRequest:
+    properties:
+      date:
+        type: string
+      expected_revision:
+        minimum: 0
+        type: integer
+      name:
+        type: string
+      notes:
+        type: string
+      operation_key:
+        type: string
+      scheduled_workout_id:
+        type: string
+    required:
+    - date
+    - name
+    - operation_key
     type: object
   model.DayLog:
     properties:
@@ -206,6 +263,25 @@ definitions:
       template_name:
         type: string
       type_id:
+        type: string
+    type: object
+  model.DayParticipation:
+    properties:
+      date:
+        type: string
+      finalized_at:
+        type: string
+      id:
+        type: string
+      local_date:
+        type: string
+      participated:
+        type: boolean
+      revision:
+        type: integer
+      scheduled_opportunity:
+        type: boolean
+      timezone:
         type: string
     type: object
   model.Exercise:
@@ -286,6 +362,132 @@ definitions:
       max_weight_reps:
         type: integer
     type: object
+  model.ExtraSetRequest:
+    properties:
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      completed:
+        type: boolean
+      duration_seconds:
+        type: integer
+      exercise_category:
+        type: string
+      exercise_id:
+        type: string
+      exercise_modality:
+        enum:
+        - strength
+        - cardio
+        type: string
+      exercise_name:
+        type: string
+      expected_revision:
+        minimum: 1
+        type: integer
+      operation_key:
+        type: string
+      set_index:
+        minimum: 1
+        type: integer
+    required:
+    - exercise_category
+    - exercise_modality
+    - exercise_name
+    - expected_revision
+    - operation_key
+    - set_index
+    type: object
+  model.MaterializeScheduleRequest:
+    properties:
+      expected_revision:
+        minimum: 1
+        type: integer
+      from:
+        type: string
+      operation_key:
+        type: string
+      program_id:
+        type: string
+      to:
+        type: string
+    required:
+    - expected_revision
+    - from
+    - operation_key
+    - program_id
+    - to
+    type: object
+  model.PatchScheduledWorkoutRequest:
+    properties:
+      expected_revision:
+        minimum: 1
+        type: integer
+      name:
+        type: string
+      operation_key:
+        type: string
+      required_sets:
+        items:
+          $ref: '#/definitions/model.ScheduledSet'
+        type: array
+    required:
+    - expected_revision
+    - operation_key
+    type: object
+  model.PatchWorkoutSessionRequest:
+    properties:
+      expected_revision:
+        minimum: 1
+        type: integer
+      name:
+        type: string
+      notes:
+        type: string
+      operation_key:
+        type: string
+      status:
+        type: string
+    required:
+    - expected_revision
+    - operation_key
+    type: object
+  model.PerformedSet:
+    properties:
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      completed:
+        type: boolean
+      duration_seconds:
+        type: integer
+      exercise_category:
+        type: string
+      exercise_id:
+        type: string
+      exercise_modality:
+        type: string
+      exercise_name:
+        type: string
+      id:
+        type: string
+      is_extra:
+        type: boolean
+      operation_key:
+        type: string
+      revision:
+        type: integer
+      scheduled_set_id:
+        type: string
+      set_index:
+        type: integer
+      target_reps:
+        type: integer
+      target_weight:
+        type: number
+    type: object
   model.PlanOverride:
     properties:
       date:
@@ -308,6 +510,78 @@ definitions:
           $ref: '#/definitions/model.WeeklyPlanDay'
         type: array
     type: object
+  model.Program:
+    properties:
+      active:
+        type: boolean
+      created_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      primary_goal:
+        type: string
+      revision:
+        type: integer
+      roadmap:
+        additionalProperties: {}
+        type: object
+      starter_program_id:
+        type: string
+      starter_version:
+        type: integer
+      updated_at:
+        type: string
+      workouts:
+        items:
+          $ref: '#/definitions/model.ProgramWorkout'
+        type: array
+    type: object
+  model.ProgramExercise:
+    properties:
+      catalog_id:
+        type: string
+      category:
+        type: string
+      exercise_order:
+        type: integer
+      id:
+        type: string
+      modality:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      rest_seconds:
+        type: integer
+      source_starter_exercise_id:
+        type: string
+      target_duration_seconds:
+        type: integer
+      target_reps:
+        type: integer
+      target_sets:
+        type: integer
+      target_weight:
+        type: number
+    type: object
+  model.ProgramWorkout:
+    properties:
+      exercises:
+        items:
+          $ref: '#/definitions/model.ProgramExercise'
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      preferred_weekday:
+        type: integer
+      sequence_position:
+        type: integer
+    type: object
   model.PutPlanOverrideRequest:
     properties:
       rest:
@@ -321,6 +595,130 @@ definitions:
         items:
           $ref: '#/definitions/model.WeeklyPlanDay'
         type: array
+    type: object
+  model.RegenerateScheduleRequest:
+    properties:
+      apply:
+        type: boolean
+      expected_revision:
+        minimum: 1
+        type: integer
+      from:
+        type: string
+      operation_key:
+        type: string
+      preview_token:
+        type: string
+      program_id:
+        type: string
+      to:
+        type: string
+    required:
+    - expected_revision
+    - from
+    - operation_key
+    - program_id
+    - to
+    type: object
+  model.RegenerateScheduleResponse:
+    properties:
+      preview_token:
+        type: string
+      replaced_from:
+        type: string
+      replaced_to:
+        type: string
+      retained_from:
+        type: string
+      retained_to:
+        type: string
+      scheduled_workouts:
+        items:
+          $ref: '#/definitions/model.ScheduledWorkout'
+        type: array
+    type: object
+  model.RevisionRequest:
+    properties:
+      expected_revision:
+        minimum: 1
+        type: integer
+      operation_key:
+        type: string
+    required:
+    - expected_revision
+    - operation_key
+    type: object
+  model.ScheduledSet:
+    properties:
+      actual_duration_seconds:
+        type: integer
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      catalog_id:
+        type: string
+      checked:
+        type: boolean
+      exercise_category:
+        type: string
+      exercise_modality:
+        type: string
+      exercise_name:
+        type: string
+      exercise_order:
+        type: integer
+      id:
+        type: string
+      notes:
+        type: string
+      performed_set_id:
+        type: string
+      program_exercise_id:
+        type: string
+      rest_seconds:
+        type: integer
+      set_index:
+        type: integer
+      target_duration_seconds:
+        type: integer
+      target_reps:
+        type: integer
+      target_weight:
+        type: number
+    type: object
+  model.ScheduledWorkout:
+    properties:
+      created_at:
+        type: string
+      date:
+        type: string
+      extra_sets:
+        items:
+          $ref: '#/definitions/model.PerformedSet'
+        type: array
+      finalized_at:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      program_id:
+        type: string
+      program_workout_id:
+        type: string
+      required_sets:
+        items:
+          $ref: '#/definitions/model.ScheduledSet'
+        type: array
+      revision:
+        type: integer
+      sequence_position:
+        type: integer
+      status:
+        type: string
+      updated_at:
+        type: string
     type: object
   model.SetLog:
     properties:
@@ -346,6 +744,63 @@ definitions:
     required:
     - exercise_id
     - set_index
+    type: object
+  model.SetMutationRequest:
+    properties:
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      completed:
+        type: boolean
+      duration_seconds:
+        type: integer
+      expected_revision:
+        minimum: 1
+        type: integer
+      operation_key:
+        type: string
+    required:
+    - expected_revision
+    - operation_key
+    type: object
+  model.StarterProgram:
+    properties:
+      description:
+        type: string
+      duration_minutes:
+        type: integer
+      equipment:
+        items:
+          type: string
+        type: array
+      experience:
+        items:
+          type: string
+        type: array
+      id:
+        type: string
+      max_days:
+        type: integer
+      min_days:
+        type: integer
+      name:
+        type: string
+      primary_goal:
+        type: string
+      rationale:
+        type: string
+      roadmap:
+        additionalProperties: {}
+        type: object
+      slug:
+        type: string
+      version:
+        type: integer
+      workouts:
+        items:
+          $ref: '#/definitions/model.ProgramWorkout'
+        type: array
     type: object
   model.StatsSummary:
     properties:
@@ -386,6 +841,36 @@ definitions:
       updated_at:
         type: string
     type: object
+  model.TrainingProfile:
+    properties:
+      available_days:
+        items:
+          type: integer
+        type: array
+      created_at:
+        type: string
+      equipment:
+        items:
+          type: string
+        type: array
+      experience:
+        type: string
+      preferences:
+        additionalProperties: {}
+        type: object
+      primary_goal:
+        type: string
+      revision:
+        type: integer
+      session_duration_minutes:
+        type: integer
+      timezone:
+        type: string
+      updated_at:
+        type: string
+      usual_activity:
+        type: string
+    type: object
   model.TypeDistribution:
     properties:
       count:
@@ -423,6 +908,60 @@ definitions:
       display_name:
         maxLength: 50
         minLength: 2
+        type: string
+    type: object
+  model.UpdateProgramRequest:
+    properties:
+      active:
+        type: boolean
+      expected_revision:
+        minimum: 1
+        type: integer
+      name:
+        maxLength: 200
+        minLength: 1
+        type: string
+      primary_goal:
+        type: string
+      roadmap:
+        additionalProperties: {}
+        type: object
+      workouts:
+        items:
+          $ref: '#/definitions/model.ProgramWorkout'
+        minItems: 1
+        type: array
+    required:
+    - expected_revision
+    - name
+    - primary_goal
+    - workouts
+    type: object
+  model.UpdateTrainingProfileRequest:
+    properties:
+      available_days:
+        items:
+          type: integer
+        type: array
+      equipment:
+        items:
+          type: string
+        type: array
+      expected_revision:
+        minimum: 0
+        type: integer
+      experience:
+        type: string
+      preferences:
+        additionalProperties: {}
+        type: object
+      primary_goal:
+        type: string
+      session_duration_minutes:
+        type: integer
+      timezone:
+        type: string
+      usual_activity:
         type: string
     type: object
   model.UserProfile:
@@ -478,6 +1017,35 @@ definitions:
       volume:
         type: number
       week_start:
+        type: string
+    type: object
+  model.WorkoutSession:
+    properties:
+      completed_at:
+        type: string
+      created_at:
+        type: string
+      date:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      revision:
+        type: integer
+      scheduled_workout_id:
+        type: string
+      sets:
+        items:
+          $ref: '#/definitions/model.PerformedSet'
+        type: array
+      started_at:
+        type: string
+      status:
+        type: string
+      updated_at:
         type: string
     type: object
   model.WorkoutTemplate:
@@ -929,6 +1497,24 @@ paths:
       summary: Update a day log
       tags:
       - logs
+  /api/v1/participation:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.DayParticipation'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List participation
+      tags:
+      - goal-training
   /api/v1/plan:
     get:
       description: 'Returns the recurring weekly plan plus per-date overrides in the
@@ -1163,6 +1749,275 @@ paths:
       summary: Update user profile
       tags:
       - profile
+  /api/v1/programs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.Program'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List programs
+      tags:
+      - goal-training
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Program
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Program'
+      security:
+      - BearerAuth: []
+      summary: Create program
+      tags:
+      - goal-training
+  /api/v1/programs/{id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Program'
+      security:
+      - BearerAuth: []
+      summary: Get program
+      tags:
+      - goal-training
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Program replacement
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Program'
+      security:
+      - BearerAuth: []
+      summary: Update program
+      tags:
+      - goal-training
+  /api/v1/programs/from-starter:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Starter selection
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CloneStarterProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Program'
+      security:
+      - BearerAuth: []
+      summary: Clone starter program
+      tags:
+      - goal-training
+  /api/v1/schedule:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.ScheduledWorkout'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List schedule
+      tags:
+      - goal-training
+  /api/v1/schedule/materialize:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Date range
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.MaterializeScheduleRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.ScheduledWorkout'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Materialize schedule
+      tags:
+      - goal-training
+  /api/v1/schedule/regenerate:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Regeneration
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RegenerateScheduleRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.RegenerateScheduleResponse'
+      security:
+      - BearerAuth: []
+      summary: Regenerate schedule
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Snapshot edit
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.PatchScheduledWorkoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Edit scheduled workout
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/complete:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Completion operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Complete scheduled workout
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/extra-sets:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Extra set
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.ExtraSetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Add extra set
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/sets/{set_id}:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Set result
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SetMutationRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Record required set
+      tags:
+      - goal-training
   /api/v1/settings:
     get:
       description: Returns the authenticated user's settings (weight unit, weekly
@@ -1220,6 +2075,24 @@ paths:
       summary: Update user settings
       tags:
       - settings
+  /api/v1/starter-programs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.StarterProgram'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List starter programs
+      tags:
+      - goal-training
   /api/v1/stats/distribution:
     get:
       description: Returns a breakdown of workout counts by type and subtype.
@@ -1491,6 +2364,118 @@ paths:
       summary: Update a workout template
       tags:
       - templates
+  /api/v1/training-profile:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TrainingProfile'
+      security:
+      - BearerAuth: []
+      summary: Get training profile
+      tags:
+      - goal-training
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Training profile update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateTrainingProfileRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.TrainingProfile'
+      security:
+      - BearerAuth: []
+      summary: Update training profile
+      tags:
+      - goal-training
+  /api/v1/workout-sessions:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.WorkoutSession'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List workout sessions
+      tags:
+      - goal-training
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Workout session
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateWorkoutSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.WorkoutSession'
+      security:
+      - BearerAuth: []
+      summary: Create workout session
+      tags:
+      - goal-training
+  /api/v1/workout-sessions/{id}:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WorkoutSession'
+      security:
+      - BearerAuth: []
+      summary: Get workout session
+      tags:
+      - goal-training
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Session patch
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.PatchWorkoutSessionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WorkoutSession'
+      security:
+      - BearerAuth: []
+      summary: Update workout session
+      tags:
+      - goal-training
   /health:
     get:
       description: Returns 200 when the server is up.

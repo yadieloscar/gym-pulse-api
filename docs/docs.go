@@ -652,6 +652,36 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/participation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "List participation",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.DayParticipation"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/plan": {
             "get": {
                 "security": [
@@ -1008,6 +1038,448 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/programs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "List programs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.Program"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Create program",
+                "parameters": [
+                    {
+                        "description": "Program",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.CreateProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Program"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/programs/from-starter": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Clone starter program",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Starter selection",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.CloneStarterProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Program"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/programs/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Get program",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Program"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Update program",
+                "parameters": [
+                    {
+                        "description": "Program replacement",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Program"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/schedule": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "List schedule",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.ScheduledWorkout"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/schedule/materialize": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Materialize schedule",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Date range",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.MaterializeScheduleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.ScheduledWorkout"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/schedule/regenerate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Regenerate schedule",
+                "parameters": [
+                    {
+                        "description": "Regeneration",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RegenerateScheduleRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.RegenerateScheduleResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Edit scheduled workout",
+                "parameters": [
+                    {
+                        "description": "Snapshot edit",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.PatchScheduledWorkoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/complete": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Complete scheduled workout",
+                "parameters": [
+                    {
+                        "description": "Completion operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/extra-sets": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Add extra set",
+                "parameters": [
+                    {
+                        "description": "Extra set",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.ExtraSetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/sets/{set_id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Record required set",
+                "parameters": [
+                    {
+                        "description": "Set result",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SetMutationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings": {
             "get": {
                 "security": [
@@ -1091,6 +1563,36 @@ const docTemplate = `{
                             "type": "object",
                             "additionalProperties": {
                                 "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/starter-programs": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "List starter programs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.StarterProgram"
+                                }
                             }
                         }
                     }
@@ -1516,6 +2018,192 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/training-profile": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Get training profile",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.TrainingProfile"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Update training profile",
+                "parameters": [
+                    {
+                        "description": "Training profile update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateTrainingProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.TrainingProfile"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workout-sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "List workout sessions",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.WorkoutSession"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Create workout session",
+                "parameters": [
+                    {
+                        "description": "Workout session",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.CreateWorkoutSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.WorkoutSession"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/workout-sessions/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Get workout session",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WorkoutSession"
+                        }
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Update workout session",
+                "parameters": [
+                    {
+                        "description": "Session patch",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.PatchWorkoutSessionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WorkoutSession"
+                        }
+                    }
+                }
+            }
+        },
         "/health": {
             "get": {
                 "description": "Returns 200 when the server is up.",
@@ -1581,6 +2269,29 @@ const docTemplate = `{
                 },
                 "sort_order": {
                     "type": "integer"
+                }
+            }
+        },
+        "model.CloneStarterProgramRequest": {
+            "type": "object",
+            "required": [
+                "operation_key",
+                "starter_program_id",
+                "starter_version"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "starter_program_id": {
+                    "type": "string"
+                },
+                "starter_version": {
+                    "type": "integer",
+                    "minimum": 1
                 }
             }
         },
@@ -1712,6 +2423,35 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CreateProgramRequest": {
+            "type": "object",
+            "required": [
+                "name",
+                "primary_goal",
+                "workouts"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "workouts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramWorkout"
+                    }
+                }
+            }
+        },
         "model.CreateSetLogRequest": {
             "type": "object",
             "required": [
@@ -1769,6 +2509,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.CreateWorkoutSessionRequest": {
+            "type": "object",
+            "required": [
+                "date",
+                "name",
+                "operation_key"
+            ],
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "scheduled_workout_id": {
                     "type": "string"
                 }
             }
@@ -1846,6 +2615,35 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.DayParticipation": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "finalized_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "local_date": {
+                    "type": "string"
+                },
+                "participated": {
+                    "type": "boolean"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "scheduled_opportunity": {
+                    "type": "boolean"
+                },
+                "timezone": {
                     "type": "string"
                 }
             }
@@ -1968,6 +2766,189 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExtraSetRequest": {
+            "type": "object",
+            "required": [
+                "exercise_category",
+                "exercise_modality",
+                "exercise_name",
+                "expected_revision",
+                "operation_key",
+                "set_index"
+            ],
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "exercise_category": {
+                    "type": "string"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "exercise_modality": {
+                    "type": "string",
+                    "enum": [
+                        "strength",
+                        "cardio"
+                    ]
+                },
+                "exercise_name": {
+                    "type": "string"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "set_index": {
+                    "type": "integer",
+                    "minimum": 1
+                }
+            }
+        },
+        "model.MaterializeScheduleRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "from",
+                "operation_key",
+                "program_id",
+                "to"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "from": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "program_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.PatchScheduledWorkoutRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "required_sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ScheduledSet"
+                    }
+                }
+            }
+        },
+        "model.PatchWorkoutSessionRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.PerformedSet": {
+            "type": "object",
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "exercise_category": {
+                    "type": "string"
+                },
+                "exercise_id": {
+                    "type": "string"
+                },
+                "exercise_modality": {
+                    "type": "string"
+                },
+                "exercise_name": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "is_extra": {
+                    "type": "boolean"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "scheduled_set_id": {
+                    "type": "string"
+                },
+                "set_index": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
         "model.PlanOverride": {
             "type": "object",
             "required": [
@@ -2002,6 +2983,115 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Program": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "starter_program_id": {
+                    "type": "string"
+                },
+                "starter_version": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramWorkout"
+                    }
+                }
+            }
+        },
+        "model.ProgramExercise": {
+            "type": "object",
+            "properties": {
+                "catalog_id": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "exercise_order": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "modality": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "rest_seconds": {
+                    "type": "integer"
+                },
+                "source_starter_exercise_id": {
+                    "type": "string"
+                },
+                "target_duration_seconds": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_sets": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.ProgramWorkout": {
+            "type": "object",
+            "properties": {
+                "exercises": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramExercise"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "preferred_weekday": {
+                    "type": "integer"
+                },
+                "sequence_position": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.PutPlanOverrideRequest": {
             "type": "object",
             "properties": {
@@ -2021,6 +3111,191 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.WeeklyPlanDay"
                     }
+                }
+            }
+        },
+        "model.RegenerateScheduleRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "from",
+                "operation_key",
+                "program_id",
+                "to"
+            ],
+            "properties": {
+                "apply": {
+                    "type": "boolean"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "from": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "preview_token": {
+                    "type": "string"
+                },
+                "program_id": {
+                    "type": "string"
+                },
+                "to": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.RegenerateScheduleResponse": {
+            "type": "object",
+            "properties": {
+                "preview_token": {
+                    "type": "string"
+                },
+                "replaced_from": {
+                    "type": "string"
+                },
+                "replaced_to": {
+                    "type": "string"
+                },
+                "retained_from": {
+                    "type": "string"
+                },
+                "retained_to": {
+                    "type": "string"
+                },
+                "scheduled_workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ScheduledWorkout"
+                    }
+                }
+            }
+        },
+        "model.RevisionRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ScheduledSet": {
+            "type": "object",
+            "properties": {
+                "actual_duration_seconds": {
+                    "type": "integer"
+                },
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "catalog_id": {
+                    "type": "string"
+                },
+                "checked": {
+                    "type": "boolean"
+                },
+                "exercise_category": {
+                    "type": "string"
+                },
+                "exercise_modality": {
+                    "type": "string"
+                },
+                "exercise_name": {
+                    "type": "string"
+                },
+                "exercise_order": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "performed_set_id": {
+                    "type": "string"
+                },
+                "program_exercise_id": {
+                    "type": "string"
+                },
+                "rest_seconds": {
+                    "type": "integer"
+                },
+                "set_index": {
+                    "type": "integer"
+                },
+                "target_duration_seconds": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.ScheduledWorkout": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "extra_sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PerformedSet"
+                    }
+                },
+                "finalized_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "program_id": {
+                    "type": "string"
+                },
+                "program_workout_id": {
+                    "type": "string"
+                },
+                "required_sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ScheduledSet"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "sequence_position": {
+                    "type": "integer"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -2058,6 +3333,91 @@ const docTemplate = `{
                 },
                 "target_weight": {
                     "type": "number"
+                }
+            }
+        },
+        "model.SetMutationRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "completed": {
+                    "type": "boolean"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.StarterProgram": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "duration_minutes": {
+                    "type": "integer"
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "experience": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_days": {
+                    "type": "integer"
+                },
+                "min_days": {
+                    "type": "integer"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "slug": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "integer"
+                },
+                "workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramWorkout"
+                    }
                 }
             }
         },
@@ -2121,6 +3481,51 @@ const docTemplate = `{
                 }
             }
         },
+        "model.TrainingProfile": {
+            "type": "object",
+            "properties": {
+                "available_days": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "experience": {
+                    "type": "string"
+                },
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "session_duration_minutes": {
+                    "type": "integer"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "usual_activity": {
+                    "type": "string"
+                }
+            }
+        },
         "model.TypeDistribution": {
             "type": "object",
             "properties": {
@@ -2177,6 +3582,83 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 50,
                     "minLength": 2
+                }
+            }
+        },
+        "model.UpdateProgramRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "name",
+                "primary_goal",
+                "workouts"
+            ],
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "name": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "minLength": 1
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "workouts": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramWorkout"
+                    }
+                }
+            }
+        },
+        "model.UpdateTrainingProfileRequest": {
+            "type": "object",
+            "properties": {
+                "available_days": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 0
+                },
+                "experience": {
+                    "type": "string"
+                },
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "session_duration_minutes": {
+                    "type": "integer"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "usual_activity": {
+                    "type": "string"
                 }
             }
         },
@@ -2258,6 +3740,50 @@ const docTemplate = `{
                     "type": "number"
                 },
                 "week_start": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.WorkoutSession": {
+            "type": "object",
+            "properties": {
+                "completed_at": {
+                    "type": "string"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "scheduled_workout_id": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PerformedSet"
+                    }
+                },
+                "started_at": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                },
+                "updated_at": {
                     "type": "string"
                 }
             }
