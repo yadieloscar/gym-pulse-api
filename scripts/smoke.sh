@@ -11,7 +11,7 @@
 #      extra sets → incomplete outcome → participation remains separate
 #
 # Requirements:
-#   - API container running on :8080 (see gym-pulse-dev-loop skill)
+#   - API container running on :8080 (see README local development instructions)
 #   - SUPABASE_JWKS_URL **must be unset** in the container, or this script
 #     can't authenticate with an HMAC test JWT. Temporary override:
 #
