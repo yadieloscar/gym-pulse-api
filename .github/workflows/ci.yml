@@ -123,6 +123,12 @@ jobs:
           done
           [ "$code" = "200" ] || { docker compose -f docker-compose.ci.yml logs api; exit 1; }
 
+      - name: Seed smoke auth user
+        run: |
+          docker compose -f docker-compose.ci.yml exec -T db \
+            psql -U gympulse -d gympulse -v ON_ERROR_STOP=1 \
+            -c "INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-000000000001') ON CONFLICT (id) DO NOTHING;"
+
       - name: Run smoke
         run: ./scripts/smoke.sh
 

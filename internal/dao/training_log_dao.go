@@ -121,11 +121,11 @@ func (r *workoutSessionDAO) Create(ctx context.Context, userID uuid.UUID, s *mod
 	err := r.pool.QueryRow(ctx, `
 		INSERT INTO workout_sessions (
 			user_id, scheduled_workout_id, date, name, status, notes, started_at, completed_at)
-		SELECT $1, sw.id, $3, $4, $5, $6, $7, $8
+		SELECT $1, sw.id, $3::date, $4, $5, $6, $7::timestamptz, $8::timestamptz
 		FROM scheduled_workouts sw
 		WHERE sw.id=$2 AND sw.user_id=$1
 		UNION ALL
-		SELECT $1, NULL, $3, $4, $5, $6, $7, $8 WHERE $2::uuid IS NULL
+		SELECT $1, NULL, $3::date, $4, $5, $6, $7::timestamptz, $8::timestamptz WHERE $2::uuid IS NULL
 		RETURNING id, revision, created_at, updated_at`,
 		userID, s.ScheduledWorkoutID, s.Date, s.Name, s.Status, s.Notes, s.StartedAt, s.CompletedAt,
 	).Scan(&s.ID, &s.Revision, &s.CreatedAt, &s.UpdatedAt)
@@ -211,7 +211,7 @@ func (r *performedSetDAO) PutRequired(ctx context.Context, userID, sessionID, sc
 	}
 
 	err = tx.QueryRow(ctx, `
-		SELECT ss.catalog_id, ss.exercise_name, ss.exercise_category, ss.exercise_modality,
+		SELECT NULL::uuid, ss.exercise_name, ss.exercise_category, ss.exercise_modality,
 		       ss.set_index, ss.target_reps, ss.target_weight
 		FROM scheduled_sets ss
 		JOIN scheduled_workouts sw ON sw.id=ss.scheduled_workout_id
