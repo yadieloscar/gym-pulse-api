@@ -14,7 +14,7 @@ import (
 func TestLogService_ListByWeek(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
-	todayStr := time.Now().Format("2006-01-02")
+	todayStr := model.UTCToday().Format("2006-01-02")
 
 	t.Run("success", func(t *testing.T) {
 		mockSummaries := []model.DayLogSummary{
@@ -488,7 +488,7 @@ func TestLogService_Update(t *testing.T) {
 func TestLogService_Delete(t *testing.T) {
 	ctx := context.Background()
 	userID := uuid.New()
-	todayStr := time.Now().Format("2006-01-02")
+	todayStr := model.UTCToday().Format("2006-01-02")
 
 	t.Run("success", func(t *testing.T) {
 		deleteCalled := false

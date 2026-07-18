@@ -28,6 +28,7 @@ func New(
 	trainingProfileHandler *handler.TrainingProfileHandler,
 	programHandler *handler.ProgramHandler,
 	scheduleHandler *handler.ScheduleHandler,
+	planTransitionHandler *handler.PlanTransitionHandler,
 	workoutSessionHandler *handler.WorkoutSessionHandler,
 	participationHandler *handler.ParticipationHandler,
 ) http.Handler {
@@ -63,9 +64,13 @@ func New(
 			r.Get("/schedule", scheduleHandler.List)
 			r.Post("/schedule/materialize", scheduleHandler.Materialize)
 			r.Post("/schedule/regenerate", scheduleHandler.Regenerate)
+			r.Post("/schedule/recover", scheduleHandler.Recover)
+			r.Post("/plan-transitions/preview", planTransitionHandler.Preview)
+			r.Post("/plan-transitions/apply", planTransitionHandler.Apply)
 			r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
 				r.Patch("/", scheduleHandler.Patch)
 				r.Put("/sets/{set_id}", scheduleHandler.PutSet)
+				r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 				r.Post("/extra-sets", scheduleHandler.AddExtra)
 				r.Post("/complete", scheduleHandler.Complete)
 			})

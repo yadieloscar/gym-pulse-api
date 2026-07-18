@@ -78,6 +78,14 @@ func (h *ProgramHandler) ListStarters(w http.ResponseWriter, r *http.Request) {
 	if raw := r.URL.Query().Get("available_days"); raw != "" {
 		filter.AvailableDays, _ = strconv.Atoi(raw)
 	}
+	if raw := r.URL.Query().Get("available_weekdays"); raw != "" {
+		for _, value := range strings.Split(raw, ",") {
+			if day, err := strconv.Atoi(value); err == nil {
+				filter.AvailableWeekdays = append(filter.AvailableWeekdays, day)
+			}
+		}
+	}
+	filter.UsualActivity = r.URL.Query().Get("usual_activity")
 	if raw := r.URL.Query().Get("session_duration_minutes"); raw != "" {
 		filter.SessionDurationMinutes, _ = strconv.Atoi(raw)
 	}
@@ -209,6 +217,15 @@ func (h *ScheduleHandler) Materialize(w http.ResponseWriter, r *http.Request) {
 	respond(w, map[string]any{"scheduled_workouts": resources}, err, http.StatusCreated)
 }
 
+func (h *ScheduleHandler) Recover(w http.ResponseWriter, r *http.Request) {
+	var req model.RecoverScheduledWorkoutRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.RecoverToday(r.Context(), middleware.MustGetUserID(r.Context()), req)
+	respond(w, resource, err, http.StatusCreated)
+}
+
 // Regenerate previews or applies replacement of unstarted future snapshots.
 // @Summary Regenerate schedule
 // @Tags goal-training
@@ -272,6 +289,23 @@ func (h *ScheduleHandler) PutSet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resource, err := h.svc.PutRequiredSet(r.Context(), middleware.MustGetUserID(r.Context()), workoutID, setID, req)
+	respond(w, resource, err, http.StatusOK)
+}
+
+func (h *ScheduleHandler) PatchSetTarget(w http.ResponseWriter, r *http.Request) {
+	workoutID, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	setID, ok := pathUUID(w, r, "set_id")
+	if !ok {
+		return
+	}
+	var req model.PatchScheduledSetTargetRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.PatchSetTarget(r.Context(), middleware.MustGetUserID(r.Context()), workoutID, setID, req)
 	respond(w, resource, err, http.StatusOK)
 }
 

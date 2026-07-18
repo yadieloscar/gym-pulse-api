@@ -20,6 +20,8 @@ type ScheduleService interface {
 	Materialize(ctx context.Context, userID uuid.UUID, req model.MaterializeScheduleRequest) ([]model.ScheduledWorkout, error)
 	Regenerate(ctx context.Context, userID uuid.UUID, req model.RegenerateScheduleRequest) (*model.RegenerateScheduleResponse, error)
 	PatchWorkout(ctx context.Context, userID, workoutID uuid.UUID, req model.PatchScheduledWorkoutRequest) (*model.ScheduledWorkout, error)
+	PatchSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.PatchScheduledSetTargetRequest) (*model.ScheduledWorkout, error)
+	RecoverToday(ctx context.Context, userID uuid.UUID, req model.RecoverScheduledWorkoutRequest) (*model.ScheduledWorkout, error)
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.SetMutationRequest) (*model.ScheduledWorkout, error)
 	AddExtraSet(ctx context.Context, userID, workoutID uuid.UUID, req model.ExtraSetRequest) (*model.ScheduledWorkout, error)
 	Complete(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
@@ -49,11 +51,13 @@ type scheduleService struct {
 }
 
 type workoutSessionService struct {
-	sessions    dao.WorkoutSessionDAO
-	schedules   dao.ScheduleDAO
-	idempotency dao.IdempotencyDAO
-	validator   *validator.Validate
-	now         func() time.Time
+	sessions      dao.WorkoutSessionDAO
+	schedules     dao.ScheduleDAO
+	idempotency   dao.IdempotencyDAO
+	participation dao.ParticipationDAO
+	profiles      dao.TrainingProfileDAO
+	validator     *validator.Validate
+	now           func() time.Time
 }
 
 type participationService struct {
@@ -65,8 +69,8 @@ func NewScheduleService(schedules dao.ScheduleDAO, programs dao.ProgramDAO, prof
 	return &scheduleService{schedules: schedules, programs: programs, profiles: profiles, sessions: sessions, sets: sets, participation: participation, idempotency: idempotency, validator: v, now: time.Now}
 }
 
-func NewWorkoutSessionService(sessions dao.WorkoutSessionDAO, schedules dao.ScheduleDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) WorkoutSessionService {
-	return &workoutSessionService{sessions: sessions, schedules: schedules, idempotency: idempotency, validator: v, now: time.Now}
+func NewWorkoutSessionService(sessions dao.WorkoutSessionDAO, schedules dao.ScheduleDAO, participation dao.ParticipationDAO, profiles dao.TrainingProfileDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) WorkoutSessionService {
+	return &workoutSessionService{sessions: sessions, schedules: schedules, participation: participation, profiles: profiles, idempotency: idempotency, validator: v, now: time.Now}
 }
 
 func NewParticipationService(schedule ScheduleService, participation dao.ParticipationDAO) ParticipationService {
@@ -115,7 +119,11 @@ func (s *scheduleService) Materialize(ctx context.Context, userID uuid.UUID, req
 	if program.Revision != req.ExpectedRevision {
 		return nil, &model.ConflictError{Message: "program revision conflict", Expected: req.ExpectedRevision, Actual: program.Revision, Authoritative: program}
 	}
-	workouts, err := materializeProgram(program, req.From, req.To)
+	profile, err := s.profiles.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	workouts, err := model.MaterializeProgramForWeekdays(program, profile.AvailableDays, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
@@ -142,7 +150,11 @@ func (s *scheduleService) Regenerate(ctx context.Context, userID uuid.UUID, req 
 	if program.Revision != req.ExpectedRevision {
 		return nil, &model.ConflictError{Message: "program revision conflict", Expected: req.ExpectedRevision, Actual: program.Revision, Authoritative: program}
 	}
-	workouts, err := materializeProgram(program, req.From, req.To)
+	profile, err := s.profiles.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	workouts, err := model.MaterializeProgramForWeekdays(program, profile.AvailableDays, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +214,85 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 		return nil, err
 	}
 	return s.schedules.Get(ctx, userID, workoutID)
+}
+
+func (s *scheduleService) PatchSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.PatchScheduledSetTargetRequest) (*model.ScheduledWorkout, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "invalid scheduled set target", Field: "body"}
+	}
+	if err := s.schedules.UpdateSetTarget(ctx, userID, workoutID, setID, req); err != nil {
+		return nil, err
+	}
+	return s.schedules.Get(ctx, userID, workoutID)
+}
+
+func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, req model.RecoverScheduledWorkoutRequest) (*model.ScheduledWorkout, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "invalid recovery request", Field: "body"}
+	}
+	if _, err := model.ParseDate(req.Date); err != nil {
+		return nil, &model.ValidationError{Message: "date must be YYYY-MM-DD", Field: "date"}
+	}
+	hash, err := hashPayload(req)
+	if err != nil {
+		return nil, err
+	}
+	if replay, err := s.idempotency.Get(ctx, userID, "schedule/recover", req.OperationKey); err == nil {
+		if replay.RequestHash != hash {
+			return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+		}
+		if replay.ResourceID == nil {
+			return nil, &model.ConflictError{Message: "idempotency record has no recovery workout"}
+		}
+		return s.schedules.Get(ctx, userID, *replay.ResourceID)
+	} else if !isNotFound(err) {
+		return nil, err
+	}
+	missed, err := s.schedules.List(ctx, userID, "0001-01-01", req.Date)
+	if err != nil {
+		return nil, err
+	}
+	var source *model.ScheduledWorkout
+	for i := range missed {
+		if missed[i].Status == model.WorkoutStatusMissed && (source == nil || sequenceBefore(&missed[i], source)) {
+			source = &missed[i]
+		}
+	}
+	if source == nil {
+		return nil, &model.NotFoundError{Message: "no missed workout to recover"}
+	}
+	copy := *source
+	copy.ID = uuid.Nil
+	copy.Date = req.Date
+	copy.Status = model.WorkoutStatusPlanned
+	copy.FinalizedAt = nil
+	copy.Revision = 0
+	copy.CreatedAt = time.Time{}
+	copy.UpdatedAt = time.Time{}
+	copy.ExtraSets = []model.PerformedSet{}
+	copy.RequiredSets = append([]model.ScheduledSet(nil), source.RequiredSets...)
+	for i := range copy.RequiredSets {
+		copy.RequiredSets[i].ID = uuid.Nil
+		copy.RequiredSets[i].Checked = false
+		copy.RequiredSets[i].PerformedSetID = nil
+		copy.RequiredSets[i].ActualReps = nil
+		copy.RequiredSets[i].ActualWeight = nil
+		copy.RequiredSets[i].ActualDurationSeconds = nil
+	}
+	if err := s.schedules.Create(ctx, userID, []model.ScheduledWorkout{copy}); err != nil {
+		return nil, err
+	}
+	if err := recordResource(ctx, s.idempotency, userID, "schedule/recover", req.OperationKey, hash, "scheduled_workout", copy.ID, copy.Revision); err != nil {
+		return nil, err
+	}
+	return s.schedules.Get(ctx, userID, copy.ID)
+}
+
+func sequenceBefore(a, b *model.ScheduledWorkout) bool {
+	if a.SequencePosition != nil && b.SequencePosition != nil && *a.SequencePosition != *b.SequencePosition {
+		return *a.SequencePosition < *b.SequencePosition
+	}
+	return a.Date < b.Date
 }
 
 func (s *scheduleService) PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.SetMutationRequest) (*model.ScheduledWorkout, error) {
@@ -290,16 +381,28 @@ func (s *scheduleService) refreshLiveStatus(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	checked := checkedCount(w.RequiredSets)
-	if checked == 0 {
-		w.Status = model.WorkoutStatusPlanned
-	} else {
-		w.Status = model.WorkoutStatusInProgress
-	}
+	w.Status = deriveScheduledStatus(w.RequiredSets, w.FinalizedAt != nil)
 	if err := s.schedules.UpdateOutcome(ctx, userID, w, prior.Revision); err != nil {
 		return nil, err
 	}
 	return s.schedules.Get(ctx, userID, prior.ID)
+}
+
+func deriveScheduledStatus(sets []model.ScheduledSet, finalized bool) string {
+	checked := checkedCount(sets)
+	if finalized && len(sets) > 0 && checked == len(sets) {
+		return model.WorkoutStatusCompleted
+	}
+	if finalized && checked > 0 {
+		return model.WorkoutStatusIncomplete
+	}
+	if finalized {
+		return model.WorkoutStatusMissed
+	}
+	if checked > 0 {
+		return model.WorkoutStatusInProgress
+	}
+	return model.WorkoutStatusPlanned
 }
 
 func (s *scheduleService) lazyFinalize(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout) error {
@@ -326,14 +429,7 @@ func (s *scheduleService) finalize(ctx context.Context, userID uuid.UUID, w *mod
 		return w, nil
 	}
 	checked := checkedCount(w.RequiredSets)
-	switch {
-	case len(w.RequiredSets) > 0 && checked == len(w.RequiredSets):
-		w.Status = model.WorkoutStatusCompleted
-	case checked > 0:
-		w.Status = model.WorkoutStatusIncomplete
-	default:
-		w.Status = model.WorkoutStatusMissed
-	}
+	w.Status = deriveScheduledStatus(w.RequiredSets, true)
 	now := s.now().UTC()
 	w.FinalizedAt = &now
 	if err := s.schedules.UpdateOutcome(ctx, userID, w, w.Revision); err != nil {
@@ -367,42 +463,17 @@ func checkedCount(sets []model.ScheduledSet) int {
 }
 
 func materializeProgram(p *model.Program, from, to string) ([]model.ScheduledWorkout, error) {
-	start, err := model.ParseDate(from)
-	if err != nil {
-		return nil, &model.ValidationError{Message: "from must be YYYY-MM-DD", Field: "from"}
-	}
-	end, err := model.ParseDate(to)
-	if err != nil {
-		return nil, &model.ValidationError{Message: "to must be YYYY-MM-DD", Field: "to"}
-	}
-	result := []model.ScheduledWorkout{}
-	for date := start; !date.After(end); date = date.AddDate(0, 0, 1) {
-		isoDay := int(date.Weekday())
-		if isoDay == 0 {
-			isoDay = 7
-		}
-		for i := range p.Workouts {
-			pw := &p.Workouts[i]
-			if pw.PreferredWeekday == nil || *pw.PreferredWeekday != isoDay {
-				continue
-			}
-			programID, workoutID, sequence := p.ID, pw.ID, pw.SequencePosition
-			w := model.ScheduledWorkout{ProgramID: &programID, ProgramWorkoutID: &workoutID, Date: date.Format("2006-01-02"), Name: pw.Name, SequencePosition: &sequence, Status: model.WorkoutStatusPlanned, RequiredSets: snapshotSets(pw.Exercises), ExtraSets: []model.PerformedSet{}}
-			result = append(result, w)
+	days := []int{}
+	for _, workout := range p.Workouts {
+		if workout.PreferredWeekday != nil {
+			days = append(days, *workout.PreferredWeekday)
 		}
 	}
-	return result, nil
+	return model.MaterializeProgramForWeekdays(p, days, from, to)
 }
 
 func snapshotSets(exercises []model.ProgramExercise) []model.ScheduledSet {
-	sets := []model.ScheduledSet{}
-	for _, exercise := range exercises {
-		for index := 1; index <= exercise.TargetSets; index++ {
-			exerciseID := exercise.ID
-			sets = append(sets, model.ScheduledSet{ProgramExerciseID: &exerciseID, CatalogID: exercise.CatalogID, ExerciseName: exercise.Name, ExerciseCategory: exercise.Category, ExerciseModality: exercise.Modality, ExerciseOrder: exercise.ExerciseOrder, SetIndex: index, TargetReps: exercise.TargetReps, TargetWeight: exercise.TargetWeight, TargetDurationSeconds: exercise.TargetDurationSeconds, RestSeconds: exercise.RestSeconds, Notes: exercise.Notes})
-		}
-	}
-	return sets
+	return model.SnapshotScheduledSets(exercises)
 }
 
 func (s *workoutSessionService) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.WorkoutSession, error) {
@@ -461,9 +532,24 @@ func (s *workoutSessionService) Patch(ctx context.Context, userID, sessionID uui
 			return nil, &model.ValidationError{Message: "unknown workout session status", Field: "status"}
 		}
 		session.Status = *req.Status
+		if *req.Status == "completed" {
+			now := s.now().UTC()
+			session.CompletedAt = &now
+		}
 	}
 	if err := s.sessions.Update(ctx, userID, session, req.ExpectedRevision); err != nil {
 		return nil, err
+	}
+	if session.Status == "completed" {
+		profile, err := s.profiles.Get(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+		now := s.now().UTC()
+		outcome := &model.DayParticipation{Date: session.Date, ScheduledOpportunity: session.ScheduledWorkoutID != nil, Participated: true, FinalizedAt: now, Timezone: profile.Timezone, LocalDate: session.Date}
+		if err := s.participation.Preserve(ctx, userID, outcome); err != nil {
+			return nil, err
+		}
 	}
 	return s.sessions.Get(ctx, userID, sessionID)
 }

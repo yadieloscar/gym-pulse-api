@@ -144,9 +144,11 @@ Response 200 is the full training-profile shape at its authoritative revision.
 
 #### `GET /api/v1/starter-programs`
 
-Optional filters: `primary_goal`, `available_days` (1..7), `experience`,
-`equipment` (comma-separated canonical values), and
-`session_duration_minutes` (20..120). Response 200:
+Optional filters: `primary_goal`, `available_days` (1..7),
+`available_weekdays` (comma-separated unique ISO weekdays), `usual_activity`,
+`experience`, `equipment` (comma-separated canonical values), and
+`session_duration_minutes` (20..120). Matching goal and constraints rank first;
+the response remains a catalog, not medical advice. Response 200:
 ```json
 {
   "starter_programs": [{
@@ -258,7 +260,8 @@ Both bounds are required and inclusive. Response 200:
     "exercise_order": 1, "set_index": 1, "target_reps": 5,
     "target_weight": null, "target_duration_seconds": null,
     "rest_seconds": 180, "notes": null, "checked": false,
-    "performed_set_id": null
+    "performed_set_id": null, "actual_reps": null,
+    "actual_weight": null, "actual_duration_seconds": null
   }],
   "extra_sets": [PerformedSet],
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
@@ -299,6 +302,48 @@ Apply repeats the body with `apply:true` and `preview_token`. It atomically
 replaces only unstarted future work. Any active session → 409
 `ACTIVE_SESSION_CONFLICT` with the authoritative session in `resource`.
 
+#### `POST /api/v1/plan-transitions/preview`
+
+Previews a primary-goal/profile change together with its target program and
+dated replacement. It is read-only and authenticated.
+```json
+{
+  "proposed_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "intermediate",
+    "equipment": ["barbell"], "session_duration_minutes": 60,
+    "timezone": "America/New_York", "preferences": {}
+  },
+  "program_id": "<owned-program-uuid|null>",
+  "starter_program_id": "<starter-uuid|null>", "starter_version": 2,
+  "from": "2026-07-20", "to": "2026-08-02"
+}
+```
+When no program/starter is supplied, the highest-ranked goal-matching starter
+is selected. Response 200 contains `preview_token`, `proposed_profile`, the full
+`target_program`, nullable `recommended_starter_program`, nullable
+`first_affected_date`, and `scheduled_workouts`. Materialization uses the exact
+ISO weekdays in `proposed_profile.available_days`.
+
+#### `POST /api/v1/plan-transitions/apply`
+
+Repeats the exact preview request and adds `preview_token`, `operation_key`, and
+`expected_profile_revision`; the operation key must match `Idempotency-Key`.
+The server verifies the opaque preview, then atomically saves the profile,
+deactivates the prior plan, activates exactly one target plan, and replaces
+only unstarted workouts in the requested range. A stale preview or profile
+revision returns 409. A matching replay returns the authoritative target plan.
+
+#### `POST /api/v1/schedule/recover`
+
+```json
+{ "date": "2026-07-21", "operation_key": "recover-123" }
+```
+Explicitly creates a new planned occurrence on the requested date from the
+earliest unresolved missed sequence item. The missed historical occurrence is
+not moved or rewritten. Response 201 is the new `ScheduledWorkout`; no missed
+workout returns 404.
+
 #### `PATCH /api/v1/scheduled-workouts/{id}`
 
 Body contains optional `name` and full `required_sets`, plus `operation_key` and
@@ -317,6 +362,22 @@ does not expose a scheduled-workout delete route.
 ```
 Response 200: authoritative `ScheduledWorkout`. Before finalization zero checked
 sets is `planned`, some is `in_progress`; extra sets never alter this count.
+The returned required set restores its nullable `actual_reps`, `actual_weight`,
+and `actual_duration_seconds` from the performed set.
+
+#### `PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target`
+
+```json
+{
+  "target_reps": 3, "target_weight": 200,
+  "target_duration_seconds": null, "rest_seconds": 180, "notes": null,
+  "operation_key": "target-edit-123", "expected_revision": 4
+}
+```
+Updates one dated scheduled-set target without replacing set identity or
+changing the program/template. Response 200 is the authoritative workout.
+Revision conflicts return 409. If the workout was already finalized, its
+derived status remains one of `completed|incomplete|missed`, never a live state.
 
 #### `POST /api/v1/scheduled-workouts/{id}/extra-sets`
 
@@ -407,6 +468,11 @@ Participation is server-derived and has no public write route. Any performed set
 on a scheduled day yields `participated:true`, even when the planned workout is
 missed. Zero performed sets yields false. Rest/unscheduled dates are neutral and
 omitted. Finalized timezone/date basis is immutable.
+
+Completing an off-plan workout preserves participation for that local date but
+does not rewrite a missed scheduled outcome. Stats, record, history, and volume
+queries union legacy day logs with UUID workout sessions; an off-plan session is
+counted as its own performed workout while weekly participation remains date-based.
 
 ---
 
@@ -577,7 +643,11 @@ Response 200:
 **Counting semantics:** `rest`-type day logs are logged intent, not workouts.
 They are excluded from `this_week.completed`, the week streak, the day
 streak, and `total_workouts` (this matches the client mock's behavior).
-A day with no non-rest log never extends a streak.
+For goal-based training, the participation streak counts consecutive finalized
+scheduled opportunities with participation. Incomplete and completed outcomes
+count; a finalized missed opportunity without off-plan participation resets it.
+Rest and unscheduled dates are skipped rather than breaking the streak, and an
+unfinalized current opportunity does not yet extend or reset it.
 
 ### `GET /api/v1/stats/distribution`
 Response 200 — **wraps the array under a `types` key**:

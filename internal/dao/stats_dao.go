@@ -32,8 +32,12 @@ func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSta
 	// Rest days are logged intent, not workouts — they must not tick the
 	// weekly goal (and therefore the week streak).
 	err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM day_logs
-		WHERE user_id = $1 AND date BETWEEN $2 AND $3 AND type_id <> 'rest'`,
+		SELECT COUNT(*) FROM (
+		  SELECT date FROM day_logs WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND type_id <> 'rest'
+		  UNION
+		  SELECT date FROM workout_sessions ws WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND status <> 'discarded'
+		    AND (status='completed' OR EXISTS (SELECT 1 FROM set_logs sl WHERE sl.workout_session_id=ws.id AND sl.completed=true))
+		) performed_days`,
 		userID, weekStart, weekEnd,
 	).Scan(&count)
 	if err != nil {
@@ -45,7 +49,12 @@ func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSta
 func (r *statsDAO) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `
-		SELECT COUNT(*) FROM day_logs WHERE user_id = $1 AND type_id <> 'rest'`,
+		SELECT COUNT(*) FROM (
+		  SELECT 'legacy:' || id::text AS identity FROM day_logs WHERE user_id=$1 AND type_id <> 'rest'
+		  UNION ALL
+		  SELECT 'session:' || id::text FROM workout_sessions ws WHERE user_id=$1 AND status <> 'discarded'
+		    AND (status='completed' OR EXISTS (SELECT 1 FROM set_logs sl WHERE sl.workout_session_id=ws.id AND sl.completed=true))
+		) performed_workouts`,
 		userID,
 	).Scan(&count)
 	if err != nil {
@@ -104,39 +113,26 @@ func (r *statsDAO) GetDistribution(ctx context.Context, userID uuid.UUID) ([]mod
 func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx, `
-		WITH logged_dates AS (
-			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 AND type_id <> 'rest' ORDER BY date DESC
+		WITH opportunities AS (
+			SELECT local_date,
+			       BOOL_OR(participated) AS participated,
+			       ROW_NUMBER() OVER (ORDER BY local_date DESC) AS opportunity_number
+			FROM day_participation
+			WHERE user_id=$1 AND scheduled_opportunity=true AND finalized_at IS NOT NULL
+			GROUP BY local_date
 		),
-		streaks AS (
-			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
-			FROM logged_dates
+		first_miss AS (
+			SELECT MIN(opportunity_number) AS opportunity_number
+			FROM opportunities WHERE participated=false
 		)
-		SELECT COUNT(*) FROM streaks
-		WHERE grp = (SELECT grp FROM streaks WHERE date = CURRENT_DATE)`,
+		SELECT COUNT(*)
+		FROM opportunities, first_miss
+		WHERE opportunities.participated=true
+		  AND opportunities.opportunity_number < COALESCE(first_miss.opportunity_number, 9223372036854775807)`,
 		userID,
 	).Scan(&count)
 	if err != nil {
 		return 0, fmt.Errorf("calculating day streak: %w", err)
-	}
-	if count > 0 {
-		return count, nil
-	}
-
-	// If today has no log, check from yesterday.
-	err = r.pool.QueryRow(ctx, `
-		WITH logged_dates AS (
-			SELECT DISTINCT date FROM day_logs WHERE user_id = $1 AND type_id <> 'rest' ORDER BY date DESC
-		),
-		streaks AS (
-			SELECT date, date - (ROW_NUMBER() OVER (ORDER BY date DESC))::int AS grp
-			FROM logged_dates
-		)
-		SELECT COUNT(*) FROM streaks
-		WHERE grp = (SELECT grp FROM streaks WHERE date = CURRENT_DATE - 1)`,
-		userID,
-	).Scan(&count)
-	if err != nil {
-		return 0, fmt.Errorf("calculating day streak from yesterday: %w", err)
 	}
 	return count, nil
 }
@@ -145,12 +141,16 @@ func (r *statsDAO) GetDayStreak(ctx context.Context, userID uuid.UUID) (int, err
 // the given date, ordered oldest-first.
 func (r *statsDAO) GetWeeklyVolume(ctx context.Context, userID uuid.UUID, since time.Time) ([]model.WeeklyVolume, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT to_char(date_trunc('week', dl.date), 'YYYY-MM-DD') AS week_start,
-		       COALESCE(SUM(sl.actual_weight * sl.actual_reps), 0) AS volume
-		FROM set_logs sl
-		JOIN day_logs dl ON dl.id = sl.day_log_id
-		WHERE dl.user_id = $1 AND dl.date >= $2 AND sl.completed = true
-		  AND sl.actual_weight IS NOT NULL AND sl.actual_reps IS NOT NULL
+		SELECT to_char(date_trunc('week', performed.date), 'YYYY-MM-DD') AS week_start,
+		       COALESCE(SUM(performed.actual_weight * performed.actual_reps), 0) AS volume
+		FROM (
+		  SELECT dl.date, sl.actual_weight, sl.actual_reps FROM set_logs sl JOIN day_logs dl ON dl.id=sl.day_log_id
+		  WHERE dl.user_id=$1 AND dl.date >= $2 AND sl.completed=true
+		  UNION ALL
+		  SELECT ws.date, sl.actual_weight, sl.actual_reps FROM set_logs sl JOIN workout_sessions ws ON ws.id=sl.workout_session_id
+		  WHERE ws.user_id=$1 AND ws.date >= $2 AND ws.status <> 'discarded' AND sl.completed=true
+		) performed
+		WHERE performed.actual_weight IS NOT NULL AND performed.actual_reps IS NOT NULL
 		GROUP BY week_start
 		ORDER BY week_start`,
 		userID, since,

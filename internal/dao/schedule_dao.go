@@ -18,6 +18,7 @@ type ScheduleDAO interface {
 	Create(ctx context.Context, userID uuid.UUID, workouts []model.ScheduledWorkout) error
 	ReplaceSnapshot(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64) error
 	UpdateOutcome(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64) error
+	UpdateSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest) error
 	DeleteUnstartedRange(ctx context.Context, userID uuid.UUID, from, to string) ([]uuid.UUID, error)
 }
 
@@ -110,7 +111,8 @@ func (r *scheduleDAO) loadSets(ctx context.Context, userID uuid.UUID, w *model.S
 		       ss.exercise_category, ss.exercise_modality, ss.exercise_order,
 		       ss.set_index, ss.target_reps, ss.target_weight,
 		       ss.target_duration_seconds, ss.rest_seconds, ss.notes,
-		       (sl.id IS NOT NULL) AS checked, sl.id
+		       (sl.id IS NOT NULL) AS checked, sl.id,
+		       sl.actual_reps, sl.actual_weight, sl.duration_seconds
 		FROM scheduled_sets ss
 		JOIN scheduled_workouts sw ON sw.id=ss.scheduled_workout_id AND sw.user_id=$1
 		LEFT JOIN workout_sessions ws ON ws.scheduled_workout_id=sw.id AND ws.user_id=$1
@@ -129,7 +131,8 @@ func (r *scheduleDAO) loadSets(ctx context.Context, userID uuid.UUID, w *model.S
 			&s.ID, &s.ProgramExerciseID, &s.CatalogID, &s.ExerciseName,
 			&s.ExerciseCategory, &s.ExerciseModality, &s.ExerciseOrder, &s.SetIndex,
 			&s.TargetReps, &s.TargetWeight, &s.TargetDurationSeconds, &s.RestSeconds,
-			&s.Notes, &s.Checked, &s.PerformedSetID,
+			&s.Notes, &s.Checked, &s.PerformedSetID, &s.ActualReps,
+			&s.ActualWeight, &s.ActualDurationSeconds,
 		); err != nil {
 			return fmt.Errorf("scanning scheduled set: %w", err)
 		}
@@ -162,6 +165,45 @@ func (r *scheduleDAO) loadSets(ctx context.Context, userID uuid.UUID, w *model.S
 		w.ExtraSets = append(w.ExtraSets, s)
 	}
 	return extraRows.Err()
+}
+
+func (r *scheduleDAO) UpdateSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning scheduled set target update: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	var revision int64
+	err = tx.QueryRow(ctx, `SELECT revision FROM scheduled_workouts WHERE id=$1 AND user_id=$2 FOR UPDATE`, workoutID, userID).Scan(&revision)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &model.NotFoundError{Message: "scheduled workout not found"}
+	}
+	if err != nil {
+		return fmt.Errorf("locking scheduled workout: %w", err)
+	}
+	if revision != target.ExpectedRevision {
+		return &model.ConflictError{Message: "scheduled workout revision conflict", Expected: target.ExpectedRevision, Actual: revision}
+	}
+	result, err := tx.Exec(ctx, `
+		UPDATE scheduled_sets ss SET target_reps=$4, target_weight=$5,
+		       target_duration_seconds=$6, rest_seconds=$7, notes=$8
+		FROM scheduled_workouts sw
+		WHERE ss.id=$1 AND ss.scheduled_workout_id=$2 AND sw.id=$2 AND sw.user_id=$3`,
+		setID, workoutID, userID, target.TargetReps, target.TargetWeight,
+		target.TargetDurationSeconds, target.RestSeconds, target.Notes)
+	if err != nil {
+		return fmt.Errorf("updating scheduled set target: %w", err)
+	}
+	if result.RowsAffected() == 0 {
+		return &model.NotFoundError{Message: "scheduled set not found"}
+	}
+	if _, err := tx.Exec(ctx, `UPDATE scheduled_workouts SET revision=revision+1, updated_at=now() WHERE id=$1 AND user_id=$2`, workoutID, userID); err != nil {
+		return fmt.Errorf("advancing scheduled workout revision: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing scheduled set target update: %w", err)
+	}
+	return nil
 }
 
 func (r *scheduleDAO) Create(ctx context.Context, userID uuid.UUID, workouts []model.ScheduledWorkout) error {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sort"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -99,7 +100,63 @@ func (s *programService) ListStarters(ctx context.Context, filter model.StarterP
 	if filter.AvailableDays < 0 || filter.AvailableDays > 7 {
 		return nil, &model.ValidationError{Message: "available_days must be between 1 and 7", Field: "available_days"}
 	}
-	return s.starters.List(ctx, filter)
+	if filter.UsualActivity != "" && !slices.Contains(model.ValidActivityLevels, filter.UsualActivity) {
+		return nil, &model.ValidationError{Message: "unknown activity level", Field: "usual_activity"}
+	}
+	seen := map[int]bool{}
+	for _, day := range filter.AvailableWeekdays {
+		if day < 1 || day > 7 || seen[day] {
+			return nil, &model.ValidationError{Message: "available_weekdays must contain unique ISO weekdays", Field: "available_weekdays"}
+		}
+		seen[day] = true
+	}
+	programs, err := s.starters.List(ctx, filter)
+	if err != nil {
+		return nil, err
+	}
+	activityTarget := map[string]int{"sedentary": 35, "light": 45, "moderate": 60, "high": 75}[filter.UsualActivity]
+	sort.SliceStable(programs, func(i, j int) bool {
+		score := func(p model.StarterProgram) int {
+			value := 0
+			if filter.PrimaryGoal != "" && p.PrimaryGoal == filter.PrimaryGoal {
+				value += 100
+			}
+			if filter.AvailableDays > 0 && filter.AvailableDays >= p.MinDays && filter.AvailableDays <= p.MaxDays {
+				value += 30
+			}
+			if filter.Experience != "" && slices.Contains(p.Experience, filter.Experience) {
+				value += 20
+			}
+			if len(filter.Equipment) == 0 || len(p.Equipment) == 0 || allEquipmentAvailable(p.Equipment, filter.Equipment) {
+				value += 15
+			}
+			if filter.SessionDurationMinutes == 0 || p.DurationMinutes <= filter.SessionDurationMinutes {
+				value += 10
+			}
+			if activityTarget > 0 {
+				difference := p.DurationMinutes - activityTarget
+				if difference < 0 {
+					difference = -difference
+				}
+				value += max(0, 10-difference/5)
+			}
+			if len(filter.AvailableWeekdays) > 0 {
+				value += 5
+			}
+			return value
+		}
+		return score(programs[i]) > score(programs[j])
+	})
+	return programs, nil
+}
+
+func allEquipmentAvailable(required, available []string) bool {
+	for _, item := range required {
+		if !slices.Contains(available, item) && !slices.Contains(available, "full_gym") {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *programService) List(ctx context.Context, userID uuid.UUID) ([]model.Program, error) {

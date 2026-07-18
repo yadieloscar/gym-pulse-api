@@ -28,6 +28,7 @@ type PerformedSetDAO interface {
 type ParticipationDAO interface {
 	List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.DayParticipation, error)
 	Finalize(ctx context.Context, userID uuid.UUID, outcome *model.DayParticipation) error
+	Preserve(ctx context.Context, userID uuid.UUID, outcome *model.DayParticipation) error
 }
 
 type IdempotencyDAO interface {
@@ -210,13 +211,13 @@ func (r *performedSetDAO) PutRequired(ctx context.Context, userID, sessionID, sc
 	}
 
 	err = tx.QueryRow(ctx, `
-		SELECT ss.exercise_name, ss.exercise_category, ss.exercise_modality,
+		SELECT ss.catalog_id, ss.exercise_name, ss.exercise_category, ss.exercise_modality,
 		       ss.set_index, ss.target_reps, ss.target_weight
 		FROM scheduled_sets ss
 		JOIN scheduled_workouts sw ON sw.id=ss.scheduled_workout_id
 		JOIN workout_sessions ws ON ws.scheduled_workout_id=sw.id
 		WHERE ss.id=$1 AND ws.id=$2 AND ws.user_id=$3`, scheduledSetID, sessionID, userID).Scan(
-		&s.ExerciseName, &s.ExerciseCategory, &s.ExerciseModality, &s.SetIndex,
+		&s.ExerciseID, &s.ExerciseName, &s.ExerciseCategory, &s.ExerciseModality, &s.SetIndex,
 		&s.TargetReps, &s.TargetWeight,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -341,6 +342,17 @@ func (r *participationDAO) Finalize(ctx context.Context, userID uuid.UUID, o *mo
 		return fmt.Errorf("finalizing participation: %w", err)
 	}
 	return nil
+}
+
+func (r *participationDAO) Preserve(ctx context.Context, userID uuid.UUID, o *model.DayParticipation) error {
+	return r.pool.QueryRow(ctx, `
+		INSERT INTO day_participation (user_id, date, scheduled_opportunity, participated, finalized_at, timezone, local_date)
+		VALUES ($1,$2,$3,true,$4,$5,$6)
+		ON CONFLICT (user_id, date) DO UPDATE SET
+		  participated=true,
+		  scheduled_opportunity=day_participation.scheduled_opportunity OR EXCLUDED.scheduled_opportunity,
+		  revision=day_participation.revision+1
+		RETURNING id, revision`, userID, o.Date, o.ScheduledOpportunity, o.FinalizedAt, o.Timezone, o.LocalDate).Scan(&o.ID, &o.Revision)
 }
 
 func (r *idempotencyDAO) Get(ctx context.Context, userID uuid.UUID, scope, operationKey string) (*model.IdempotencyRecord, error) {

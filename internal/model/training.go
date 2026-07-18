@@ -129,6 +129,8 @@ type UpdateTrainingProfileRequest struct {
 type StarterProgramFilter struct {
 	PrimaryGoal            string
 	AvailableDays          int
+	AvailableWeekdays      []int
+	UsualActivity          string
 	Experience             string
 	Equipment              []string
 	SessionDurationMinutes int
@@ -261,6 +263,9 @@ type ScheduledSet struct {
 	Notes                 *string    `json:"notes,omitempty"`
 	Checked               bool       `json:"checked"`
 	PerformedSetID        *uuid.UUID `json:"performed_set_id,omitempty"`
+	ActualReps            *int       `json:"actual_reps"`
+	ActualWeight          *float64   `json:"actual_weight"`
+	ActualDurationSeconds *int       `json:"actual_duration_seconds"`
 }
 
 func (s ScheduledSet) Validate() error {
@@ -383,6 +388,61 @@ type PatchScheduledWorkoutRequest struct {
 	RequiredSets     *[]ScheduledSet `json:"required_sets,omitempty"`
 	OperationKey     string          `json:"operation_key" validate:"required"`
 	ExpectedRevision int64           `json:"expected_revision" validate:"required,min=1"`
+}
+
+type PatchScheduledSetTargetRequest struct {
+	TargetReps            *int     `json:"target_reps,omitempty"`
+	TargetWeight          *float64 `json:"target_weight,omitempty"`
+	TargetDurationSeconds *int     `json:"target_duration_seconds,omitempty"`
+	RestSeconds           *int     `json:"rest_seconds,omitempty"`
+	Notes                 *string  `json:"notes,omitempty"`
+	OperationKey          string   `json:"operation_key" validate:"required"`
+	ExpectedRevision      int64    `json:"expected_revision" validate:"required,min=1"`
+}
+
+type RecoverScheduledWorkoutRequest struct {
+	Date         string `json:"date" validate:"required"`
+	OperationKey string `json:"operation_key" validate:"required"`
+}
+
+type ProposedTrainingProfile struct {
+	PrimaryGoal            string         `json:"primary_goal"`
+	AvailableDays          []int          `json:"available_days"`
+	UsualActivity          string         `json:"usual_activity"`
+	Experience             string         `json:"experience"`
+	Equipment              []string       `json:"equipment"`
+	SessionDurationMinutes int            `json:"session_duration_minutes"`
+	Timezone               string         `json:"timezone"`
+	Preferences            map[string]any `json:"preferences"`
+}
+
+func (p ProposedTrainingProfile) TrainingProfile() TrainingProfile {
+	return TrainingProfile{PrimaryGoal: p.PrimaryGoal, AvailableDays: p.AvailableDays, UsualActivity: p.UsualActivity, Experience: p.Experience, Equipment: p.Equipment, SessionDurationMinutes: p.SessionDurationMinutes, Timezone: p.Timezone, Preferences: p.Preferences}
+}
+
+type PreviewPlanTransitionRequest struct {
+	ProposedProfile  ProposedTrainingProfile `json:"proposed_profile"`
+	ProgramID        *uuid.UUID              `json:"program_id,omitempty"`
+	StarterProgramID *uuid.UUID              `json:"starter_program_id,omitempty"`
+	StarterVersion   *int                    `json:"starter_version,omitempty"`
+	From             string                  `json:"from" validate:"required"`
+	To               string                  `json:"to" validate:"required"`
+}
+
+type ApplyPlanTransitionRequest struct {
+	PreviewPlanTransitionRequest
+	PreviewToken            string `json:"preview_token" validate:"required"`
+	OperationKey            string `json:"operation_key" validate:"required"`
+	ExpectedProfileRevision int64  `json:"expected_profile_revision" validate:"gte=0"`
+}
+
+type PlanTransitionPreview struct {
+	PreviewToken              string                  `json:"preview_token"`
+	ProposedProfile           ProposedTrainingProfile `json:"proposed_profile"`
+	TargetProgram             Program                 `json:"target_program"`
+	RecommendedStarterProgram *StarterProgram         `json:"recommended_starter_program"`
+	FirstAffectedDate         *string                 `json:"first_affected_date"`
+	ScheduledWorkouts         []ScheduledWorkout      `json:"scheduled_workouts"`
 }
 
 type CreateWorkoutSessionRequest struct {
