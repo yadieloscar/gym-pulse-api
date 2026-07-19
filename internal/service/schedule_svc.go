@@ -105,13 +105,15 @@ func (s *scheduleService) Materialize(ctx context.Context, userID uuid.UUID, req
 	if err != nil {
 		return nil, err
 	}
-	if replay, err := s.idempotency.Get(ctx, userID, "schedule/materialize", req.OperationKey); err == nil {
-		if replay.RequestHash != hash {
-			return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+	if _, atomic := s.schedules.(dao.IdempotentScheduleDAO); !atomic {
+		if replay, err := s.idempotency.Get(ctx, userID, "schedule/materialize", req.OperationKey); err == nil {
+			if replay.RequestHash != hash {
+				return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+			}
+			return s.schedules.List(ctx, userID, req.From, req.To)
+		} else if !isNotFound(err) {
+			return nil, err
 		}
-		return s.schedules.List(ctx, userID, req.From, req.To)
-	} else if !isNotFound(err) {
-		return nil, err
 	}
 	program, err := s.programs.Get(ctx, userID, req.ProgramID)
 	if err != nil {
@@ -127,6 +129,10 @@ func (s *scheduleService) Materialize(ctx context.Context, userID uuid.UUID, req
 	workouts, err := model.MaterializeProgramForWeekdays(program, profile.AvailableDays, req.From, req.To)
 	if err != nil {
 		return nil, err
+	}
+	if repo, ok := s.schedules.(dao.IdempotentScheduleDAO); ok {
+		result, _, err := repo.MaterializeIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, workouts, model.IdempotencyRecord{Scope: "schedule/materialize", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 201, ResourceType: "schedule"})
+		return result, err
 	}
 	if err := s.schedules.Create(ctx, userID, workouts); err != nil {
 		return nil, err
@@ -172,6 +178,14 @@ func (s *scheduleService) Regenerate(ctx context.Context, userID uuid.UUID, req 
 	}
 	if req.PreviewToken == "" || req.PreviewToken != token {
 		return nil, &model.ConflictError{Message: "regeneration preview is stale"}
+	}
+	if repo, ok := s.schedules.(dao.IdempotentScheduleDAO); ok {
+		hash, err := hashPayload(req)
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := repo.RegenerateIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, req.From, req.To, workouts, response, model.IdempotencyRecord{Scope: "schedule/regenerate", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 200, ResourceType: "schedule"})
+		return result, err
 	}
 	sessions, err := s.sessions.List(ctx, userID, req.From, req.To)
 	if err != nil {
@@ -237,6 +251,10 @@ func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, re
 	hash, err := hashPayload(req)
 	if err != nil {
 		return nil, err
+	}
+	if repo, ok := s.schedules.(dao.IdempotentScheduleDAO); ok {
+		result, _, err := repo.RecoverIdempotent(ctx, userID, req.Date, model.IdempotencyRecord{Scope: "schedule/recover", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 201, ResourceType: "scheduled_workout"})
+		return result, err
 	}
 	if replay, err := s.idempotency.Get(ctx, userID, "schedule/recover", req.OperationKey); err == nil {
 		if replay.RequestHash != hash {

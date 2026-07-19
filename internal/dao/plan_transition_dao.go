@@ -29,6 +29,12 @@ func (r *planTransitionDAO) Apply(ctx context.Context, userID uuid.UUID, expecte
 		return uuid.Nil, nil, false, fmt.Errorf("beginning plan transition: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return uuid.Nil, nil, false, err
+	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return uuid.Nil, nil, false, err
+	}
 	var priorHash string
 	var priorID *uuid.UUID
 	err = tx.QueryRow(ctx, `SELECT request_hash, resource_id FROM idempotency_records WHERE user_id=$1 AND scope='plan-transitions/apply' AND operation_key=$2`, userID, operationKey).Scan(&priorHash, &priorID)

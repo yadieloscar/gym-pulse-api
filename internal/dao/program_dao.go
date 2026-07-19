@@ -25,6 +25,10 @@ type ProgramDAO interface {
 	RecordLegacyAdoption(ctx context.Context, userID, programID uuid.UUID, operationKey string) error
 }
 
+type IdempotentProgramDAO interface {
+	CreateIdempotent(ctx context.Context, userID uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error)
+}
+
 type starterProgramDAO struct {
 	pool *pgxpool.Pool
 }
@@ -243,6 +247,14 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 		return fmt.Errorf("beginning program create: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return err
+	}
+	if p.Active {
+		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+			return fmt.Errorf("deactivating prior program: %w", err)
+		}
+	}
 
 	err = tx.QueryRow(ctx, `
 		INSERT INTO programs (user_id, starter_program_id, starter_version, name, primary_goal, roadmap, active)
@@ -262,12 +274,57 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 	return nil
 }
 
+func (r *programDAO) CreateIdempotent(ctx context.Context, userID uuid.UUID, p *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("beginning idempotent program create: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	var replay model.Program
+	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
+		return nil, false, err
+	} else if found {
+		return &replay, true, nil
+	}
+	if p.Active {
+		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+			return nil, false, fmt.Errorf("deactivating prior program: %w", err)
+		}
+	}
+	err = tx.QueryRow(ctx, `INSERT INTO programs (user_id, starter_program_id, starter_version, name, primary_goal, roadmap, active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, revision, created_at, updated_at`, userID, p.StarterProgramID, p.StarterVersion, p.Name, p.PrimaryGoal, p.Roadmap, p.Active).Scan(&p.ID, &p.Revision, &p.CreatedAt, &p.UpdatedAt)
+	if err != nil {
+		return nil, false, fmt.Errorf("inserting program: %w", err)
+	}
+	if err := insertProgramWorkouts(ctx, tx, p.ID, p.Workouts); err != nil {
+		return nil, false, err
+	}
+	record.ResourceID, record.ResourceRevision = &p.ID, &p.Revision
+	if err := insertIdempotency(ctx, tx, userID, record, p); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("committing idempotent program create: %w", err)
+	}
+	return p, false, nil
+}
+
 func (r *programDAO) Replace(ctx context.Context, userID uuid.UUID, p *model.Program, expectedRevision int64) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning program update: %w", err)
 	}
 	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return err
+	}
+	if p.Active {
+		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true AND id<>$2`, userID, p.ID); err != nil {
+			return fmt.Errorf("deactivating prior program: %w", err)
+		}
+	}
 
 	err = tx.QueryRow(ctx, `
 		UPDATE programs SET name=$3, primary_goal=$4, roadmap=$5, active=$6,

@@ -22,6 +22,12 @@ type ScheduleDAO interface {
 	DeleteUnstartedRange(ctx context.Context, userID uuid.UUID, from, to string) ([]uuid.UUID, error)
 }
 
+type IdempotentScheduleDAO interface {
+	MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error)
+	RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, from, to string, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error)
+	RecoverIdempotent(ctx context.Context, userID uuid.UUID, date string, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
+}
+
 func (r *scheduleDAO) UpdateOutcome(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout, expectedRevision int64) error {
 	err := r.pool.QueryRow(ctx, `
 		UPDATE scheduled_workouts SET status=$3, finalized_at=$4,
@@ -234,6 +240,182 @@ func (r *scheduleDAO) Create(ctx context.Context, userID uuid.UUID, workouts []m
 		return fmt.Errorf("committing schedule create: %w", err)
 	}
 	return nil
+}
+
+func insertScheduledWorkouts(ctx context.Context, tx pgx.Tx, userID uuid.UUID, workouts []model.ScheduledWorkout) error {
+	for i := range workouts {
+		w := &workouts[i]
+		err := tx.QueryRow(ctx, `
+			INSERT INTO scheduled_workouts (user_id, program_id, program_workout_id, date, name, sequence_position, status, finalized_at)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			RETURNING id, revision, created_at, updated_at`, userID, w.ProgramID, w.ProgramWorkoutID,
+			w.Date, w.Name, w.SequencePosition, w.Status, w.FinalizedAt).Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
+		if err != nil {
+			return fmt.Errorf("inserting scheduled workout: %w", err)
+		}
+		if err := insertScheduledSets(ctx, tx, w.ID, w.RequiredSets); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func lockProgramRevision(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID, expected int64) error {
+	var actual int64
+	err := tx.QueryRow(ctx, `SELECT revision FROM programs WHERE id=$1 AND user_id=$2 FOR UPDATE`, programID, userID).Scan(&actual)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &model.NotFoundError{Message: "program not found"}
+	}
+	if err != nil {
+		return fmt.Errorf("locking program: %w", err)
+	}
+	if actual != expected {
+		return &model.ConflictError{Message: "program revision conflict", Expected: expected, Actual: actual}
+	}
+	return nil
+}
+
+func (r *scheduleDAO) MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("beginning materialization: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	var replay []model.ScheduledWorkout
+	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
+		return nil, false, err
+	} else if found {
+		return replay, true, nil
+	}
+	if err := lockProgramRevision(ctx, tx, userID, programID, expected); err != nil {
+		return nil, false, err
+	}
+	if err := insertScheduledWorkouts(ctx, tx, userID, workouts); err != nil {
+		return nil, false, err
+	}
+	if err := insertIdempotency(ctx, tx, userID, record, workouts); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("committing materialization: %w", err)
+	}
+	return workouts, false, nil
+}
+
+func (r *scheduleDAO) RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, from, to string, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("beginning regeneration: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	var replay model.RegenerateScheduleResponse
+	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
+		return nil, false, err
+	} else if found {
+		return &replay, true, nil
+	}
+	if err := lockProgramRevision(ctx, tx, userID, programID, expected); err != nil {
+		return nil, false, err
+	}
+	var active model.WorkoutSession
+	err = tx.QueryRow(ctx, `SELECT id, scheduled_workout_id, to_char(date,'YYYY-MM-DD'), name, status, notes, started_at, completed_at, revision, created_at, updated_at FROM workout_sessions WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND status='active' ORDER BY date, created_at LIMIT 1 FOR UPDATE`, userID, from, to).Scan(&active.ID, &active.ScheduledWorkoutID, &active.Date, &active.Name, &active.Status, &active.Notes, &active.StartedAt, &active.CompletedAt, &active.Revision, &active.CreatedAt, &active.UpdatedAt)
+	if err == nil {
+		return nil, false, &model.ConflictError{Message: "active session prevents regeneration", Authoritative: &active}
+	}
+	if !errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, fmt.Errorf("checking active sessions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.date BETWEEN $2 AND $3 AND sw.status='planned' AND sw.finalized_at IS NULL AND NOT EXISTS (SELECT 1 FROM workout_sessions ws WHERE ws.scheduled_workout_id=sw.id AND ws.status IN ('active','completed'))`, userID, from, to); err != nil {
+		return nil, false, fmt.Errorf("deleting unstarted scheduled workouts: %w", err)
+	}
+	if err := insertScheduledWorkouts(ctx, tx, userID, workouts); err != nil {
+		return nil, false, err
+	}
+	response.ScheduledWorkouts = workouts
+	if err := insertIdempotency(ctx, tx, userID, record, response); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("committing regeneration: %w", err)
+	}
+	return response, false, nil
+}
+
+func (r *scheduleDAO) RecoverIdempotent(ctx context.Context, userID uuid.UUID, date string, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, false, fmt.Errorf("beginning recovery: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
+	var replay model.ScheduledWorkout
+	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
+		return nil, false, err
+	} else if found {
+		return &replay, true, nil
+	}
+	var source model.ScheduledWorkout
+	err = tx.QueryRow(ctx, `SELECT id, program_id, program_workout_id, to_char(date,'YYYY-MM-DD'), name, sequence_position, status, finalized_at, revision, created_at, updated_at FROM scheduled_workouts WHERE user_id=$1 AND date <= $2 AND status='missed' ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE`, userID, date).Scan(&source.ID, &source.ProgramID, &source.ProgramWorkoutID, &source.Date, &source.Name, &source.SequencePosition, &source.Status, &source.FinalizedAt, &source.Revision, &source.CreatedAt, &source.UpdatedAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, &model.NotFoundError{Message: "no missed workout to recover"}
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("querying missed workout: %w", err)
+	}
+	source.RequiredSets = []model.ScheduledSet{}
+	source.ExtraSets = []model.PerformedSet{}
+	rows, err := tx.Query(ctx, `SELECT program_exercise_id, catalog_id, exercise_name, exercise_category, exercise_modality, exercise_order, set_index, target_reps, target_weight, target_duration_seconds, rest_seconds, notes FROM scheduled_sets WHERE scheduled_workout_id=$1 ORDER BY exercise_order,set_index`, source.ID)
+	if err != nil {
+		return nil, false, fmt.Errorf("querying recovery sets: %w", err)
+	}
+	for rows.Next() {
+		var set model.ScheduledSet
+		if err := rows.Scan(&set.ProgramExerciseID, &set.CatalogID, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.ExerciseOrder, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.TargetDurationSeconds, &set.RestSeconds, &set.Notes); err != nil {
+			rows.Close()
+			return nil, false, fmt.Errorf("scanning recovery set: %w", err)
+		}
+		source.RequiredSets = append(source.RequiredSets, set)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, false, fmt.Errorf("iterating recovery sets: %w", err)
+	}
+	rows.Close()
+	recovered := source
+	recovered.ID = uuid.Nil
+	recovered.Date = date
+	recovered.Status = model.WorkoutStatusPlanned
+	recovered.FinalizedAt = nil
+	recovered.Revision = 0
+	// insertScheduledWorkouts mutates its slice, so insert through a named slice.
+	created := []model.ScheduledWorkout{recovered}
+	if err := insertScheduledWorkouts(ctx, tx, userID, created); err != nil {
+		return nil, false, err
+	}
+	recovered = created[0]
+	record.ResourceID = &recovered.ID
+	record.ResourceRevision = &recovered.Revision
+	if err := insertIdempotency(ctx, tx, userID, record, &recovered); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("committing recovery: %w", err)
+	}
+	return &recovered, false, nil
 }
 
 func (r *scheduleDAO) ReplaceSnapshot(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout, expectedRevision int64) error {

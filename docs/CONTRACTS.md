@@ -219,7 +219,9 @@ server IDs/source fields. Response 201: full `Program`.
 }
 ```
 `operation_key` must equal the `Idempotency-Key` header. Response 201: the
-owned copied `Program`. Unknown ID/version → 404; key/payload mismatch → 409.
+owned copied `Program`. A matching replay returns the exact originally stored
+response. Creating the active copy atomically deactivates the user's previously
+active program. Unknown ID/version → 404; key/payload mismatch → 409.
 
 #### `PUT /api/v1/programs/{id}`
 
@@ -279,7 +281,7 @@ program/catalog IDs are provenance only and deletion never erases history.
 }
 ```
 Response 201: `{ "scheduled_workouts": [ScheduledWorkout] }`. A matching replay
-returns the stored result and cannot advance the program sequence twice.
+returns the exact stored result and cannot advance the program sequence twice.
 
 #### `POST /api/v1/schedule/regenerate`
 
@@ -301,6 +303,7 @@ Response 200:
 Apply repeats the body with `apply:true` and `preview_token`. It atomically
 replaces only unstarted future work. Any active session → 409
 `ACTIVE_SESSION_CONFLICT` with the authoritative session in `resource`.
+A matching apply replay returns the exact originally stored response.
 
 #### `POST /api/v1/plan-transitions/preview`
 
@@ -339,6 +342,8 @@ revision returns 409. A matching replay returns the authoritative target plan.
 ```json
 { "date": "2026-07-21", "operation_key": "recover-123" }
 ```
+The workout copy and its idempotency record are committed atomically. A matching
+replay returns the exact originally stored recovered workout.
 Explicitly creates a new planned occurrence on the requested date from the
 earliest unresolved missed sequence item. The missed historical occurrence is
 not moved or rewritten. Response 201 is the new `ScheduledWorkout`; no missed

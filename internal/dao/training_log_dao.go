@@ -118,7 +118,15 @@ func scanSession(row rowScanner, s *model.WorkoutSession) error {
 }
 
 func (r *workoutSessionDAO) Create(ctx context.Context, userID uuid.UUID, s *model.WorkoutSession) error {
-	err := r.pool.QueryRow(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning workout session create: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return err
+	}
+	err = tx.QueryRow(ctx, `
 		INSERT INTO workout_sessions (
 			user_id, scheduled_workout_id, date, name, status, notes, started_at, completed_at)
 		SELECT $1, sw.id, $3::date, $4, $5, $6, $7::timestamptz, $8::timestamptz
@@ -134,6 +142,9 @@ func (r *workoutSessionDAO) Create(ctx context.Context, userID uuid.UUID, s *mod
 	}
 	if err != nil {
 		return fmt.Errorf("creating workout session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing workout session create: %w", err)
 	}
 	return nil
 }
