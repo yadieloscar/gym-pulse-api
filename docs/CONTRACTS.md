@@ -722,7 +722,7 @@ that the API will accept.
 | You did | API says | Why | Fix |
 |---|---|---|---|
 | `PUT /settings {weekly_goal: 5}` | `invalid settings` | the validator runs on the **whole struct**, `weight_unit` is `required` | always send both fields |
-| `PUT /settings {weekly_goal: 2}` | `invalid settings` | old `min=3` rule | rebuild API container (see `gym-pulse-dev-loop` skill) |
+| `PUT /settings {weekly_goal: 2}` | `invalid settings` | old `min=3` rule | rebuild the local API container |
 | `GET /stats/distribution` then `.reduce` | `reduce is not a function` | handler returns `null` for empty | coerce client-side or use `useStats`'s guard |
 | `POST /templates` from onboarding before signup | 401 | not authenticated | buffer in MMKV, drain in `_layout.tsx` |
 | edits to `internal/model/*.go` don't take effect | container still has old binary | docker layer cache reused stale binary | `docker compose up -d --build api` |
