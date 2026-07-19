@@ -8,6 +8,9 @@ Use `$gym-pulse-cross-repo-delivery` when work may affect the Expo app, API cont
 deployment sequencing, or end-to-end acceptance. Keep the two repositories on separate branches and
 PRs, and link their dependency explicitly.
 
+Use subagents only when independent analysis, implementation, or review lanes are likely to save time
+or improve evidence. Keep focused, sequential, and overlapping-file work with the primary agent.
+
 Read `.specify/memory/constitution.md` before non-trivial planning or implementation. New features
 use GitHub Spec Kit (`$speckit-specify` through `$speckit-converge`).
 

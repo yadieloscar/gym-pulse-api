@@ -20,6 +20,31 @@ Git history, verification, and pull requests separate while preserving a coheren
 Preserve independent repository boundaries. Never stage, commit, push, or discard changes in one
 repository as an implicit side effect of work in the other.
 
+## Decide Whether Agents Improve Efficiency
+
+Keep one primary agent accountable for scope, decisions, integration, and the final answer. Before
+delegating, compare expected parallel value with coordination cost.
+
+Use subagents when at least two bounded lanes can progress independently, such as:
+
+- API impact and app impact analysis in parallel;
+- repository mapping while the primary agent inspects the integration contract;
+- independent security, accessibility, migration, performance, or test review;
+- verification in one repository while implementation continues in the other;
+- a read-only final review that benefits from fresh context.
+
+Stay single-agent when the task is small, decisions are tightly sequential, specialists would edit
+the same files, one lane blocks all others, or explaining and reconciling the work is likely to cost
+more than doing it directly.
+
+Default to no more than three specialists at once. Prefer read-only agents for discovery and review.
+Give every subagent one bounded objective, required sources, allowed files and writes, completion
+criteria, and output contract. Do not delegate final integration, destructive actions, ambiguous
+product decisions, or responsibility for verification. Stop or redirect duplicate work promptly.
+
+Record the delegation decision briefly: agents used and why, or why single-agent execution was more
+efficient. The primary agent must inspect specialist evidence and resolve conflicts before acting.
+
 ## Define the Integration Contract
 
 Before implementation, state:

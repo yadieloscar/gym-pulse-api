@@ -51,6 +51,20 @@ For non-trivial work, state concisely:
 Prefer the smallest design that preserves these properties. Reject speculative abstractions,
 unnecessary concurrency, and dependencies without a demonstrated benefit.
 
+## Use Specialist Agents Selectively
+
+Keep the primary agent responsible for design and integration. Delegate only when a bounded lane can
+run independently and the expected time saved or review quality exceeds coordination overhead.
+
+Useful API subagents include read-only repository mapping, contract impact analysis, PostgreSQL or
+migration review, authentication and ownership review, concurrency analysis, and independent test or
+security review. Parallel implementation is appropriate only for explicitly disjoint files with a
+stable contract. Stay single-agent for focused fixes, sequential design work, or overlapping edits.
+
+Give each specialist the relevant raw files and one concrete output contract without leaking the
+intended conclusion. Inspect and reconcile every result; never delegate final integration or
+completion claims.
+
 ## Apply Idiomatic Go Judgment
 
 - Keep packages cohesive, dependency direction clear, and public APIs narrow.
