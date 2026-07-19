@@ -1,0 +1,4 @@
+interface:
+  display_name: "GymPulse API Engineering"
+  short_description: "Design and verify production GymPulse Go APIs"
+  default_prompt: "Use $gym-pulse-api-engineering to implement this GymPulse backend change with explicit design reasoning and verification."
