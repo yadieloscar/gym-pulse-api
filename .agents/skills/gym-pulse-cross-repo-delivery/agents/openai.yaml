@@ -1,0 +1,4 @@
+interface:
+  display_name: "GymPulse Cross-Repo Delivery"
+  short_description: "Coordinate safe API and mobile delivery"
+  default_prompt: "Use $gym-pulse-cross-repo-delivery to plan and deliver this feature across the GymPulse API and app repositories."
