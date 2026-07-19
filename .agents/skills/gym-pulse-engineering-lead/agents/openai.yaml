@@ -1,0 +1,4 @@
+interface:
+  display_name: "GymPulse Engineering Lead"
+  short_description: "Lead architecture, delegation, and delivery"
+  default_prompt: "Use $gym-pulse-engineering-lead to lead this GymPulse task, delegate only when efficient, and integrate verified results."
