@@ -14,7 +14,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL"} {
+	for _, k := range []string{"DATABASE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE"} {
 		t.Setenv(k, "")
 	}
 }
@@ -31,8 +31,8 @@ func TestLoad_MissingJWTSecret(t *testing.T) {
 	clearAll(t)
 	setEnv(t, "DATABASE_URL", "postgres://x")
 	_, err := Load()
-	if !errors.Is(err, ErrMissingJWTSecret) {
-		t.Errorf("expected ErrMissingJWTSecret, got %v", err)
+	if !errors.Is(err, ErrMissingJWTConfig) {
+		t.Errorf("expected ErrMissingJWTConfig, got %v", err)
 	}
 }
 
@@ -62,6 +62,15 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 }
 
+func TestLoad_DevelopmentAcceptsJWKSWithoutLegacySecret(t *testing.T) {
+	clearAll(t)
+	setEnv(t, "DATABASE_URL", "postgres://x")
+	setEnv(t, "SUPABASE_JWKS_URL", "https://project.example/auth/v1/.well-known/jwks.json")
+	if _, err := Load(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoad_Overrides(t *testing.T) {
 	clearAll(t)
 	setEnv(t, "DATABASE_URL", "postgres://x")
@@ -71,6 +80,8 @@ func TestLoad_Overrides(t *testing.T) {
 	setEnv(t, "LOG_LEVEL", "debug")
 	setEnv(t, "ALLOWED_ORIGINS", "https://a.com, https://b.com ,, https://c.com")
 	setEnv(t, "SUPABASE_JWKS_URL", "https://jwks.example.com")
+	setEnv(t, "SUPABASE_JWT_ISSUER", "https://issuer.example.com/auth/v1")
+	setEnv(t, "SUPABASE_JWT_AUDIENCE", "authenticated")
 
 	cfg, err := Load()
 	if err != nil {
@@ -93,5 +104,15 @@ func TestLoad_Overrides(t *testing.T) {
 	}
 	if cfg.AllowedOrigins[0] != "https://a.com" || cfg.AllowedOrigins[2] != "https://c.com" {
 		t.Errorf("origins not trimmed: %v", cfg.AllowedOrigins)
+	}
+}
+
+func TestLoad_ProductionRequiresAsymmetricClaimValidation(t *testing.T) {
+	clearAll(t)
+	setEnv(t, "DATABASE_URL", "postgres://x")
+	setEnv(t, "SUPABASE_JWT_SECRET", "legacy-secret")
+	setEnv(t, "ENVIRONMENT", "production")
+	if _, err := Load(); !errors.Is(err, ErrProductionAuth) {
+		t.Fatalf("expected ErrProductionAuth, got %v", err)
 	}
 }

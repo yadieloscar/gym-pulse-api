@@ -45,7 +45,7 @@ func New(
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
-		r.Use(middleware.AuthMiddleware(cfg.SupabaseJWTSecret, cfg.SupabaseJWKSURL))
+		r.Use(middleware.AuthMiddlewareWithConfig(middleware.AuthConfig{JWTSecret: cfg.SupabaseJWTSecret, JWKSURL: cfg.SupabaseJWKSURL, Issuer: cfg.SupabaseJWTIssuer, Audience: cfg.SupabaseJWTAudience}))
 
 		r.Route("/api/v1", func(r chi.Router) {
 			// Goal-based training

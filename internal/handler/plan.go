@@ -62,8 +62,8 @@ func (h *PlanHandler) PutWeekly(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.MustGetUserID(r.Context())
 
 	var req model.PutWeeklyPlanRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -95,8 +95,8 @@ func (h *PlanHandler) PutOverride(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.MustGetUserID(r.Context())
 
 	var req model.PutPlanOverrideRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 

@@ -13,8 +13,14 @@
 
 - Base: `http://localhost:8080` (dev) / Railway prod URL.
 - Auth: all `/api/v1/*` endpoints require `Authorization: Bearer <jwt>`.
-  Dev validates via `SUPABASE_JWKS_URL`; if unset, HMAC with `SUPABASE_JWT_SECRET`.
+  Production validates the configured issuer and audience using bounded JWKS
+  retrieval; development may use legacy HMAC with `SUPABASE_JWT_SECRET`.
+- Production accepts only expiring `RS256` RSA or `ES256` P-256 tokens whose
+  JWKS algorithm exactly matches the token, and `sub` must be a UUID.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
+- JSON bodies are limited to 1 MiB and exactly one JSON value. Oversized bodies
+  return `413 REQUEST_TOO_LARGE` with `details.max_bytes: 1048576`; malformed or
+  trailing JSON returns `400 BAD_REQUEST`.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
   will 422 even if you only intend to change one field. See "gotchas" below.

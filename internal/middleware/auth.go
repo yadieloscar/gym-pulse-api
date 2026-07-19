@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
@@ -49,21 +50,50 @@ type JWKS struct {
 	Keys []JWKSKey `json:"keys"`
 }
 
-type keyCache struct {
-	keys      map[string]any
-	lastFetch time.Time
-	mutex     sync.RWMutex
+type cachedKey struct {
+	key any
+	alg string
 }
 
-func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string) (any, error) {
+type AuthConfig struct {
+	JWTSecret  string
+	JWKSURL    string
+	Issuer     string
+	Audience   string
+	HTTPClient *http.Client
+}
+
+type keyCache struct {
+	keys        map[string]cachedKey
+	missing     map[string]time.Time
+	lastFetch   time.Time
+	lastAttempt time.Time
+	client      *http.Client
+	now         func() time.Time
+	mutex       sync.RWMutex
+}
+
+const (
+	jwksCacheTTL        = time.Hour
+	jwksRefreshCooldown = time.Minute
+	jwksHTTPTimeout     = 5 * time.Second
+	jwksMaxBodyBytes    = 1 << 20
+)
+
+func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string) (cachedKey, error) {
 	// Try read lock first
 	c.mutex.RLock()
 	key, ok := c.keys[kid]
-	isFresh := time.Since(c.lastFetch) < 1*time.Hour
+	now := c.now()
+	isFresh := now.Sub(c.lastFetch) < jwksCacheTTL
+	missingUntil := c.missing[kid]
 	c.mutex.RUnlock()
 
 	if ok && isFresh {
-		return key, nil
+		return validateCachedAlgorithm(key, kid)
+	}
+	if !missingUntil.IsZero() && now.Before(missingUntil) {
+		return cachedKey{}, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
 	}
 
 	// Write lock for fetch
@@ -71,34 +101,46 @@ func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string)
 	defer c.mutex.Unlock()
 
 	// Double check cache
-	if key, ok = c.keys[kid]; ok && time.Since(c.lastFetch) < 1*time.Hour {
-		return key, nil
+	now = c.now()
+	if key, ok = c.keys[kid]; ok && now.Sub(c.lastFetch) < jwksCacheTTL {
+		return validateCachedAlgorithm(key, kid)
 	}
+	if until := c.missing[kid]; !until.IsZero() && now.Before(until) {
+		return cachedKey{}, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
+	}
+	if !c.lastAttempt.IsZero() && now.Sub(c.lastAttempt) < jwksRefreshCooldown {
+		c.missing[kid] = c.lastAttempt.Add(jwksRefreshCooldown)
+		return cachedKey{}, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
+	}
+	c.lastAttempt = now
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
 	if err != nil {
-		return nil, fmt.Errorf("building JWKS request: %w", err)
+		return cachedKey{}, fmt.Errorf("building JWKS request: %w", err)
 	}
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := c.client.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("fetching JWKS: %w", err)
+		return cachedKey{}, fmt.Errorf("fetching JWKS: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%w: %d", errJWKSStatus, resp.StatusCode)
+		return cachedKey{}, fmt.Errorf("%w: %d", errJWKSStatus, resp.StatusCode)
 	}
 
 	var jwks JWKS
-	if err := json.NewDecoder(resp.Body).Decode(&jwks); err != nil {
-		return nil, fmt.Errorf("decoding JWKS: %w", err)
+	if err := json.NewDecoder(io.LimitReader(resp.Body, jwksMaxBodyBytes)).Decode(&jwks); err != nil {
+		return cachedKey{}, fmt.Errorf("decoding JWKS: %w", err)
 	}
 
-	newKeys := make(map[string]any)
+	newKeys := make(map[string]cachedKey)
 	for _, k := range jwks.Keys {
 		var pubKey any
 		switch k.Kty {
 		case "EC":
+			if k.Alg != "ES256" || k.Crv != "P-256" {
+				continue
+			}
 			xVal, err := decodeCoordinate(k.X)
 			if err != nil {
 				continue
@@ -107,12 +149,19 @@ func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string)
 			if err != nil {
 				continue
 			}
-			pubKey = &ecdsa.PublicKey{
-				Curve: elliptic.P256(),
-				X:     xVal,
-				Y:     yVal,
+			encoded := make([]byte, 65)
+			encoded[0] = 4
+			xVal.FillBytes(encoded[1:33])
+			yVal.FillBytes(encoded[33:])
+			parsed, err := ecdsa.ParseUncompressedPublicKey(elliptic.P256(), encoded)
+			if err != nil {
+				continue
 			}
+			pubKey = parsed
 		case "RSA":
+			if k.Alg != "RS256" {
+				continue
+			}
 			nBytes, err := decodeCoordinateBytes(k.N)
 			if err != nil {
 				continue
@@ -129,6 +178,9 @@ func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string)
 			} else {
 				eVal = int(binary.BigEndian.Uint32(eBytes))
 			}
+			if eVal < 3 || len(nBytes) == 0 {
+				continue
+			}
 			pubKey = &rsa.PublicKey{
 				N: new(big.Int).SetBytes(nBytes),
 				E: eVal,
@@ -136,15 +188,27 @@ func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string)
 		default:
 			continue
 		}
-		newKeys[k.Kid] = pubKey
+		if k.Kid == "" {
+			continue
+		}
+		newKeys[k.Kid] = cachedKey{key: pubKey, alg: k.Alg}
 	}
 
 	c.keys = newKeys
-	c.lastFetch = time.Now()
+	c.lastFetch = now
+	c.missing = make(map[string]time.Time)
 
 	key, ok = c.keys[kid]
 	if !ok {
-		return nil, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
+		c.missing[kid] = now.Add(jwksRefreshCooldown)
+		return cachedKey{}, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
+	}
+	return validateCachedAlgorithm(key, kid)
+}
+
+func validateCachedAlgorithm(key cachedKey, kid string) (cachedKey, error) {
+	if key.key == nil || key.alg == "" {
+		return cachedKey{}, fmt.Errorf("%w: %s", errJWKSKeyNotFound, kid)
 	}
 	return key, nil
 }
@@ -163,7 +227,20 @@ func decodeCoordinateBytes(s string) ([]byte, error) {
 
 // AuthMiddleware validates the Bearer JWT and injects the user ID into the request context.
 func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Handler {
-	jwksCache := &keyCache{keys: make(map[string]any)}
+	return AuthMiddlewareWithConfig(AuthConfig{JWTSecret: jwtSecret, JWKSURL: jwksURL})
+}
+
+func AuthMiddlewareWithConfig(cfg AuthConfig) func(http.Handler) http.Handler {
+	baseClient := cfg.HTTPClient
+	if baseClient == nil {
+		baseClient = http.DefaultClient
+	}
+	clone := *baseClient
+	client := &clone
+	if client.Timeout == 0 {
+		client.Timeout = jwksHTTPTimeout
+	}
+	jwksCache := &keyCache{keys: make(map[string]cachedKey), missing: make(map[string]time.Time), client: client, now: time.Now}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
@@ -181,32 +258,45 @@ func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Ha
 			// jwt.Parse's keyFunc signature doesn't accept context, so we
 			// rely on the captured r.Context() below. contextcheck can't
 			// see through the closure — silence the false positive.
+			options := []jwt.ParserOption{jwt.WithExpirationRequired()}
+			if cfg.Issuer != "" {
+				options = append(options, jwt.WithIssuer(cfg.Issuer))
+			}
+			if cfg.Audience != "" {
+				options = append(options, jwt.WithAudience(cfg.Audience))
+			}
 			token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) { //nolint:contextcheck
 				// 1. Asymmetric JWKS validation if configured
-				if jwksURL != "" {
+				if cfg.JWKSURL != "" {
 					kid, ok := t.Header["kid"].(string)
 					if !ok || kid == "" {
 						return nil, errMissingKidHeader
 					}
 
-					switch t.Method.(type) {
-					case *jwt.SigningMethodECDSA:
-						// Expected alg ES256
-					case *jwt.SigningMethodRSA:
-						// Expected alg RS256
-					default:
+					alg, _ := t.Header["alg"].(string)
+					if alg != "RS256" && alg != "ES256" {
 						return nil, fmt.Errorf("%w: %v", errUnexpectedSigningAlg, t.Header["alg"])
 					}
-
-					return jwksCache.getPublicKey(r.Context(), jwksURL, kid)
+					cached, err := jwksCache.getPublicKey(r.Context(), cfg.JWKSURL, kid)
+					if err != nil {
+						return nil, err
+					}
+					key := cached
+					if key.alg != alg {
+						return nil, fmt.Errorf("%w: token %s, key %s", errUnexpectedSigningAlg, alg, key.alg)
+					}
+					if (alg == "RS256" && t.Method != jwt.SigningMethodRS256) || (alg == "ES256" && t.Method != jwt.SigningMethodES256) {
+						return nil, fmt.Errorf("%w: %s", errUnexpectedSigningAlg, alg)
+					}
+					return key.key, nil
 				}
 
 				// 2. Symmetric HMAC validation fallback
-				if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				if t.Method != jwt.SigningMethodHS256 {
 					return nil, fmt.Errorf("%w: %v", errUnexpectedSignMethod, t.Header["alg"])
 				}
-				return []byte(jwtSecret), nil
-			})
+				return []byte(cfg.JWTSecret), nil
+			}, options...)
 			if err != nil || !token.Valid {
 				writeAuthError(w, "invalid or expired token")
 				return
@@ -221,6 +311,10 @@ func AuthMiddleware(jwtSecret string, jwksURL string) func(http.Handler) http.Ha
 			userID, ok := claims["sub"].(string)
 			if !ok || userID == "" {
 				writeAuthError(w, "missing user id in token")
+				return
+			}
+			if _, err := uuid.Parse(userID); err != nil {
+				writeAuthError(w, "invalid user id in token")
 				return
 			}
 

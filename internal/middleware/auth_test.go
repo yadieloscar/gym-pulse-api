@@ -13,12 +13,60 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
+
+func TestJWKSUnknownKidUsesNegativeCache(t *testing.T) {
+	var calls atomic.Int32
+	client := &http.Client{Transport: middlewareRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(`{"keys":[]}`))}, nil
+	})}
+	cache := &keyCache{keys: map[string]cachedKey{}, missing: map[string]time.Time{}, client: client, now: time.Now}
+	for range 2 {
+		if _, err := cache.getPublicKey(context.Background(), "https://jwks.example.test", "unknown"); err == nil {
+			t.Fatal("unknown kid was accepted")
+		}
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("JWKS fetch count = %d, want 1", calls.Load())
+	}
+}
+
+func TestAuthMiddlewareValidatesIssuerAudienceAndUUIDSubject(t *testing.T) {
+	secret := "test-secret"
+	handler := AuthMiddlewareWithConfig(AuthConfig{JWTSecret: secret, Issuer: "https://issuer.example/auth/v1", Audience: "authenticated"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))
+	sign := func(claims jwt.MapClaims) string {
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		value, _ := token.SignedString([]byte(secret))
+		return value
+	}
+	base := jwt.MapClaims{"sub": uuid.NewString(), "exp": time.Now().Add(time.Hour).Unix(), "iss": "https://issuer.example/auth/v1", "aud": "authenticated"}
+	request := func(claims jwt.MapClaims) int {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		req.Header.Set("Authorization", "Bearer "+sign(claims))
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if got := request(base); got != http.StatusOK {
+		t.Fatalf("valid claims status = %d", got)
+	}
+	badSubject := base
+	badSubject["sub"] = "not-a-uuid"
+	if got := request(badSubject); got != http.StatusUnauthorized {
+		t.Fatalf("invalid sub status = %d", got)
+	}
+	badIssuer := jwt.MapClaims{"sub": uuid.NewString(), "exp": time.Now().Add(time.Hour).Unix(), "iss": "https://wrong.example", "aud": "authenticated"}
+	if got := request(badIssuer); got != http.StatusUnauthorized {
+		t.Fatalf("invalid issuer status = %d", got)
+	}
+}
 
 type middlewareRoundTripFunc func(*http.Request) (*http.Response, error)
 
@@ -180,6 +228,7 @@ func TestAuthMiddleware_AsymmetricJWKS(t *testing.T) {
 			},
 			{
 				Kty: "EC",
+				Crv: "P-256",
 				Kid: "ec-key-id",
 				X:   ecXStr,
 				Y:   ecYStr,
@@ -224,6 +273,19 @@ func TestAuthMiddleware_AsymmetricJWKS(t *testing.T) {
 
 		if rec.Code != http.StatusOK {
 			t.Errorf("expected status 200, got %d", rec.Code)
+		}
+	})
+
+	t.Run("RSA key rejects RS512 token", func(t *testing.T) {
+		token := jwt.NewWithClaims(jwt.SigningMethodRS512, jwt.MapClaims{"sub": userID, "exp": time.Now().Add(time.Hour).Unix()})
+		token.Header["kid"] = "rsa-key-id"
+		tokenStr, _ := token.SignedString(rsaPrivKey)
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+		req.Header.Set("Authorization", "Bearer "+tokenStr)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401", rec.Code)
 		}
 	})
 
