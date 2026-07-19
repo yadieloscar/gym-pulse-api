@@ -68,7 +68,8 @@ Use these roles when parallel analysis or independent review adds value:
 - App engineer: Expo architecture, session behavior, API integration, cache consistency, UX states,
   accessibility, and mobile tests.
 - Quality reviewer: read-only review of the final diffs and end-to-end failure modes.
-- Engineering lead: integration decisions, sequencing, conflict resolution, and final evidence.
+- Engineering lead: primary agent using `$gym-pulse-engineering-lead`; owns integration decisions,
+  sequencing, conflict resolution, and final evidence.
 
 Give each specialist a bounded question, required source files, allowed repositories and files,
 verification expectations, and output format. Prefer parallel read-only analysis. Permit parallel

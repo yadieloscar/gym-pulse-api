@@ -1,5 +1,9 @@
 # GymPulse API Agent Guide
 
+Use `$gym-pulse-engineering-lead` for complex, ambiguous, high-risk, or multi-lane work. The lead owns
+architecture, selects the applicable engineering workflows, delegates only when efficient, integrates
+specialist evidence, and decides readiness.
+
 Use `$gym-pulse-api-engineering` for non-trivial backend planning, implementation, debugging,
 refactoring, or review. It applies the design, API, Go, PostgreSQL, security, testing, and independent
 review strategy that complements the automated quality gates.
