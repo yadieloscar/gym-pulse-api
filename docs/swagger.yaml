@@ -1453,8 +1453,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Updates session notes and replaces the exercise override list for
-        the given date.
+      description: Partially updates a day log. Omitted detail is preserved; explicit
+        arrays replace or clear it. Replacing the workout clears omitted exercise detail.
       parameters:
       - description: Date in YYYY-MM-DD format
         in: path

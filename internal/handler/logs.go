@@ -104,7 +104,7 @@ func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update godoc
 // @Summary     Update a day log
-// @Description Updates session notes and replaces the exercise override list for the given date.
+// @Description Partially updates a day log. Omitted detail is preserved; explicit arrays replace or clear it. Replacing the workout clears omitted exercise detail.
 // @Tags        logs
 // @Accept      json
 // @Produce     json

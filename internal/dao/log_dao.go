@@ -18,7 +18,7 @@ type LogDAO interface {
 	ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	Create(ctx context.Context, userID uuid.UUID, log *model.DayLog) error
-	Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
+	Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 	RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
@@ -387,7 +387,7 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	return tx.Commit(ctx)
 }
 
-func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error {
+func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
@@ -406,30 +406,33 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 		return fmt.Errorf("querying log for update: %w", err)
 	}
 
-	if replace != nil {
+	if update.Replacement != nil {
 		_, err = tx.Exec(ctx, `
 			UPDATE day_logs
-			SET type_id = $1, subtype_id = $2, template_id = $3, session_notes = $4
-			WHERE id = $5`,
-			replace.TypeID, replace.SubtypeID, replace.TemplateID, sessionNotes, logID,
+			SET type_id = $1, subtype_id = $2, template_id = $3
+			WHERE id = $4`,
+			update.Replacement.TypeID, update.Replacement.SubtypeID, update.Replacement.TemplateID, logID,
 		)
-	} else {
+	}
+	if err == nil && update.ReplaceNotes {
 		_, err = tx.Exec(ctx, `
 			UPDATE day_logs SET session_notes = $1 WHERE id = $2`,
-			sessionNotes, logID,
+			update.SessionNotes, logID,
 		)
 	}
 	if err != nil {
 		return fmt.Errorf("updating day log: %w", err)
 	}
 
-	_, err = tx.Exec(ctx, `DELETE FROM exercise_overrides WHERE day_log_id = $1`, logID)
-	if err != nil {
-		return fmt.Errorf("deleting overrides: %w", err)
+	if update.ReplaceOverrides {
+		_, err = tx.Exec(ctx, `DELETE FROM exercise_overrides WHERE day_log_id = $1`, logID)
+		if err != nil {
+			return fmt.Errorf("deleting overrides: %w", err)
+		}
 	}
 
-	for i := range overrides {
-		o := &overrides[i]
+	for i := range update.Overrides {
+		o := &update.Overrides[i]
 		o.DayLogID = logID
 		err := tx.QueryRow(ctx, `
 			INSERT INTO exercise_overrides (day_log_id, exercise_id, actual_sets, actual_reps, actual_weight, notes, skipped)
@@ -444,13 +447,13 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, over
 		}
 	}
 
-	// Set logs follow the same replace semantics as overrides: a PUT rewrites
-	// the day's whole set list.
-	if _, err = tx.Exec(ctx, `DELETE FROM set_logs WHERE day_log_id = $1`, logID); err != nil {
-		return fmt.Errorf("deleting set logs: %w", err)
-	}
-	if err := insertSetLogs(ctx, tx, logID, setLogs); err != nil {
-		return err
+	if update.ReplaceSetLogs {
+		if _, err = tx.Exec(ctx, `DELETE FROM set_logs WHERE day_log_id = $1`, logID); err != nil {
+			return fmt.Errorf("deleting set logs: %w", err)
+		}
+		if err := insertSetLogs(ctx, tx, logID, update.SetLogs); err != nil {
+			return err
+		}
 	}
 
 	return tx.Commit(ctx)

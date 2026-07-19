@@ -542,7 +542,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates session notes and replaces the exercise override list for the given date.",
+                "description": "Partially updates a day log. Omitted detail is preserved; explicit arrays replace or clear it. Replacing the workout clears omitted exercise detail.",
                 "consumes": [
                     "application/json"
                 ],

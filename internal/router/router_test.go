@@ -48,7 +48,7 @@ func (fakeLogDAO) GetByDate(ctx context.Context, u uuid.UUID, d string) (*model.
 	return &model.DayLog{Date: d}, nil
 }
 func (fakeLogDAO) Create(ctx context.Context, u uuid.UUID, l *model.DayLog) error { return nil }
-func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, o []model.ExerciseOverride, sl []model.SetLog, n *string, rep *model.LogReplacement) error {
+func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, update model.DayLogUpdate) error {
 	return nil
 }
 func (fakeLogDAO) Delete(ctx context.Context, u uuid.UUID, d string) error { return nil }

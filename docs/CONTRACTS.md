@@ -563,18 +563,17 @@ aggregates: notes/skipped) and `set_logs` coexist.
   not yours), `type_id`/`subtype_id` derive from the template, anything sent
   in the body is ignored.
 - type-only replacement requires BOTH `type_id` and `subtype_id` (valid ids) → 422 otherwise.
-- An update always rewrites the override set from the request body — a
-  replacement without `overrides` therefore clears them (old overrides
-  reference the old workout's exercises).
-- ⚠️ **This applies to EVERY PUT, not just replacements.** A notes-only
-  `PUT {"session_notes":"..."}` with no `overrides` field wipes all existing
-  overrides for that day. The client must always re-send the full override
-  set on any `PUT /logs/{date}`.
+- For an ordinary partial update, omitted `overrides`, `set_logs`, and
+  `session_notes` preserve their existing values. A present collection
+  replaces the named collection; `[]` or `null` explicitly clears it.
+- A present `session_notes` replaces the notes. `""` and `null` clear them and
+  are stored canonically as `null`.
+- Replacing the workout clears omitted `overrides` and `set_logs`, because
+  exercise detail from the old workout is incompatible. Collections supplied
+  with the replacement become the new detail. Omitted notes remain unchanged.
 - Replacing a day to `type_id: "rest"` while sending `overrides` → 422
   (rest days carry no overrides, mirroring POST).
-- ⚠️ **`set_logs` follow the SAME replace rule as overrides** — every `PUT`
-  rewrites the day's entire set list, so the client must re-send all sets on
-  any `PUT /logs/{date}`. Rest day + `set_logs` → 422.
+- Rest day + non-empty `set_logs` → 422.
 
 ### `GET /api/v1/exercises/history?ids=<uuid,uuid>` → `ExerciseHistory[]`
 For each requested exercise id, returns the completed sets from the **most

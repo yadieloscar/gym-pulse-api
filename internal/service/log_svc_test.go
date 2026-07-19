@@ -420,15 +420,15 @@ func TestLogService_Update(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		updateCalled := false
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, notesParam *string, replace *model.LogReplacement) error {
+			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, update model.DayLogUpdate) error {
 				if uid != userID {
 					t.Errorf("expected userID %s, got %s", userID, uid)
 				}
 				if date != todayStr {
 					t.Errorf("expected date %s, got %s", todayStr, date)
 				}
-				if notesParam == nil || *notesParam != notes {
-					t.Errorf("expected notes %s, got %v", notes, notesParam)
+				if update.SessionNotes == nil || *update.SessionNotes != notes {
+					t.Errorf("expected notes %s, got %v", notes, update.SessionNotes)
 				}
 				updateCalled = true
 				return nil
@@ -471,7 +471,7 @@ func TestLogService_Update(t *testing.T) {
 
 	t.Run("db error", func(t *testing.T) {
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, notesParam *string, replace *model.LogReplacement) error {
+			UpdateFunc: func(ctx context.Context, uid uuid.UUID, date string, update model.DayLogUpdate) error {
 				return errors.New("db error")
 			},
 		}
