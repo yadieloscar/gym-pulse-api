@@ -1,5 +1,12 @@
 # GymPulse API Agent Guide
 
+## Natural-language routing
+
+The user does not need to name a skill. Infer the applicable workflows from the requested outcome
+and apply the skill rules below. Explicit `$skill-name` mentions are optional overrides. When Codex
+starts from the parent `gym-pulse` directory, the workspace router performs this classification.
+See `docs/CODEX_PLAYBOOK.md` for practical prompt examples.
+
 Use `$gym-pulse-engineering-lead` for complex, ambiguous, high-risk, or multi-lane work. The lead owns
 architecture, selects the applicable engineering workflows, delegates only when efficient, integrates
 specialist evidence, and decides readiness.
