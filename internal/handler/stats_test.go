@@ -107,6 +107,51 @@ func TestStatsHandler_Distribution(t *testing.T) {
 	})
 }
 
+func TestStatsHandler_Volume(t *testing.T) {
+	uid := uuid.New()
+
+	t.Run("passes the requested window and returns volume", func(t *testing.T) {
+		svc := &MockStatsService{
+			GetVolumeFunc: func(ctx context.Context, u uuid.UUID, weeksParam string) ([]model.WeeklyVolume, error) {
+				if u != uid {
+					t.Fatalf("user id=%s, want %s", u, uid)
+				}
+				if weeksParam != "12" {
+					t.Fatalf("weeks=%q, want 12", weeksParam)
+				}
+				return []model.WeeklyVolume{{WeekStart: "2026-07-20", Volume: 4321}}, nil
+			},
+		}
+
+		rec := httptest.NewRecorder()
+		NewStatsHandler(svc).Volume(rec, newReq(t, "GET", "/?weeks=12", nil, uid))
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d", rec.Code)
+		}
+		var got []model.WeeklyVolume
+		decodeBody(t, rec, &got)
+		if len(got) != 1 || got[0].WeekStart != "2026-07-20" || got[0].Volume != 4321 {
+			t.Fatalf("unexpected volume: %+v", got)
+		}
+	})
+
+	t.Run("service error -> 500", func(t *testing.T) {
+		svc := &MockStatsService{
+			GetVolumeFunc: func(ctx context.Context, u uuid.UUID, weeksParam string) ([]model.WeeklyVolume, error) {
+				return nil, errors.New("db")
+			},
+		}
+
+		rec := httptest.NewRecorder()
+		NewStatsHandler(svc).Volume(rec, newReq(t, "GET", "/", nil, uid))
+
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("expected 500, got %d", rec.Code)
+		}
+	})
+}
+
 func contains(s, sub string) bool {
 	return len(sub) == 0 || (len(s) >= len(sub) && indexOf(s, sub) >= 0)
 }
