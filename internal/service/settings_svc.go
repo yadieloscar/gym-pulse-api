@@ -12,7 +12,7 @@ import (
 
 type SettingsService interface {
 	Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
-	Update(ctx context.Context, userID uuid.UUID, req model.UserSettings) (*model.UserSettings, error)
+	Update(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error)
 }
 
 type settingsService struct {
@@ -28,14 +28,10 @@ func (s *settingsService) Get(ctx context.Context, userID uuid.UUID) (*model.Use
 	return s.repo.Get(ctx, userID)
 }
 
-func (s *settingsService) Update(ctx context.Context, userID uuid.UUID, req model.UserSettings) (*model.UserSettings, error) {
+func (s *settingsService) Update(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid settings", Field: "body"}
 	}
 
-	if err := s.repo.Upsert(ctx, userID, &req); err != nil {
-		return nil, err
-	}
-
-	return &req, nil
+	return s.repo.Patch(ctx, userID, req)
 }

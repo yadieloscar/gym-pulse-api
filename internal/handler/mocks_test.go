@@ -128,7 +128,7 @@ func (m *MockStatsService) GetVolume(ctx context.Context, u uuid.UUID, weeksPara
 
 type MockSettingsService struct {
 	GetFunc    func(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
-	UpdateFunc func(ctx context.Context, userID uuid.UUID, req model.UserSettings) (*model.UserSettings, error)
+	UpdateFunc func(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error)
 }
 
 func (m *MockSettingsService) Get(ctx context.Context, u uuid.UUID) (*model.UserSettings, error) {
@@ -137,7 +137,7 @@ func (m *MockSettingsService) Get(ctx context.Context, u uuid.UUID) (*model.User
 	}
 	return nil, nil
 }
-func (m *MockSettingsService) Update(ctx context.Context, u uuid.UUID, r model.UserSettings) (*model.UserSettings, error) {
+func (m *MockSettingsService) Update(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
 	if m.UpdateFunc != nil {
 		return m.UpdateFunc(ctx, u, r)
 	}
@@ -145,8 +145,16 @@ func (m *MockSettingsService) Update(ctx context.Context, u uuid.UUID, r model.U
 }
 
 type MockProfileService struct {
-	GetFunc    func(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error)
-	UpdateFunc func(ctx context.Context, userID uuid.UUID, req model.UpdateProfileRequest) (*model.UserProfile, error)
+	GetFunc          func(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error)
+	UpdateFunc       func(ctx context.Context, userID uuid.UUID, req model.UpdateProfileRequest) (*model.UserProfile, error)
+	UploadAvatarFunc func(ctx context.Context, userID uuid.UUID, contentType string, data []byte) (*model.UserProfile, error)
+}
+
+func (m *MockProfileService) UploadAvatar(ctx context.Context, u uuid.UUID, contentType string, data []byte) (*model.UserProfile, error) {
+	if m.UploadAvatarFunc != nil {
+		return m.UploadAvatarFunc(ctx, u, contentType, data)
+	}
+	return nil, nil
 }
 
 func (m *MockProfileService) Get(ctx context.Context, u uuid.UUID) (*model.UserProfile, error) {

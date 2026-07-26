@@ -74,7 +74,10 @@ type keyCache struct {
 }
 
 const (
-	jwksCacheTTL        = time.Hour
+	// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer
+	// locally or a revoked signing key can remain trusted after Supabase has
+	// stopped advertising it.
+	jwksCacheTTL        = 10 * time.Minute
 	jwksRefreshCooldown = time.Minute
 	jwksHTTPTimeout     = 5 * time.Second
 	jwksMaxBodyBytes    = 1 << 20

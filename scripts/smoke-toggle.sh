@@ -33,4 +33,11 @@ for i in 1 2 3 4 5 6 7 8; do
 done
 [ "$code" = "200" ] || { echo "api did not come back healthy"; exit 1; }
 
+# Mirror the CI fixture so local writes that reference auth.users exercise the
+# real foreign-key path instead of failing because the development database is
+# empty. smoke.sh deletes this user and all owned data in its final step.
+( cd "$compose_dir" && docker compose exec -T db \
+  psql -U gympulse -d gympulse -v ON_ERROR_STOP=1 \
+  -c "INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-000000000001') ON CONFLICT (id) DO NOTHING;" >/dev/null )
+
 "$here/smoke.sh"

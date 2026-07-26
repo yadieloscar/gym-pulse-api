@@ -81,6 +81,10 @@ func (fakeSettingsDAO) Get(ctx context.Context, u uuid.UUID) (*model.UserSetting
 func (fakeSettingsDAO) Upsert(ctx context.Context, u uuid.UUID, s *model.UserSettings) error {
 	return nil
 }
+func (fakeSettingsDAO) Patch(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+	s := model.DefaultUserSettings()
+	return &s, nil
+}
 
 type fakeProfileDAO struct{}
 

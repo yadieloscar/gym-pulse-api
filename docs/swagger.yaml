@@ -909,6 +909,8 @@ definitions:
         maxLength: 50
         minLength: 2
         type: string
+      onboarding_completed:
+        type: boolean
     type: object
   model.UpdateProgramRequest:
     properties:
@@ -964,6 +966,23 @@ definitions:
       usual_activity:
         type: string
     type: object
+  model.UpdateUserSettingsRequest:
+    properties:
+      palette:
+        enum:
+        - obsidianEmber
+        - abyssCerulean
+        type: string
+      weekly_goal:
+        maximum: 7
+        minimum: 1
+        type: integer
+      weight_unit:
+        enum:
+        - lb
+        - kg
+        type: string
+    type: object
   model.UserProfile:
     properties:
       avatar_url:
@@ -979,6 +998,11 @@ definitions:
     type: object
   model.UserSettings:
     properties:
+      palette:
+        enum:
+        - obsidianEmber
+        - abyssCerulean
+        type: string
       weekly_goal:
         maximum: 7
         minimum: 1
@@ -989,6 +1013,7 @@ definitions:
         - kg
         type: string
     required:
+    - palette
     - weekly_goal
     - weight_unit
     type: object
@@ -1454,7 +1479,8 @@ paths:
       consumes:
       - application/json
       description: Partially updates a day log. Omitted detail is preserved; explicit
-        arrays replace or clear it. Replacing the workout clears omitted exercise detail.
+        arrays replace or clear it. Replacing the workout clears omitted exercise
+        detail.
       parameters:
       - description: Date in YYYY-MM-DD format
         in: path
@@ -1710,8 +1736,8 @@ paths:
     put:
       consumes:
       - application/json
-      description: Updates display name and avatar URL for the authenticated user.
-        Sets onboarding_completed to true.
+      description: Partially updates display name, avatar URL, or explicitly completes
+        onboarding.
       parameters:
       - description: Profile update payload
         in: body
@@ -1747,6 +1773,26 @@ paths:
       security:
       - BearerAuth: []
       summary: Update user profile
+      tags:
+      - profile
+  /api/v1/profile/avatar:
+    put:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: JPEG or PNG avatar (max 5 MiB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.UserProfile'
+      summary: Upload profile avatar
       tags:
       - profile
   /api/v1/programs:
@@ -2045,12 +2091,12 @@ paths:
       - application/json
       description: Updates weight unit and weekly goal for the authenticated user.
       parameters:
-      - description: Settings payload
+      - description: Partial settings payload
         in: body
         name: body
         required: true
         schema:
-          $ref: '#/definitions/model.UserSettings'
+          $ref: '#/definitions/model.UpdateUserSettingsRequest'
       produces:
       - application/json
       responses:

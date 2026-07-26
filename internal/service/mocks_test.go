@@ -202,6 +202,24 @@ func (m *MockStatsDAO) GetWeeklyVolume(ctx context.Context, userID uuid.UUID, si
 type MockSettingsDAO struct {
 	GetFunc    func(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
 	UpsertFunc func(ctx context.Context, userID uuid.UUID, settings *model.UserSettings) error
+	PatchFunc  func(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error)
+}
+
+func (m *MockSettingsDAO) Patch(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+	if m.PatchFunc != nil {
+		return m.PatchFunc(ctx, userID, req)
+	}
+	settings := model.DefaultUserSettings()
+	if req.WeightUnit != nil {
+		settings.WeightUnit = *req.WeightUnit
+	}
+	if req.WeeklyGoal != nil {
+		settings.WeeklyGoal = *req.WeeklyGoal
+	}
+	if req.Palette != nil {
+		settings.Palette = *req.Palette
+	}
+	return &settings, nil
 }
 
 func (m *MockSettingsDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error) {

@@ -38,6 +38,41 @@ func TestJWKSUnknownKidUsesNegativeCache(t *testing.T) {
 	}
 }
 
+func TestJWKSCacheRefreshesAtSupabaseEdgeTTL(t *testing.T) {
+	var calls atomic.Int32
+	now := time.Date(2026, time.July, 26, 12, 0, 0, 0, time.UTC)
+	body := `{"keys":[{"kty":"RSA","kid":"current","n":"AQ","e":"Aw","alg":"RS256"}]}`
+	client := &http.Client{Transport: middlewareRoundTripFunc(func(*http.Request) (*http.Response, error) {
+		calls.Add(1)
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	cache := &keyCache{
+		keys:    map[string]cachedKey{},
+		missing: map[string]time.Time{},
+		client:  client,
+		now:     func() time.Time { return now },
+	}
+
+	if _, err := cache.getPublicKey(context.Background(), "https://jwks.example.test", "current"); err != nil {
+		t.Fatalf("initial JWKS fetch: %v", err)
+	}
+	now = now.Add(jwksCacheTTL - time.Second)
+	if _, err := cache.getPublicKey(context.Background(), "https://jwks.example.test", "current"); err != nil {
+		t.Fatalf("cached JWKS lookup: %v", err)
+	}
+	if calls.Load() != 1 {
+		t.Fatalf("fresh JWKS fetch count = %d, want 1", calls.Load())
+	}
+
+	now = now.Add(time.Second)
+	if _, err := cache.getPublicKey(context.Background(), "https://jwks.example.test", "current"); err != nil {
+		t.Fatalf("expired JWKS refresh: %v", err)
+	}
+	if calls.Load() != 2 {
+		t.Fatalf("expired JWKS fetch count = %d, want 2", calls.Load())
+	}
+}
+
 func TestAuthMiddlewareValidatesIssuerAudienceAndUUIDSubject(t *testing.T) {
 	secret := "test-secret"
 	handler := AuthMiddlewareWithConfig(AuthConfig{JWTSecret: secret, Issuer: "https://issuer.example/auth/v1", Audience: "authenticated"})(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) }))

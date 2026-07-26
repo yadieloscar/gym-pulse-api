@@ -72,7 +72,8 @@ func (r *logDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart tim
 func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error) {
 	dl := &model.DayLog{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, date, type_id, subtype_id, template_id, session_notes, logged_at
+		SELECT id, user_id, to_char(date, 'YYYY-MM-DD'),
+		       type_id, subtype_id, template_id, session_notes, logged_at
 		FROM day_logs
 		WHERE user_id = $1 AND date = $2`,
 		userID, date,
@@ -178,20 +179,72 @@ func (r *logDAO) getSetLogs(ctx context.Context, dayLogID uuid.UUID) ([]model.Se
 	return sets, rows.Err()
 }
 
+// insertOverrides writes only exercise references owned by the day-log user.
+// A templated log also requires the exercise to belong to that template.
+func insertOverrides(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, overrides []model.ExerciseOverride) error {
+	for i := range overrides {
+		o := &overrides[i]
+		o.DayLogID = dayLogID
+		err := tx.QueryRow(ctx, `
+			INSERT INTO exercise_overrides (
+				day_log_id, exercise_id, actual_sets, actual_reps,
+				actual_weight, notes, skipped
+			)
+			SELECT $1, e.id, $3, $4, $5, $6, $7
+			FROM exercises e
+			JOIN workout_templates wt ON wt.id = e.template_id
+			JOIN day_logs dl ON dl.id = $1
+				AND dl.user_id = wt.user_id
+				AND (dl.template_id IS NULL OR dl.template_id = e.template_id)
+			WHERE e.id = $2
+			RETURNING id`,
+			o.DayLogID, o.ExerciseID, o.ActualSets, o.ActualReps,
+			o.ActualWeight, o.Notes, o.Skipped,
+		).Scan(&o.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "overrides"}
+		}
+		if err != nil {
+			return fmt.Errorf("inserting override: %w", err)
+		}
+	}
+	return nil
+}
+
 // insertSetLogs writes the day's sets within the caller's transaction. Callers
-// delete existing rows first (replace semantics), mirroring overrides.
+// delete existing rows first (replace semantics), mirroring overrides. The
+// immutable exercise snapshot is derived server-side from the owned exercise;
+// released clients do not send those training-domain columns.
 func insertSetLogs(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, setLogs []model.SetLog) error {
 	for i := range setLogs {
 		s := &setLogs[i]
 		s.DayLogID = dayLogID
 		err := tx.QueryRow(ctx, `
-			INSERT INTO set_logs (day_log_id, exercise_id, set_index, target_reps, target_weight, actual_reps, actual_weight, duration_seconds, completed)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+			INSERT INTO set_logs (
+				day_log_id, exercise_id, is_extra,
+				exercise_name, exercise_category, exercise_modality,
+				set_index, target_reps, target_weight, actual_reps,
+				actual_weight, duration_seconds, completed
+			)
+			SELECT
+				$1, e.id, true,
+				e.name, wt.type_id,
+				CASE WHEN e.duration_minutes IS NULL THEN 'strength' ELSE 'cardio' END,
+				$3, $4, $5, $6, $7, $8, $9
+			FROM exercises e
+			JOIN workout_templates wt ON wt.id = e.template_id
+			JOIN day_logs dl ON dl.id = $1
+				AND dl.user_id = wt.user_id
+				AND (dl.template_id IS NULL OR dl.template_id = e.template_id)
+			WHERE e.id = $2
 			RETURNING id`,
 			s.DayLogID, s.ExerciseID, s.SetIndex,
 			s.TargetReps, s.TargetWeight, s.ActualReps, s.ActualWeight,
 			s.DurationSeconds, s.Completed,
 		).Scan(&s.ID)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "set_logs"}
+		}
 		if err != nil {
 			return fmt.Errorf("inserting set log: %w", err)
 		}
@@ -364,20 +417,8 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	}
 	dl.UserID = userID
 
-	for i := range dl.Overrides {
-		o := &dl.Overrides[i]
-		o.DayLogID = dl.ID
-		err := tx.QueryRow(ctx, `
-			INSERT INTO exercise_overrides (day_log_id, exercise_id, actual_sets, actual_reps, actual_weight, notes, skipped)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			RETURNING id`,
-			o.DayLogID, o.ExerciseID,
-			o.ActualSets, o.ActualReps, o.ActualWeight,
-			o.Notes, o.Skipped,
-		).Scan(&o.ID)
-		if err != nil {
-			return fmt.Errorf("inserting override: %w", err)
-		}
+	if err := insertOverrides(ctx, tx, dl.ID, dl.Overrides); err != nil {
+		return err
 	}
 
 	if err := insertSetLogs(ctx, tx, dl.ID, dl.SetLogs); err != nil {
@@ -431,20 +472,8 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, upda
 		}
 	}
 
-	for i := range update.Overrides {
-		o := &update.Overrides[i]
-		o.DayLogID = logID
-		err := tx.QueryRow(ctx, `
-			INSERT INTO exercise_overrides (day_log_id, exercise_id, actual_sets, actual_reps, actual_weight, notes, skipped)
-			VALUES ($1, $2, $3, $4, $5, $6, $7)
-			RETURNING id`,
-			o.DayLogID, o.ExerciseID,
-			o.ActualSets, o.ActualReps, o.ActualWeight,
-			o.Notes, o.Skipped,
-		).Scan(&o.ID)
-		if err != nil {
-			return fmt.Errorf("inserting override: %w", err)
-		}
+	if err := insertOverrides(ctx, tx, logID, update.Overrides); err != nil {
+		return err
 	}
 
 	if update.ReplaceSetLogs {

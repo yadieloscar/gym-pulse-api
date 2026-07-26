@@ -122,6 +122,7 @@ func New(
 			// Profile
 			r.Get("/profile", profileHandler.Get)
 			r.Put("/profile", profileHandler.Update)
+			r.Put("/profile/avatar", profileHandler.UploadAvatar)
 
 			// Exercise catalog (read-only v1)
 			r.Get("/exercises", exerciseCatalogHandler.List)

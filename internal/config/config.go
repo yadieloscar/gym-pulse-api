@@ -26,6 +26,7 @@ type Config struct {
 	// Without them, DELETE /account removes application data only.
 	SupabaseURL            string
 	SupabaseServiceRoleKey string
+	SupabaseAvatarBucket   string
 	AllowedOrigins         []string
 	Environment            string
 	LogLevel               string
@@ -77,6 +78,10 @@ func Load() (*Config, error) {
 		}
 	}
 
+	avatarBucket := os.Getenv("SUPABASE_AVATAR_BUCKET")
+	if avatarBucket == "" {
+		avatarBucket = "avatars"
+	}
 	return &Config{
 		Port:                   port,
 		DatabaseURL:            dbURL,
@@ -86,6 +91,7 @@ func Load() (*Config, error) {
 		SupabaseJWTAudience:    audience,
 		SupabaseURL:            os.Getenv("SUPABASE_URL"),
 		SupabaseServiceRoleKey: os.Getenv("SUPABASE_SERVICE_ROLE_KEY"),
+		SupabaseAvatarBucket:   avatarBucket,
 		AllowedOrigins:         origins,
 		Environment:            env,
 		LogLevel:               logLevel,

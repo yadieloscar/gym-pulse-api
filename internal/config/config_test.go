@@ -14,7 +14,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE"} {
+	for _, k := range []string{"DATABASE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_AVATAR_BUCKET"} {
 		t.Setenv(k, "")
 	}
 }

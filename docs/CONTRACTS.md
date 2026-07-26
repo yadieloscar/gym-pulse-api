@@ -32,18 +32,17 @@
 ### `GET /api/v1/settings`
 Response 200:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7 }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
 ```
 
 ### `PUT /api/v1/settings`
-Body — **all fields required**:
+Body is partial; omitted fields preserve their current values:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7 }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
 ```
-Validator: `weight_unit oneof=lb kg`, `weekly_goal min=1,max=7`. Response 200 echoes the saved struct.
-
-> ⚠️ Onboarding gotcha: when seeding from MMKV after signup, send **both**
-> fields. Sending just `{weekly_goal}` returns `invalid settings`.
+Old two-field clients remain compatible and preserve the server palette.
+Palette-only updates preserve weight unit and weekly goal. Response 200 is the
+full authoritative settings object.
 
 ---
 
@@ -59,6 +58,18 @@ Response 200:
   "onboarding_completed": false
 }
 ```
+Omitting `onboarding_completed` preserves it. `true` completes onboarding;
+`false` is rejected with 422 and onboarding cannot be reset through this API.
+Unrelated display-name or avatar URL changes never complete onboarding.
+
+### `PUT /api/v1/profile/avatar`
+
+Authenticated `multipart/form-data` with exactly one `file` part containing a
+JPEG or PNG of at most 5 MiB. The server uploads to the configured private
+credential boundary at `<user_uuid>/avatar` with upsert enabled, then persists
+only its durable cache-busted public URL. Response 200 is the full profile.
+Missing/multiple files → 400; oversized → 413; unsupported bytes → 415;
+storage failure → 502; unconfigured storage → 503.
 
 ### `PUT /api/v1/profile`
 Body — **all fields optional** (uses `omitempty`):
@@ -562,6 +573,10 @@ Body:
 or `duration_seconds` (cardio) → 422 otherwise. `target_*` snapshot the plan at
 session start; `actual_*` are what was performed. `overrides` (per-exercise
 aggregates: notes/skipped) and `set_logs` coexist.
+Exercise references must belong to the authenticated user and, for a templated
+log, to that template; invalid or foreign references return 422 without writing
+any part of the log. Immutable exercise name/category/modality snapshots are
+derived server-side so released clients keep their existing payload shape.
 
 ### `GET|PUT|DELETE /api/v1/logs/{date}` — `date` is `YYYY-MM-DD`.
 
