@@ -88,8 +88,8 @@ func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.MustGetUserID(r.Context())
 
 	var req model.CreateDayLogRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 
@@ -104,7 +104,7 @@ func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 // Update godoc
 // @Summary     Update a day log
-// @Description Updates session notes and replaces the exercise override list for the given date.
+// @Description Partially updates a day log. Omitted detail is preserved; explicit arrays replace or clear it. Replacing the workout clears omitted exercise detail.
 // @Tags        logs
 // @Accept      json
 // @Produce     json
@@ -121,8 +121,8 @@ func (h *LogHandler) Update(w http.ResponseWriter, r *http.Request) {
 	date := chi.URLParam(r, "date")
 
 	var req model.UpdateDayLogRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 

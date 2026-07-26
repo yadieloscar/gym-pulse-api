@@ -60,12 +60,12 @@ func (r *profileDAO) Upsert(ctx context.Context, userID uuid.UUID, profile *mode
 
 	_, err = r.pool.Exec(ctx, `
 		INSERT INTO user_profiles (id, display_name, avatar_url, onboarding_completed)
-		VALUES ($1, $2, $3, true)
+		VALUES ($1, $2, $3, COALESCE($4, false))
 		ON CONFLICT (id) DO UPDATE
 		SET display_name = COALESCE(EXCLUDED.display_name, user_profiles.display_name),
 		    avatar_url = COALESCE(EXCLUDED.avatar_url, user_profiles.avatar_url),
-		    onboarding_completed = true`,
-		userID, profile.DisplayName, profile.AvatarURL,
+		    onboarding_completed = CASE WHEN $4 = true THEN true ELSE user_profiles.onboarding_completed END`,
+		userID, profile.DisplayName, profile.AvatarURL, profile.OnboardingCompleted,
 	)
 	if err != nil {
 		return fmt.Errorf("upserting user profile: %w", err)

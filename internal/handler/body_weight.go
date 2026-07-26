@@ -38,8 +38,8 @@ func (h *BodyWeightHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.MustGetUserID(r.Context())
 
 	var req model.CreateBodyWeightRequest
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 

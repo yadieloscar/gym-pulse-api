@@ -58,7 +58,7 @@ type MockLogDAO struct {
 	ListByWeekFunc      func(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDateFunc       func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	CreateFunc          func(ctx context.Context, userID uuid.UUID, l *model.DayLog) error
-	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error
+	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 	RecordSetsFunc      func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
@@ -85,9 +85,9 @@ func (m *MockLogDAO) Create(ctx context.Context, userID uuid.UUID, l *model.DayL
 	return nil
 }
 
-func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, overrides []model.ExerciseOverride, setLogs []model.SetLog, sessionNotes *string, replace *model.LogReplacement) error {
+func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error {
 	if m.UpdateFunc != nil {
-		return m.UpdateFunc(ctx, userID, date, overrides, setLogs, sessionNotes, replace)
+		return m.UpdateFunc(ctx, userID, date, update)
 	}
 	return nil
 }
@@ -202,6 +202,24 @@ func (m *MockStatsDAO) GetWeeklyVolume(ctx context.Context, userID uuid.UUID, si
 type MockSettingsDAO struct {
 	GetFunc    func(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error)
 	UpsertFunc func(ctx context.Context, userID uuid.UUID, settings *model.UserSettings) error
+	PatchFunc  func(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error)
+}
+
+func (m *MockSettingsDAO) Patch(ctx context.Context, userID uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+	if m.PatchFunc != nil {
+		return m.PatchFunc(ctx, userID, req)
+	}
+	settings := model.DefaultUserSettings()
+	if req.WeightUnit != nil {
+		settings.WeightUnit = *req.WeightUnit
+	}
+	if req.WeeklyGoal != nil {
+		settings.WeeklyGoal = *req.WeeklyGoal
+	}
+	if req.Palette != nil {
+		settings.Palette = *req.Palette
+	}
+	return &settings, nil
 }
 
 func (m *MockSettingsDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserSettings, error) {

@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -58,15 +59,50 @@ type CreateDayLogRequest struct {
 // UpdateDayLogRequest is the request body for PUT /api/v1/logs/:date.
 // TypeID/SubtypeID/TemplateID, when present, REPLACE the day's workout
 // (e.g. "logged Push but actually did Legs"). Replacing always rewrites the
-// override set from this request — pass none to clear them, which is what a
-// replacement implies since old overrides reference the old exercises.
+// detail supplied by the caller. Omitted detail is preserved for an ordinary
+// partial update and cleared for a workout replacement.
 type UpdateDayLogRequest struct {
-	TypeID       *string                 `json:"type_id,omitempty"`
-	SubtypeID    *string                 `json:"subtype_id,omitempty"`
-	TemplateID   *uuid.UUID              `json:"template_id,omitempty"`
-	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
-	SetLogs      []CreateSetLogRequest   `json:"set_logs,omitempty"`
-	SessionNotes *string                 `json:"session_notes,omitempty"`
+	TypeID          *string                 `json:"type_id,omitempty"`
+	SubtypeID       *string                 `json:"subtype_id,omitempty"`
+	TemplateID      *uuid.UUID              `json:"template_id,omitempty"`
+	Overrides       []CreateOverrideRequest `json:"overrides,omitempty"`
+	SetLogs         []CreateSetLogRequest   `json:"set_logs,omitempty"`
+	SessionNotes    *string                 `json:"session_notes,omitempty"`
+	OverridesSet    bool                    `json:"-"`
+	SetLogsSet      bool                    `json:"-"`
+	SessionNotesSet bool                    `json:"-"`
+}
+
+// UnmarshalJSON records field presence so omission can mean "preserve" while
+// an explicit empty array (or null) can mean "clear".
+func (r *UpdateDayLogRequest) UnmarshalJSON(data []byte) error {
+	type requestAlias UpdateDayLogRequest
+	var decoded requestAlias
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		return err
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(data, &fields); err != nil {
+		return err
+	}
+	*r = UpdateDayLogRequest(decoded)
+	_, r.OverridesSet = fields["overrides"]
+	_, r.SetLogsSet = fields["set_logs"]
+	_, r.SessionNotesSet = fields["session_notes"]
+	return nil
+}
+
+// DayLogUpdate is the persistence intent resolved by the service. Replace
+// flags distinguish preservation from replacement even when a replacement
+// collection is empty.
+type DayLogUpdate struct {
+	Overrides        []ExerciseOverride
+	ReplaceOverrides bool
+	SetLogs          []SetLog
+	ReplaceSetLogs   bool
+	SessionNotes     *string
+	ReplaceNotes     bool
+	Replacement      *LogReplacement
 }
 
 // LogReplacement is the resolved "this day was actually a different workout"

@@ -139,6 +139,26 @@ func TestLogHandler_Update(t *testing.T) {
 		}
 	})
 
+	t.Run("decodes partial-update field presence", func(t *testing.T) {
+		svc := &MockLogService{
+			UpdateFunc: func(_ context.Context, _ uuid.UUID, _ string, req model.UpdateDayLogRequest) (*model.DayLog, error) {
+				if !req.OverridesSet || req.SetLogsSet || !req.SessionNotesSet {
+					t.Fatalf("presence flags = overrides:%v set_logs:%v notes:%v", req.OverridesSet, req.SetLogsSet, req.SessionNotesSet)
+				}
+				if req.Overrides == nil || len(req.Overrides) != 0 {
+					t.Fatalf("overrides = %#v, want explicit empty array", req.Overrides)
+				}
+				return &model.DayLog{Date: "2024-01-01"}, nil
+			},
+		}
+		rec := httptest.NewRecorder()
+		req := withURLParam(newReq(t, "PUT", "/", `{"overrides":[],"session_notes":null}`, uid), "date", "2024-01-01")
+		NewLogHandler(svc).Update(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
+		}
+	})
+
 	t.Run("bad json -> 400", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := withURLParam(newReq(t, "PUT", "/", "junk", uid), "date", "2024-01-01")

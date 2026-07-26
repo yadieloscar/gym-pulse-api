@@ -53,12 +53,13 @@ func TestSettingsHandler_Update(t *testing.T) {
 
 	t.Run("success", func(t *testing.T) {
 		svc := &MockSettingsService{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UserSettings) (*model.UserSettings, error) {
-				return &r, nil
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+				return &model.UserSettings{WeightUnit: *r.WeightUnit, WeeklyGoal: *r.WeeklyGoal, Palette: "obsidianEmber"}, nil
 			},
 		}
 		rec := httptest.NewRecorder()
-		body := model.UserSettings{WeightUnit: "kg", WeeklyGoal: 1}
+		unit, goal := "kg", 1
+		body := model.UpdateUserSettingsRequest{WeightUnit: &unit, WeeklyGoal: &goal}
 		NewSettingsHandler(svc).Update(rec, newReq(t, "PUT", "/", body, uid))
 		if rec.Code != http.StatusOK {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
@@ -80,7 +81,7 @@ func TestSettingsHandler_Update(t *testing.T) {
 
 	t.Run("validation -> 422 VALIDATION_ERROR field=body", func(t *testing.T) {
 		svc := &MockSettingsService{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UserSettings) (*model.UserSettings, error) {
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
 				return nil, &model.ValidationError{Message: "invalid settings", Field: "body"}
 			},
 		}
@@ -109,12 +110,12 @@ func TestSettingsHandler_Update(t *testing.T) {
 	// Use real service-error mapping via not-found
 	t.Run("not found -> 404", func(t *testing.T) {
 		svc := &MockSettingsService{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UserSettings) (*model.UserSettings, error) {
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
 				return nil, &model.NotFoundError{Message: "missing"}
 			},
 		}
 		rec := httptest.NewRecorder()
-		NewSettingsHandler(svc).Update(rec, newReq(t, "PUT", "/", model.UserSettings{WeightUnit: "lb", WeeklyGoal: 3}, uid))
+		NewSettingsHandler(svc).Update(rec, newReq(t, "PUT", "/", model.UpdateUserSettingsRequest{}, uid))
 		if rec.Code != http.StatusNotFound {
 			t.Errorf("expected 404, got %d", rec.Code)
 		}
@@ -122,12 +123,12 @@ func TestSettingsHandler_Update(t *testing.T) {
 
 	t.Run("conflict -> 409", func(t *testing.T) {
 		svc := &MockSettingsService{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UserSettings) (*model.UserSettings, error) {
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, r model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
 				return nil, &model.ConflictError{Message: "dupe"}
 			},
 		}
 		rec := httptest.NewRecorder()
-		NewSettingsHandler(svc).Update(rec, newReq(t, "PUT", "/", model.UserSettings{WeightUnit: "lb", WeeklyGoal: 3}, uid))
+		NewSettingsHandler(svc).Update(rec, newReq(t, "PUT", "/", model.UpdateUserSettingsRequest{}, uid))
 		if rec.Code != http.StatusConflict {
 			t.Errorf("expected 409, got %d", rec.Code)
 		}

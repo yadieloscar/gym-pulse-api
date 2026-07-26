@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"testing"
@@ -10,6 +11,17 @@ import (
 	"github.com/google/uuid"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
+
+type fakeAvatarStorage struct {
+	url               string
+	err               error
+	path, contentType string
+}
+
+func (f *fakeAvatarStorage) Upload(_ context.Context, objectPath, contentType string, _ []byte) (string, error) {
+	f.path, f.contentType = objectPath, contentType
+	return f.url, f.err
+}
 
 func TestProfileService_Get(t *testing.T) {
 	ctx := context.Background()
@@ -161,4 +173,32 @@ func TestProfileService_Update(t *testing.T) {
 			t.Fatal("expected error, got nil")
 		}
 	})
+}
+
+func TestProfileService_OnboardingAndAvatar(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	completed := false
+	svc := NewProfileService(&MockProfileDAO{}, validator.New())
+	if _, err := svc.Update(ctx, userID, model.UpdateProfileRequest{OnboardingCompleted: &completed}); err == nil {
+		t.Fatal("onboarding reset was accepted")
+	}
+
+	stored := ""
+	repo := &MockProfileDAO{
+		UpsertFunc: func(_ context.Context, _ uuid.UUID, req *model.UpdateProfileRequest) error {
+			if req.AvatarURL != nil {
+				stored = *req.AvatarURL
+			}
+			return nil
+		},
+		GetFunc: func(_ context.Context, id uuid.UUID) (*model.UserProfile, error) {
+			return &model.UserProfile{ID: id, AvatarURL: &stored}, nil
+		},
+	}
+	storage := &fakeAvatarStorage{url: "https://project.example/storage/v1/object/public/avatars/u/avatar?v=1"}
+	svc = NewProfileService(repo, validator.New(), storage)
+	profile, err := svc.UploadAvatar(ctx, userID, "image/png", bytes.Repeat([]byte{1}, 20))
+	if err != nil || profile.AvatarURL == nil || storage.path != userID.String()+"/avatar" {
+		t.Fatalf("avatar upload failed: %+v %v path=%s", profile, err, storage.path)
+	}
 }

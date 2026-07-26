@@ -13,8 +13,14 @@
 
 - Base: `http://localhost:8080` (dev) / Railway prod URL.
 - Auth: all `/api/v1/*` endpoints require `Authorization: Bearer <jwt>`.
-  Dev validates via `SUPABASE_JWKS_URL`; if unset, HMAC with `SUPABASE_JWT_SECRET`.
+  Production validates the configured issuer and audience using bounded JWKS
+  retrieval; development may use legacy HMAC with `SUPABASE_JWT_SECRET`.
+- Production accepts only expiring `RS256` RSA or `ES256` P-256 tokens whose
+  JWKS algorithm exactly matches the token, and `sub` must be a UUID.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
+- JSON bodies are limited to 1 MiB and exactly one JSON value. Oversized bodies
+  return `413 REQUEST_TOO_LARGE` with `details.max_bytes: 1048576`; malformed or
+  trailing JSON returns `400 BAD_REQUEST`.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
   will 422 even if you only intend to change one field. See "gotchas" below.
@@ -26,18 +32,17 @@
 ### `GET /api/v1/settings`
 Response 200:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7 }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
 ```
 
 ### `PUT /api/v1/settings`
-Body — **all fields required**:
+Body is partial; omitted fields preserve their current values:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7 }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
 ```
-Validator: `weight_unit oneof=lb kg`, `weekly_goal min=1,max=7`. Response 200 echoes the saved struct.
-
-> ⚠️ Onboarding gotcha: when seeding from MMKV after signup, send **both**
-> fields. Sending just `{weekly_goal}` returns `invalid settings`.
+Old two-field clients remain compatible and preserve the server palette.
+Palette-only updates preserve weight unit and weekly goal. Response 200 is the
+full authoritative settings object.
 
 ---
 
@@ -53,6 +58,18 @@ Response 200:
   "onboarding_completed": false
 }
 ```
+Omitting `onboarding_completed` preserves it. `true` completes onboarding;
+`false` is rejected with 422 and onboarding cannot be reset through this API.
+Unrelated display-name or avatar URL changes never complete onboarding.
+
+### `PUT /api/v1/profile/avatar`
+
+Authenticated `multipart/form-data` with exactly one `file` part containing a
+JPEG or PNG of at most 5 MiB. The server uploads to the configured private
+credential boundary at `<user_uuid>/avatar` with upsert enabled, then persists
+only its durable cache-busted public URL. Response 200 is the full profile.
+Missing/multiple files → 400; oversized → 413; unsupported bytes → 415;
+storage failure → 502; unconfigured storage → 503.
 
 ### `PUT /api/v1/profile`
 Body — **all fields optional** (uses `omitempty`):
@@ -219,7 +236,9 @@ server IDs/source fields. Response 201: full `Program`.
 }
 ```
 `operation_key` must equal the `Idempotency-Key` header. Response 201: the
-owned copied `Program`. Unknown ID/version → 404; key/payload mismatch → 409.
+owned copied `Program`. A matching replay returns the exact originally stored
+response. Creating the active copy atomically deactivates the user's previously
+active program. Unknown ID/version → 404; key/payload mismatch → 409.
 
 #### `PUT /api/v1/programs/{id}`
 
@@ -279,7 +298,7 @@ program/catalog IDs are provenance only and deletion never erases history.
 }
 ```
 Response 201: `{ "scheduled_workouts": [ScheduledWorkout] }`. A matching replay
-returns the stored result and cannot advance the program sequence twice.
+returns the exact stored result and cannot advance the program sequence twice.
 
 #### `POST /api/v1/schedule/regenerate`
 
@@ -301,6 +320,7 @@ Response 200:
 Apply repeats the body with `apply:true` and `preview_token`. It atomically
 replaces only unstarted future work. Any active session → 409
 `ACTIVE_SESSION_CONFLICT` with the authoritative session in `resource`.
+A matching apply replay returns the exact originally stored response.
 
 #### `POST /api/v1/plan-transitions/preview`
 
@@ -339,6 +359,8 @@ revision returns 409. A matching replay returns the authoritative target plan.
 ```json
 { "date": "2026-07-21", "operation_key": "recover-123" }
 ```
+The workout copy and its idempotency record are committed atomically. A matching
+replay returns the exact originally stored recovered workout.
 Explicitly creates a new planned occurrence on the requested date from the
 earliest unresolved missed sequence item. The missed historical occurrence is
 not moved or rewritten. Response 201 is the new `ScheduledWorkout`; no missed
@@ -551,6 +573,10 @@ Body:
 or `duration_seconds` (cardio) → 422 otherwise. `target_*` snapshot the plan at
 session start; `actual_*` are what was performed. `overrides` (per-exercise
 aggregates: notes/skipped) and `set_logs` coexist.
+Exercise references must belong to the authenticated user and, for a templated
+log, to that template; invalid or foreign references return 422 without writing
+any part of the log. Immutable exercise name/category/modality snapshots are
+derived server-side so released clients keep their existing payload shape.
 
 ### `GET|PUT|DELETE /api/v1/logs/{date}` — `date` is `YYYY-MM-DD`.
 
@@ -563,18 +589,17 @@ aggregates: notes/skipped) and `set_logs` coexist.
   not yours), `type_id`/`subtype_id` derive from the template, anything sent
   in the body is ignored.
 - type-only replacement requires BOTH `type_id` and `subtype_id` (valid ids) → 422 otherwise.
-- An update always rewrites the override set from the request body — a
-  replacement without `overrides` therefore clears them (old overrides
-  reference the old workout's exercises).
-- ⚠️ **This applies to EVERY PUT, not just replacements.** A notes-only
-  `PUT {"session_notes":"..."}` with no `overrides` field wipes all existing
-  overrides for that day. The client must always re-send the full override
-  set on any `PUT /logs/{date}`.
+- For an ordinary partial update, omitted `overrides`, `set_logs`, and
+  `session_notes` preserve their existing values. A present collection
+  replaces the named collection; `[]` or `null` explicitly clears it.
+- A present `session_notes` replaces the notes. `""` and `null` clear them and
+  are stored canonically as `null`.
+- Replacing the workout clears omitted `overrides` and `set_logs`, because
+  exercise detail from the old workout is incompatible. Collections supplied
+  with the replacement become the new detail. Omitted notes remain unchanged.
 - Replacing a day to `type_id: "rest"` while sending `overrides` → 422
   (rest days carry no overrides, mirroring POST).
-- ⚠️ **`set_logs` follow the SAME replace rule as overrides** — every `PUT`
-  rewrites the day's entire set list, so the client must re-send all sets on
-  any `PUT /logs/{date}`. Rest day + `set_logs` → 422.
+- Rest day + non-empty `set_logs` → 422.
 
 ### `GET /api/v1/exercises/history?ids=<uuid,uuid>` → `ExerciseHistory[]`
 For each requested exercise id, returns the completed sets from the **most

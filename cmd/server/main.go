@@ -113,7 +113,11 @@ func main() {
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
 	statsSvc := service.NewStatsService(statsRepo, settingsRepo)
 	settingsSvc := service.NewSettingsService(settingsRepo, v)
-	profileSvc := service.NewProfileService(profileRepo, v)
+	var avatarStorage service.AvatarStorage
+	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
+		avatarStorage = service.NewSupabaseAvatarStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAvatarBucket)
+	}
+	profileSvc := service.NewProfileService(profileRepo, v, avatarStorage)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)

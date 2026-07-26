@@ -542,7 +542,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates session notes and replaces the exercise override list for the given date.",
+                "description": "Partially updates a day log. Omitted detail is preserved; explicit arrays replace or clear it. Replacing the workout clears omitted exercise detail.",
                 "consumes": [
                     "application/json"
                 ],
@@ -979,7 +979,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Updates display name and avatar URL for the authenticated user. Sets onboarding_completed to true.",
+                "description": "Partially updates display name, avatar URL, or explicitly completes onboarding.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1033,6 +1033,37 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/profile/avatar": {
+            "put": {
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "profile"
+                ],
+                "summary": "Upload profile avatar",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "JPEG or PNG avatar (max 5 MiB)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.UserProfile"
                         }
                     }
                 }
@@ -1532,12 +1563,12 @@ const docTemplate = `{
                 "summary": "Update user settings",
                 "parameters": [
                     {
-                        "description": "Settings payload",
+                        "description": "Partial settings payload",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/model.UserSettings"
+                            "$ref": "#/definitions/model.UpdateUserSettingsRequest"
                         }
                     }
                 ],
@@ -3582,6 +3613,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 50,
                     "minLength": 2
+                },
+                "onboarding_completed": {
+                    "type": "boolean"
                 }
             }
         },
@@ -3662,6 +3696,30 @@ const docTemplate = `{
                 }
             }
         },
+        "model.UpdateUserSettingsRequest": {
+            "type": "object",
+            "properties": {
+                "palette": {
+                    "type": "string",
+                    "enum": [
+                        "obsidianEmber",
+                        "abyssCerulean"
+                    ]
+                },
+                "weekly_goal": {
+                    "type": "integer",
+                    "maximum": 7,
+                    "minimum": 1
+                },
+                "weight_unit": {
+                    "type": "string",
+                    "enum": [
+                        "lb",
+                        "kg"
+                    ]
+                }
+            }
+        },
         "model.UserProfile": {
             "type": "object",
             "properties": {
@@ -3685,10 +3743,18 @@ const docTemplate = `{
         "model.UserSettings": {
             "type": "object",
             "required": [
+                "palette",
                 "weekly_goal",
                 "weight_unit"
             ],
             "properties": {
+                "palette": {
+                    "type": "string",
+                    "enum": [
+                        "obsidianEmber",
+                        "abyssCerulean"
+                    ]
+                },
                 "weekly_goal": {
                     "type": "integer",
                     "maximum": 7,

@@ -79,14 +79,48 @@ func (r *workoutSessionDAO) List(ctx context.Context, userID uuid.UUID, from, to
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterating workout sessions: %w", err)
 	}
-	for i := range sessions {
-		sets, err := loadPerformedSets(ctx, r.pool, userID, sessions[i].ID)
-		if err != nil {
-			return nil, err
-		}
-		sessions[i].Sets = sets
+	if err := loadPerformedSetsBatch(ctx, r.pool, userID, sessions); err != nil {
+		return nil, err
 	}
 	return sessions, nil
+}
+
+func loadPerformedSetsBatch(ctx context.Context, q queryer, userID uuid.UUID, sessions []model.WorkoutSession) error {
+	ids := make([]uuid.UUID, len(sessions))
+	index := make(map[uuid.UUID]int, len(sessions))
+	for i := range sessions {
+		ids[i] = sessions[i].ID
+		index[sessions[i].ID] = i
+		sessions[i].Sets = []model.PerformedSet{}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := q.Query(ctx, `
+		SELECT sl.workout_session_id, sl.id, sl.scheduled_set_id, sl.exercise_id,
+		       sl.is_extra, sl.exercise_name, sl.exercise_category, sl.exercise_modality,
+		       sl.set_index, sl.target_reps, sl.target_weight, sl.actual_reps,
+		       sl.actual_weight, sl.duration_seconds, sl.completed, sl.operation_key, sl.revision
+		FROM set_logs sl
+		JOIN workout_sessions ws ON ws.id=sl.workout_session_id AND ws.user_id=$1
+		WHERE sl.workout_session_id = ANY($2::uuid[])
+		ORDER BY ws.date, ws.created_at, sl.logged_at`, userID, ids)
+	if err != nil {
+		return fmt.Errorf("querying performed sets: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var sessionID uuid.UUID
+		var set model.PerformedSet
+		if err := rows.Scan(&sessionID, &set.ID, &set.ScheduledSetID, &set.ExerciseID, &set.IsExtra, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.ActualReps, &set.ActualWeight, &set.DurationSeconds, &set.Completed, &set.OperationKey, &set.Revision); err != nil {
+			return fmt.Errorf("scanning performed set: %w", err)
+		}
+		sessions[index[sessionID]].Sets = append(sessions[index[sessionID]].Sets, set)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating performed sets: %w", err)
+	}
+	return nil
 }
 
 func (r *workoutSessionDAO) Get(ctx context.Context, userID, sessionID uuid.UUID) (*model.WorkoutSession, error) {
@@ -118,7 +152,15 @@ func scanSession(row rowScanner, s *model.WorkoutSession) error {
 }
 
 func (r *workoutSessionDAO) Create(ctx context.Context, userID uuid.UUID, s *model.WorkoutSession) error {
-	err := r.pool.QueryRow(ctx, `
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning workout session create: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return err
+	}
+	err = tx.QueryRow(ctx, `
 		INSERT INTO workout_sessions (
 			user_id, scheduled_workout_id, date, name, status, notes, started_at, completed_at)
 		SELECT $1, sw.id, $3::date, $4, $5, $6, $7::timestamptz, $8::timestamptz
@@ -134,6 +176,9 @@ func (r *workoutSessionDAO) Create(ctx context.Context, userID uuid.UUID, s *mod
 	}
 	if err != nil {
 		return fmt.Errorf("creating workout session: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing workout session create: %w", err)
 	}
 	return nil
 }

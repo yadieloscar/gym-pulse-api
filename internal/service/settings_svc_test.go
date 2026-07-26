@@ -54,24 +54,23 @@ func TestSettingsService_Update(t *testing.T) {
 
 	cases := []struct {
 		name    string
-		req     model.UserSettings
+		req     model.UpdateUserSettingsRequest
 		wantErr bool
 		isVal   bool
 	}{
-		{"valid lb 5", model.UserSettings{WeightUnit: "lb", WeeklyGoal: 5}, false, false},
-		{"valid kg 1 (regression: weekly_goal=1)", model.UserSettings{WeightUnit: "kg", WeeklyGoal: 1}, false, false},
-		{"valid kg 7", model.UserSettings{WeightUnit: "kg", WeeklyGoal: 7}, false, false},
-		{"missing weight_unit", model.UserSettings{WeeklyGoal: 3}, true, true},
-		{"missing weekly_goal", model.UserSettings{WeightUnit: "lb"}, true, true},
-		{"invalid unit", model.UserSettings{WeightUnit: "stone", WeeklyGoal: 3}, true, true},
-		{"goal too high", model.UserSettings{WeightUnit: "lb", WeeklyGoal: 8}, true, true},
+		{"empty preserves all", model.UpdateUserSettingsRequest{}, false, false},
+		{"valid palette only", model.UpdateUserSettingsRequest{Palette: stringPtr("abyssCerulean")}, false, false},
+		{"valid kg 1", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("kg"), WeeklyGoal: settingsIntPtr(1)}, false, false},
+		{"invalid unit", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("stone")}, true, true},
+		{"goal too high", model.UpdateUserSettingsRequest{WeeklyGoal: settingsIntPtr(8)}, true, true},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := &MockSettingsDAO{
-				UpsertFunc: func(ctx context.Context, id uuid.UUID, s *model.UserSettings) error {
-					return nil
+				PatchFunc: func(ctx context.Context, id uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+					v := model.DefaultUserSettings()
+					return &v, nil
 				},
 			}
 			svc := NewSettingsService(repo, validator.New())
@@ -96,14 +95,17 @@ func TestSettingsService_Update(t *testing.T) {
 
 	t.Run("upsert error propagates", func(t *testing.T) {
 		repo := &MockSettingsDAO{
-			UpsertFunc: func(ctx context.Context, id uuid.UUID, s *model.UserSettings) error {
-				return errors.New("boom")
+			PatchFunc: func(ctx context.Context, id uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+				return nil, errors.New("boom")
 			},
 		}
 		svc := NewSettingsService(repo, validator.New())
-		_, err := svc.Update(ctx, userID, model.UserSettings{WeightUnit: "lb", WeeklyGoal: 3})
+		_, err := svc.Update(ctx, userID, model.UpdateUserSettingsRequest{WeightUnit: stringPtr("lb"), WeeklyGoal: settingsIntPtr(3)})
 		if err == nil {
 			t.Fatal("expected error")
 		}
 	})
 }
+
+func stringPtr(v string) *string { return &v }
+func settingsIntPtr(v int) *int  { return &v }

@@ -10,8 +10,27 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
+
+type atomicProgramRepo struct {
+	*coverageProgramRepo
+	called bool
+}
+
+func (r *atomicProgramRepo) CreateIdempotent(_ context.Context, _ uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error) {
+	r.called = true
+	if record.Scope != "programs/from-starter" || record.ResponseStatus != 201 || record.RequestHash == "" {
+		return nil, false, fmt.Errorf("invalid idempotency record: %+v", record)
+	}
+	program.ID = uuid.New()
+	program.Revision = 1
+	r.programs[program.ID] = *program
+	return program, false, nil
+}
+
+var _ dao.IdempotentProgramDAO = (*atomicProgramRepo)(nil)
 
 type coverageStarterRepo struct{ starters []model.StarterProgram }
 
@@ -500,5 +519,29 @@ func TestGuidedPlanTransitionStarterReplay(t *testing.T) {
 	apply.PreviewToken = "stale"
 	if _, err := service.Apply(ctx, userID, apply); err == nil {
 		t.Fatal("stale transition preview was accepted")
+	}
+}
+
+func TestCloneStarterUsesAtomicProgramWorkflow(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	starter := model.StarterProgram{
+		ID: uuid.New(), Version: 1, Name: "Starter", PrimaryGoal: model.GoalStrength,
+		Workouts: coverageProgramFixture().Workouts,
+	}
+	programs := &atomicProgramRepo{coverageProgramRepo: newCoverageProgramRepo()}
+	idempotency := newCoverageIdempotencyRepo()
+	service := NewProgramService(&coverageStarterRepo{starters: []model.StarterProgram{starter}}, programs, idempotency, validator.New())
+
+	result, err := service.CloneStarter(ctx, userID, model.CloneStarterProgramRequest{
+		StarterProgramID: starter.ID, StarterVersion: starter.Version, OperationKey: "atomic-clone",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !programs.called || result.ID == uuid.Nil {
+		t.Fatalf("atomic program workflow was not used: %+v", result)
+	}
+	if len(idempotency.records) != 0 {
+		t.Fatal("service separately recorded idempotency after atomic create")
 	}
 }

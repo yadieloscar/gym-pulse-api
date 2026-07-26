@@ -43,7 +43,7 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags        settings
 // @Accept      json
 // @Produce     json
-// @Param       body body model.UserSettings true "Settings payload"
+// @Param       body body model.UpdateUserSettingsRequest true "Partial settings payload"
 // @Success     200 {object} model.UserSettings
 // @Failure     400 {object} map[string]string
 // @Failure     401 {object} map[string]string
@@ -52,9 +52,9 @@ func (h *SettingsHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *SettingsHandler) Update(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.MustGetUserID(r.Context())
 
-	var req model.UserSettings
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	var req model.UpdateUserSettingsRequest
+	if err := decodeJSON(w, r, &req); err != nil {
+		writeDecodeError(w, err)
 		return
 	}
 

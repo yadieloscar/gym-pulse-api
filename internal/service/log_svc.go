@@ -136,9 +136,21 @@ func (s *logService) Update(ctx context.Context, userID uuid.UUID, date string, 
 		return nil, err
 	}
 
-	overrides := toOverrides(req.Overrides)
-	setLogs := toSetLogs(req.SetLogs)
-	if err := s.repo.Update(ctx, userID, date, overrides, setLogs, req.SessionNotes, replace); err != nil {
+	sessionNotes := req.SessionNotes
+	if sessionNotes != nil && *sessionNotes == "" {
+		// Store the documented cleared state canonically as SQL NULL.
+		sessionNotes = nil
+	}
+	update := model.DayLogUpdate{
+		Overrides:        toOverrides(req.Overrides),
+		ReplaceOverrides: req.OverridesSet || req.Overrides != nil || replace != nil,
+		SetLogs:          toSetLogs(req.SetLogs),
+		ReplaceSetLogs:   req.SetLogsSet || req.SetLogs != nil || replace != nil,
+		SessionNotes:     sessionNotes,
+		ReplaceNotes:     req.SessionNotesSet || req.SessionNotes != nil,
+		Replacement:      replace,
+	}
+	if err := s.repo.Update(ctx, userID, date, update); err != nil {
 		return nil, err
 	}
 

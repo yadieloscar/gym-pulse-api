@@ -443,8 +443,8 @@ func pathUUID(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, b
 }
 
 func decodeMutation(w http.ResponseWriter, r *http.Request, target any, _ string) bool {
-	if err := decodeJSON(r, target); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
+	if err := decodeJSON(w, r, target); err != nil {
+		writeDecodeError(w, err)
 		return false
 	}
 	return true

@@ -3,12 +3,14 @@
 #
 # What it asserts:
 #   1. /health is 200
-#   2. PUT /api/v1/settings rejects partial body with 400 "invalid settings"
-#   3. PUT /api/v1/settings accepts weekly_goal=1 (regression for the
-#      bug where validator required min=3 and broke onboarding)
+#   2. PUT /api/v1/settings atomically applies partial changes and preserves
+#      omitted values
+#   3. PUT /api/v1/settings accepts weekly_goal=1 (regression for the bug
+#      where validator required min=3 and broke onboarding)
 #   4. GET /api/v1/stats/distribution returns either an array or `null`
 #   5. goal profile → starter copy → dated scheduled workout → required and
 #      extra sets → incomplete outcome → participation remains separate
+#   6. notes-only and overrides-only day-log edits preserve performed sets
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -56,18 +58,21 @@ step "1. /health"
 code=$(curl -s -o /dev/null -w "%{http_code}" "$API/health")
 [ "$code" = "200" ] && ok "/health → 200" || bad "/health → $code (is the container up?)" "$code"
 
-# ---------- 2. settings: partial body must 400 ----------
-step "2. PUT /api/v1/settings with partial body should 400"
+# ---------- 2. settings: partial body preserves omitted values ----------
+step "2. PUT /api/v1/settings applies only fields present in a partial body"
+seed_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/settings" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d '{"weekly_goal":5,"weight_unit":"kg","palette":"obsidianEmber"}')
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/settings" \
-  "${auth[@]}" -H "Content-Type: application/json" -d '{"weekly_goal":5}')
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"palette":"abyssCerulean"}')
 body=$(cat /tmp/smoke.body)
-case "$resp" in
-  422) ok "partial body rejected with 422 VALIDATION_ERROR (body: $body)" ;;
-  400) ok "partial body rejected with 400 (body: $body)" ;;
-  401) bad "got 401 — JWKS is still enabled in the container; see header comment" "$body" ;;
-  200) bad "partial body was ACCEPTED — validator no longer requires weight_unit?" "$body" ;;
-  *)   bad "unexpected status $resp" "$body" ;;
-esac
+if [ "$seed_status" = "200" ] && [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['weekly_goal']==5 and d['weight_unit']=='kg' and d['palette']=='abyssCerulean'" "$body" 2>/dev/null; then
+  ok "partial update changed palette and preserved weekly_goal + weight_unit"
+elif [ "$resp" = "401" ]; then
+  bad "got 401 — JWKS is still enabled in the container; see header comment" "$body"
+else
+  bad "partial settings update lost or rejected omitted values (seed=$seed_status update=$resp)" "$body"
+fi
 
 # ---------- 3. settings: weekly_goal=1 must succeed ----------
 step "3. PUT /api/v1/settings with weekly_goal=1 should 200 (onboarding regression)"
@@ -252,8 +257,60 @@ else
   bad "expected two distinct off-plan workout session IDs" "$session_ids"
 fi
 
-# ---------- 12. account deletion (LAST: wipes the smoke user) ----------
-step "12. DELETE /api/v1/account returns 204 and clears the user's data"
+# ---------- 12. lossless day-log partial updates ----------
+step "12. Partial day-log edits preserve unrelated workout detail"
+log_date="2026-01-15"
+template_resp=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/templates" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d '{"name":"Smoke Lossless Log","type_id":"push","subtype_id":"hypertrophy","exercises":[{"name":"Smoke Bench Press","sort_order":1,"sets":3,"reps":8}]}')
+template_status=${template_resp##*$'\n'}
+template_body=${template_resp%$'\n'*}
+template_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$template_body" 2>/dev/null || true)
+exercise_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['exercises'][0]['id'])" "$template_body" 2>/dev/null || true)
+
+create_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d "{\"date\":\"$log_date\",\"type_id\":\"push\",\"subtype_id\":\"hypertrophy\",\"template_id\":\"$template_id\",\"session_notes\":\"original\",\"overrides\":[{\"exercise_id\":\"$exercise_id\",\"actual_sets\":3,\"actual_reps\":8,\"actual_weight\":135,\"notes\":\"original override\",\"skipped\":false}],\"set_logs\":[{\"exercise_id\":\"$exercise_id\",\"set_index\":1,\"target_reps\":8,\"target_weight\":135,\"actual_reps\":8,\"actual_weight\":135,\"duration_seconds\":null,\"completed\":true}]}")
+
+notes_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/logs/$log_date" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"session_notes":"notes only"}')
+notes_body=$(cat /tmp/smoke.body)
+notes_preserved=false
+if [ "$notes_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['session_notes']=='notes only' and len(d['overrides'])==1 and len(d['set_logs'])==1 and d['set_logs'][0]['actual_reps']==8" "$notes_body" 2>/dev/null; then
+  notes_preserved=true
+fi
+
+overrides_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/logs/$log_date" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d "{\"overrides\":[{\"exercise_id\":\"$exercise_id\",\"actual_sets\":4,\"actual_reps\":6,\"actual_weight\":145,\"notes\":\"override only\",\"skipped\":false}]}")
+overrides_body=$(cat /tmp/smoke.body)
+overrides_preserved=false
+if [ "$overrides_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['session_notes']=='notes only' and len(d['overrides'])==1 and d['overrides'][0]['actual_sets']==4 and len(d['set_logs'])==1 and d['set_logs'][0]['actual_reps']==8" "$overrides_body" 2>/dev/null; then
+  overrides_preserved=true
+fi
+
+foreign_exercise_id=$(python3 -c "import uuid; print(uuid.uuid4())")
+rollback_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/logs/$log_date" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d "{\"set_logs\":[{\"exercise_id\":\"$foreign_exercise_id\",\"set_index\":1,\"actual_reps\":5,\"completed\":true}]}")
+readback_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/$log_date" "${auth[@]}")
+rollback_body=$(cat /tmp/smoke.body)
+rollback_preserved=false
+if [ "$rollback_status" = "422" ] && [ "$readback_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['session_notes']=='notes only' and len(d['overrides'])==1 and len(d['set_logs'])==1 and d['set_logs'][0]['actual_reps']==8" "$rollback_body" 2>/dev/null; then
+  rollback_preserved=true
+fi
+
+clear_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/logs/$log_date" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"set_logs":[]}')
+clear_body=$(cat /tmp/smoke.body)
+if [ "$template_status" = "201" ] && [ "$create_status" = "201" ] && [ "$notes_preserved" = true ] && [ "$overrides_preserved" = true ] && [ "$rollback_preserved" = true ] && [ "$clear_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['session_notes']=='notes only' and len(d['overrides'])==1 and len(d.get('set_logs',[]))==0" "$clear_body" 2>/dev/null; then
+  ok "partial edits preserved detail; failed replacement rolled back; explicit [] cleared only set_logs"
+else
+  bad "lossless day-log acceptance failed (template=$template_status create=$create_status notes=$notes_status overrides=$overrides_status rollback=$rollback_status/$readback_status clear=$clear_status)" "$(echo "$clear_body" | head -c 280)"
+fi
+
+# ---------- 13. account deletion (LAST: wipes the smoke user) ----------
+step "13. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then
   # After deletion the user's templates must be gone (empty list or null).

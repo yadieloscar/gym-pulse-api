@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"io"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -69,7 +70,31 @@ func handleServiceError(w http.ResponseWriter, err error) {
 	writeError(w, http.StatusInternalServerError, "internal server error", "INTERNAL_ERROR", nil)
 }
 
-func decodeJSON(r *http.Request, v any) error {
+const maxJSONBodyBytes = 1 << 20
+
+var errTrailingJSONValue = errors.New("request body must contain one JSON value")
+
+func decodeJSON(w http.ResponseWriter, r *http.Request, v any) error {
 	defer r.Body.Close()
-	return json.NewDecoder(r.Body).Decode(v)
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBodyBytes)
+	decoder := json.NewDecoder(r.Body)
+	if err := decoder.Decode(v); err != nil {
+		return err
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		if err == nil {
+			return errTrailingJSONValue
+		}
+		return err
+	}
+	return nil
+}
+
+func writeDecodeError(w http.ResponseWriter, err error) {
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "request body too large", "REQUEST_TOO_LARGE", map[string]int64{"max_bytes": maxJSONBodyBytes})
+		return
+	}
+	writeError(w, http.StatusBadRequest, "invalid request body", "BAD_REQUEST", nil)
 }

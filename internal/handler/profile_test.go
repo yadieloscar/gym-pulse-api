@@ -1,8 +1,11 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -40,6 +43,29 @@ func TestProfileHandler_Get(t *testing.T) {
 			t.Errorf("expected 500, got %d", rec.Code)
 		}
 	})
+}
+
+func TestProfileHandler_UploadAvatar(t *testing.T) {
+	uid := uuid.New()
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	part, _ := writer.CreateFormFile("file", "avatar.png")
+	_, _ = part.Write(append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 512)...))
+	_ = writer.Close()
+	svc := &MockProfileService{UploadAvatarFunc: func(_ context.Context, id uuid.UUID, contentType string, _ []byte) (*model.UserProfile, error) {
+		if id != uid || contentType != "image/png" {
+			t.Fatalf("unexpected upload identity/type")
+		}
+		return &model.UserProfile{ID: id}, nil
+	}}
+	req := newReq(t, http.MethodPut, "/", nil, uid)
+	req.Body = io.NopCloser(bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	rec := httptest.NewRecorder()
+	NewProfileHandler(svc).UploadAvatar(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
 }
 
 func TestProfileHandler_Update(t *testing.T) {

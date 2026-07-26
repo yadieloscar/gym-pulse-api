@@ -28,8 +28,8 @@ func TestLogService_Update_Replacement(t *testing.T) {
 
 	newSvc := func(captured **model.LogReplacement) LogService {
 		repo := &MockLogDAO{
-			UpdateFunc: func(ctx context.Context, u uuid.UUID, date string, o []model.ExerciseOverride, sl []model.SetLog, n *string, rep *model.LogReplacement) error {
-				*captured = rep
+			UpdateFunc: func(ctx context.Context, u uuid.UUID, date string, update model.DayLogUpdate) error {
+				*captured = update.Replacement
 				return nil
 			},
 			GetByDateFunc: func(ctx context.Context, u uuid.UUID, date string) (*model.DayLog, error) {
@@ -135,4 +135,55 @@ func TestLogService_Update_Replacement(t *testing.T) {
 			t.Fatalf("replacement = %+v", rep)
 		}
 	})
+}
+
+func TestLogService_Update_PreservesOmittedDetailAndClearsReplacementDetail(t *testing.T) {
+	uid := uuid.New()
+	var captured model.DayLogUpdate
+	repo := &MockLogDAO{
+		UpdateFunc: func(_ context.Context, _ uuid.UUID, _ string, update model.DayLogUpdate) error {
+			captured = update
+			return nil
+		},
+		GetByDateFunc: func(_ context.Context, _ uuid.UUID, date string) (*model.DayLog, error) {
+			return &model.DayLog{Date: date}, nil
+		},
+	}
+	svc := NewLogService(repo, &MockTemplateDAO{}, validator.New())
+
+	if _, err := svc.Update(context.Background(), uid, "2026-06-10", model.UpdateDayLogRequest{SessionNotes: strPtr("notes")}); err != nil {
+		t.Fatalf("notes update: %v", err)
+	}
+	if captured.ReplaceOverrides || captured.ReplaceSetLogs || !captured.ReplaceNotes {
+		t.Fatalf("notes-only intent = %+v", captured)
+	}
+
+	if _, err := svc.Update(context.Background(), uid, "2026-06-10", model.UpdateDayLogRequest{Overrides: []model.CreateOverrideRequest{}}); err != nil {
+		t.Fatalf("explicit override clear: %v", err)
+	}
+	if !captured.ReplaceOverrides || captured.ReplaceSetLogs || captured.ReplaceNotes {
+		t.Fatalf("override-clear intent = %+v", captured)
+	}
+
+	if _, err := svc.Update(context.Background(), uid, "2026-06-10", model.UpdateDayLogRequest{SetLogs: []model.CreateSetLogRequest{}}); err != nil {
+		t.Fatalf("explicit set-log clear: %v", err)
+	}
+	if captured.ReplaceOverrides || !captured.ReplaceSetLogs || captured.ReplaceNotes {
+		t.Fatalf("set-log-clear intent = %+v", captured)
+	}
+
+	if _, err := svc.Update(context.Background(), uid, "2026-06-10", model.UpdateDayLogRequest{TypeID: strPtr("pull"), SubtypeID: strPtr("strength")}); err != nil {
+		t.Fatalf("workout replacement: %v", err)
+	}
+	if !captured.ReplaceOverrides || !captured.ReplaceSetLogs || captured.ReplaceNotes {
+		t.Fatalf("replacement intent = %+v", captured)
+	}
+
+	empty := ""
+	if _, err := svc.Update(context.Background(), uid, "2026-06-10", model.UpdateDayLogRequest{SessionNotes: &empty}); err != nil {
+		t.Fatalf("notes clear: %v", err)
+	}
+	if !captured.ReplaceNotes || captured.SessionNotes != nil {
+		t.Fatalf("notes-clear intent = %+v", captured)
+	}
 }

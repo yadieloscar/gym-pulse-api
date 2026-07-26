@@ -188,16 +188,18 @@ func (s *programService) CloneStarter(ctx context.Context, userID uuid.UUID, req
 	if err != nil {
 		return nil, err
 	}
-	if replay, err := s.idempotency.Get(ctx, userID, "programs/from-starter", req.OperationKey); err == nil {
-		if replay.RequestHash != hash {
-			return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+	if _, atomic := s.programs.(dao.IdempotentProgramDAO); !atomic {
+		if replay, err := s.idempotency.Get(ctx, userID, "programs/from-starter", req.OperationKey); err == nil {
+			if replay.RequestHash != hash {
+				return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+			}
+			if replay.ResourceID == nil {
+				return nil, &model.ConflictError{Message: "idempotency record has no program"}
+			}
+			return s.programs.Get(ctx, userID, *replay.ResourceID)
+		} else if !isNotFound(err) {
+			return nil, err
 		}
-		if replay.ResourceID == nil {
-			return nil, &model.ConflictError{Message: "idempotency record has no program"}
-		}
-		return s.programs.Get(ctx, userID, *replay.ResourceID)
-	} else if !isNotFound(err) {
-		return nil, err
 	}
 
 	starter, err := s.starters.Get(ctx, req.StarterProgramID, req.StarterVersion)
@@ -213,6 +215,13 @@ func (s *programService) CloneStarter(ctx context.Context, userID uuid.UUID, req
 		StarterProgramID: &starterID, StarterVersion: &version, Name: name,
 		PrimaryGoal: starter.PrimaryGoal, Roadmap: starter.Roadmap, Active: true,
 		Workouts: cloneStarterWorkouts(starter.Workouts),
+	}
+	if repo, ok := s.programs.(dao.IdempotentProgramDAO); ok {
+		result, _, err := repo.CreateIdempotent(ctx, userID, p, model.IdempotencyRecord{
+			Scope: "programs/from-starter", OperationKey: req.OperationKey,
+			RequestHash: hash, ResponseStatus: 201, ResourceType: "program",
+		})
+		return result, err
 	}
 	if err := s.programs.Create(ctx, userID, p); err != nil {
 		return nil, err
