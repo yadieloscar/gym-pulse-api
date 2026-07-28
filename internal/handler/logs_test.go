@@ -214,3 +214,61 @@ func TestLogHandler_Delete(t *testing.T) {
 		}
 	})
 }
+
+func TestLogHandler_ExerciseHistory(t *testing.T) {
+	uid := uuid.New()
+
+	t.Run("success", func(t *testing.T) {
+		svc := &MockLogService{ExerciseHistoryFunc: func(_ context.Context, userID uuid.UUID, ids string) ([]model.ExerciseHistory, error) {
+			if userID != uid || ids != "squat,bench" {
+				t.Fatalf("unexpected history request: user=%s ids=%q", userID, ids)
+			}
+			return []model.ExerciseHistory{}, nil
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseHistory(rec, newReq(t, http.MethodGet, "/?ids=squat,bench", nil, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("service validation error", func(t *testing.T) {
+		svc := &MockLogService{ExerciseHistoryFunc: func(context.Context, uuid.UUID, string) ([]model.ExerciseHistory, error) {
+			return nil, &model.ValidationError{Message: "ids are required", Field: "ids"}
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseHistory(rec, newReq(t, http.MethodGet, "/", nil, uid))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestLogHandler_ExerciseRecords(t *testing.T) {
+	uid := uuid.New()
+
+	t.Run("success", func(t *testing.T) {
+		svc := &MockLogService{ExerciseRecordsFunc: func(_ context.Context, userID uuid.UUID, ids string) ([]model.ExerciseRecord, error) {
+			if userID != uid || ids != "deadlift" {
+				t.Fatalf("unexpected records request: user=%s ids=%q", userID, ids)
+			}
+			return []model.ExerciseRecord{}, nil
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseRecords(rec, newReq(t, http.MethodGet, "/?ids=deadlift", nil, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+
+	t.Run("service failure", func(t *testing.T) {
+		svc := &MockLogService{ExerciseRecordsFunc: func(context.Context, uuid.UUID, string) ([]model.ExerciseRecord, error) {
+			return nil, errors.New("database unavailable")
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseRecords(rec, newReq(t, http.MethodGet, "/?ids=deadlift", nil, uid))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}

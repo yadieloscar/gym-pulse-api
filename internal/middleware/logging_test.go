@@ -7,6 +7,8 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 func TestLoggingMiddleware(t *testing.T) {
@@ -55,6 +57,19 @@ func TestLoggingMiddleware(t *testing.T) {
 		handler.ServeHTTP(rec, httptest.NewRequest("GET", "/", nil))
 		if !strings.Contains(buf.String(), "status=200") {
 			t.Errorf("expected status=200 in log: %s", buf.String())
+		}
+	})
+
+	t.Run("includes generated request id", func(t *testing.T) {
+		var buf bytes.Buffer
+		logger := slog.New(slog.NewTextHandler(&buf, nil))
+		next := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.WriteHeader(http.StatusNoContent)
+		})
+		handler := chimiddleware.RequestID(LoggingMiddleware(logger)(next))
+		handler.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/", nil))
+		if !strings.Contains(buf.String(), "request_id=") {
+			t.Errorf("expected request_id in log: %s", buf.String())
 		}
 	})
 }

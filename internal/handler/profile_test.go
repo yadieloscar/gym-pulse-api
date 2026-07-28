@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
+	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
 
 func TestProfileHandler_Get(t *testing.T) {
@@ -65,6 +66,133 @@ func TestProfileHandler_UploadAvatar(t *testing.T) {
 	NewProfileHandler(svc).UploadAvatar(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestProfileHandler_UploadAvatarFailures(t *testing.T) {
+	uid := uuid.New()
+	validPNG := append([]byte("\x89PNG\r\n\x1a\n"), bytes.Repeat([]byte{0}, 512)...)
+
+	multipartRequest := func(t *testing.T, field, filename string, data []byte) *http.Request {
+		t.Helper()
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		part, err := writer.CreateFormFile(field, filename)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := part.Write(data); err != nil {
+			t.Fatal(err)
+		}
+		if err := writer.Close(); err != nil {
+			t.Fatal(err)
+		}
+		req := newReq(t, http.MethodPut, "/", nil, uid)
+		req.Body = io.NopCloser(bytes.NewReader(body.Bytes()))
+		req.Header.Set("Content-Type", writer.FormDataContentType())
+		return req
+	}
+
+	tests := []struct {
+		name   string
+		req    func(*testing.T) *http.Request
+		svcErr error
+		status int
+	}{
+		{
+			name: "missing multipart content type",
+			req: func(t *testing.T) *http.Request {
+				return newReq(t, http.MethodPut, "/", nil, uid)
+			},
+			status: http.StatusBadRequest,
+		},
+		{
+			name: "wrong file field",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "avatar", "avatar.png", validPNG)
+			},
+			status: http.StatusBadRequest,
+		},
+		{
+			name: "unsupported media type",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.txt", []byte("plain text"))
+			},
+			status: http.StatusUnsupportedMediaType,
+		},
+		{
+			name: "storage unavailable",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.png", validPNG)
+			},
+			svcErr: service.ErrAvatarStorageUnavailable,
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name: "storage upload failed",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.png", validPNG)
+			},
+			svcErr: service.ErrAvatarUploadFailed,
+			status: http.StatusBadGateway,
+		},
+		{
+			name: "identity became inactive",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.png", validPNG)
+			},
+			svcErr: service.ErrAvatarIdentityInactive,
+			status: http.StatusUnauthorized,
+		},
+		{
+			name: "identity recheck unavailable",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.png", validPNG)
+			},
+			svcErr: service.ErrAvatarIdentityCheckFailed,
+			status: http.StatusServiceUnavailable,
+		},
+		{
+			name: "unexpected service failure",
+			req: func(t *testing.T) *http.Request {
+				return multipartRequest(t, "file", "avatar.png", validPNG)
+			},
+			svcErr: errors.New("database unavailable"),
+			status: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := &MockProfileService{UploadAvatarFunc: func(context.Context, uuid.UUID, string, []byte) (*model.UserProfile, error) {
+				return nil, tt.svcErr
+			}}
+			rec := httptest.NewRecorder()
+			NewProfileHandler(svc).UploadAvatar(rec, tt.req(t))
+			if rec.Code != tt.status {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tt.status, rec.Body.String())
+			}
+		})
+	}
+}
+
+func TestWriteMultipartError(t *testing.T) {
+	tests := []struct {
+		name   string
+		err    error
+		status int
+	}{
+		{name: "too large", err: &http.MaxBytesError{Limit: maxAvatarBytes}, status: http.StatusRequestEntityTooLarge},
+		{name: "malformed", err: errors.New("malformed multipart body"), status: http.StatusBadRequest},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			writeMultipartError(rec, tt.err)
+			if rec.Code != tt.status {
+				t.Fatalf("status=%d want=%d body=%s", rec.Code, tt.status, rec.Body.String())
+			}
+		})
 	}
 }
 
