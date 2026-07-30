@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
+	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -14,7 +15,10 @@ import (
 )
 
 // ErrSupabaseAdmin marks non-success responses from the Supabase Admin API.
-var ErrSupabaseAdmin = errors.New("supabase admin api error")
+var (
+	ErrSupabaseAdmin             = errors.New("supabase admin api error")
+	ErrAccountDeletionIncomplete = errors.New("account deletion incomplete")
+)
 
 // AuthUserDeleter removes the user from the auth provider. Separate interface
 // so the Supabase admin call is mockable and optional.
@@ -22,36 +26,64 @@ type AuthUserDeleter interface {
 	DeleteAuthUser(ctx context.Context, userID uuid.UUID) error
 }
 
+// UserOperationLocker serializes one user's privacy-sensitive operations
+// across API replicas.
+type UserOperationLocker interface {
+	WithUserLock(ctx context.Context, userID uuid.UUID, operation func(context.Context) error) error
+}
+
 type AccountService interface {
-	// Delete removes all application data for the user and, when an auth
-	// deleter is configured, the Supabase auth user itself. Data deletion is
-	// authoritative: an auth-provider failure is logged, not surfaced — the
-	// user's data is already gone and retrying auth deletion is an ops task.
+	// Delete removes the user's avatar, application data, and auth identity.
+	// Every operation is idempotent so a surfaced partial failure can be
+	// retried safely.
 	Delete(ctx context.Context, userID uuid.UUID) error
 }
 
 type accountService struct {
 	repo   dao.AccountDAO
-	auth   AuthUserDeleter // nil when SUPABASE_URL/SERVICE_ROLE_KEY are unset
-	logger *slog.Logger
+	avatar AvatarDeleter
+	auth   AuthUserDeleter
+	locker UserOperationLocker
 }
 
-func NewAccountService(repo dao.AccountDAO, auth AuthUserDeleter, logger *slog.Logger) AccountService {
-	return &accountService{repo: repo, auth: auth, logger: logger}
+func NewAccountService(repo dao.AccountDAO, avatar AvatarDeleter, auth AuthUserDeleter, locker ...UserOperationLocker) AccountService {
+	var userLocker UserOperationLocker
+	if len(locker) > 0 {
+		userLocker = locker[0]
+	}
+	return &accountService{repo: repo, avatar: avatar, auth: auth, locker: userLocker}
 }
 
 func (s *accountService) Delete(ctx context.Context, userID uuid.UUID) error {
-	if err := s.repo.DeleteUserData(ctx, userID); err != nil {
-		return err
-	}
-	if s.auth == nil {
-		s.logger.Warn("account deleted without auth-provider removal (SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY unset)", "user_id", userID)
+	deleteAccount := func(ctx context.Context) error {
+		if err := s.repo.DeleteUserData(ctx, userID); err != nil {
+			return fmt.Errorf("%w: deleting application data: %w", ErrAccountDeletionIncomplete, err)
+		}
+		if s.avatar != nil {
+			if err := s.avatar.Delete(ctx, avatarObjectPaths(userID)...); err != nil {
+				return fmt.Errorf("%w: deleting avatar: %w", ErrAccountDeletionIncomplete, err)
+			}
+		}
+		// Auth is deliberately last. If the provider deletes the identity but
+		// its response is lost, the user may be unable to authenticate a later
+		// retry; all application-held personal data must already be gone.
+		if s.auth != nil {
+			if err := s.auth.DeleteAuthUser(ctx, userID); err != nil {
+				return fmt.Errorf("%w: deleting auth user: %w", ErrAccountDeletionIncomplete, err)
+			}
+		}
 		return nil
 	}
-	if err := s.auth.DeleteAuthUser(ctx, userID); err != nil {
-		s.logger.Error("account data deleted but auth user removal failed", "user_id", userID, "error", err)
+	if s.locker != nil {
+		if err := s.locker.WithUserLock(ctx, userID, deleteAccount); err != nil {
+			if errors.Is(err, ErrAccountDeletionIncomplete) {
+				return err
+			}
+			return fmt.Errorf("%w: serializing deletion: %w", ErrAccountDeletionIncomplete, err)
+		}
+		return nil
 	}
-	return nil
+	return deleteAccount(ctx)
 }
 
 // SupabaseAdmin implements AuthUserDeleter against the Supabase Admin API.
@@ -63,7 +95,7 @@ type SupabaseAdmin struct {
 
 func NewSupabaseAdmin(baseURL, serviceRoleKey string) *SupabaseAdmin {
 	return &SupabaseAdmin{
-		BaseURL:        baseURL,
+		BaseURL:        strings.TrimRight(baseURL, "/"),
 		ServiceRoleKey: serviceRoleKey,
 		Client:         &http.Client{Timeout: 10 * time.Second},
 	}
@@ -83,6 +115,7 @@ func (a *SupabaseAdmin) DeleteAuthUser(ctx context.Context, userID uuid.UUID) er
 		return fmt.Errorf("calling supabase admin api: %w", err)
 	}
 	defer resp.Body.Close()
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 
 	// 404 means the auth user is already gone — that's the desired end state.
 	if resp.StatusCode >= 300 && resp.StatusCode != http.StatusNotFound {

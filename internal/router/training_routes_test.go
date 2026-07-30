@@ -12,7 +12,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")

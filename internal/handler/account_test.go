@@ -5,9 +5,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
+
+	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
 
 func TestAccountHandler_Delete(t *testing.T) {
@@ -43,6 +46,23 @@ func TestAccountHandler_Delete(t *testing.T) {
 		h.Delete(rec, newReq(t, "DELETE", "/", nil, uid))
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("status=%d", rec.Code)
+		}
+	})
+
+	t.Run("incomplete deletion -> stable retryable 503", func(t *testing.T) {
+		svc := &MockAccountService{
+			DeleteFunc: func(ctx context.Context, u uuid.UUID) error {
+				return service.ErrAccountDeletionIncomplete
+			},
+		}
+		h := NewAccountHandler(svc)
+		rec := httptest.NewRecorder()
+		h.Delete(rec, newReq(t, "DELETE", "/", nil, uid))
+		if rec.Code != http.StatusServiceUnavailable {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		if body := rec.Body.String(); !strings.Contains(body, `"code":"ACCOUNT_DELETION_INCOMPLETE"`) || strings.Contains(body, "supabase") {
+			t.Fatalf("unexpected public error body: %s", body)
 		}
 	})
 }

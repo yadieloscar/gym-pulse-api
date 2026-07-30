@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,26 @@ func TestCORSMiddleware(t *testing.T) {
 		h.ServeHTTP(rec, req)
 		if rec.Header().Get("Access-Control-Allow-Origin") != "https://app.example.com" {
 			t.Errorf("expected origin echoed, got %q", rec.Header().Get("Access-Control-Allow-Origin"))
+		}
+	})
+
+	t.Run("allows PATCH with idempotency key", func(t *testing.T) {
+		h := CORSMiddleware([]string{"https://app.example.com"})(next)
+		req := httptest.NewRequest(http.MethodOptions, "/api/v1/scheduled-workouts/id", nil)
+		req.Header.Set("Origin", "https://app.example.com")
+		req.Header.Set("Access-Control-Request-Method", http.MethodPatch)
+		req.Header.Set("Access-Control-Request-Headers", "authorization,content-type,idempotency-key")
+		rec := httptest.NewRecorder()
+		h.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected successful preflight, got %d", rec.Code)
+		}
+		if got := rec.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodPatch) {
+			t.Errorf("PATCH missing from Access-Control-Allow-Methods: %q", got)
+		}
+		if got := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(got, "idempotency-key") {
+			t.Errorf("Idempotency-Key missing from Access-Control-Allow-Headers: %q", got)
 		}
 	})
 

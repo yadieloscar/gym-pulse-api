@@ -67,7 +67,18 @@ func main() {
 	slog.SetDefault(logger)
 
 	// Connect to database.
-	pool, err := pgxpool.New(context.Background(), cfg.DatabaseURL)
+	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
+	if err != nil {
+		logger.Error("failed to parse database pool configuration", "error", err)
+		os.Exit(1)
+	}
+	poolConfig.MaxConns = cfg.DatabaseMaxConns
+	poolConfig.MinConns = cfg.DatabaseMinConns
+	poolConfig.MaxConnLifetime = cfg.DatabaseMaxConnLifetime
+	poolConfig.MaxConnIdleTime = cfg.DatabaseMaxConnIdleTime
+	poolConfig.HealthCheckPeriod = cfg.DatabaseHealthCheckPeriod
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolConfig)
 	if err != nil {
 		logger.Error("failed to create connection pool", "error", err)
 		os.Exit(1)
@@ -86,6 +97,32 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("migrations complete")
+
+	// Advisory locks must never consume the main query pool. A separate,
+	// bounded pool prevents N concurrent deletion/avatar operations from
+	// holding all N query connections while each waits for one more.
+	lockPoolConfig, err := pgxpool.ParseConfig(cfg.DatabaseLockURL)
+	if err != nil {
+		logger.Error("failed to parse database lock pool configuration", "error", err)
+		os.Exit(1)
+	}
+	lockPoolConfig.MaxConns = cfg.DatabaseLockMaxConns
+	lockPoolConfig.MinConns = 0
+	lockPoolConfig.MaxConnLifetime = cfg.DatabaseMaxConnLifetime
+	lockPoolConfig.MaxConnIdleTime = cfg.DatabaseMaxConnIdleTime
+	lockPoolConfig.HealthCheckPeriod = cfg.DatabaseHealthCheckPeriod
+
+	lockPool, err := pgxpool.NewWithConfig(context.Background(), lockPoolConfig)
+	if err != nil {
+		logger.Error("failed to create database lock pool", "error", err)
+		os.Exit(1)
+	}
+	defer lockPool.Close()
+
+	if err := lockPool.Ping(context.Background()); err != nil {
+		logger.Error("failed to ping database lock pool", "error", err)
+		os.Exit(1)
+	}
 
 	// Create shared validator.
 	v := validator.New()
@@ -108,16 +145,21 @@ func main() {
 	participationRepo := dao.NewParticipationDAO(pool)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
 	planTransitionRepo := dao.NewPlanTransitionDAO(pool)
+	authUserRepo := dao.NewAuthUserDAO(pool)
+	userOperationLocker := dao.NewUserOperationLocker(lockPool)
 
 	templateSvc := service.NewTemplateService(templateRepo, v)
 	logSvc := service.NewLogService(logRepo, templateRepo, v)
 	statsSvc := service.NewStatsService(statsRepo, settingsRepo)
 	settingsSvc := service.NewSettingsService(settingsRepo, v)
 	var avatarStorage service.AvatarStorage
+	var avatarDeleter service.AvatarDeleter
 	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
-		avatarStorage = service.NewSupabaseAvatarStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAvatarBucket)
+		storage := service.NewSupabaseAvatarStorage(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey, cfg.SupabaseAvatarBucket)
+		avatarStorage = storage
+		avatarDeleter = storage
 	}
-	profileSvc := service.NewProfileService(profileRepo, v, avatarStorage)
+	profileSvc := service.NewProfileServiceWithUserBoundary(profileRepo, v, avatarStorage, authUserRepo, userOperationLocker)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
@@ -133,7 +175,7 @@ func main() {
 	if cfg.SupabaseURL != "" && cfg.SupabaseServiceRoleKey != "" {
 		authDeleter = service.NewSupabaseAdmin(cfg.SupabaseURL, cfg.SupabaseServiceRoleKey)
 	}
-	accountSvc := service.NewAccountService(accountRepo, authDeleter, logger)
+	accountSvc := service.NewAccountService(accountRepo, avatarDeleter, authDeleter, userOperationLocker)
 
 	templateHandler := handler.NewTemplateHandler(templateSvc)
 	logHandler := handler.NewLogHandler(logSvc)
@@ -144,6 +186,7 @@ func main() {
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
+	readinessHandler := handler.NewReadinessHandler(pool)
 	trainingProfileHandler := handler.NewTrainingProfileHandler(trainingProfileSvc)
 	programHandler := handler.NewProgramHandler(programSvc)
 	scheduleHandler := handler.NewScheduleHandler(scheduleSvc)
@@ -152,15 +195,16 @@ func main() {
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{
-		Addr:         ":" + cfg.Port,
-		Handler:      r,
-		ReadTimeout:  15 * time.Second,
-		WriteTimeout: 15 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		Addr:              ":" + cfg.Port,
+		Handler:           r,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      15 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 
 	go func() {

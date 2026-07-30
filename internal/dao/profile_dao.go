@@ -16,6 +16,7 @@ import (
 type ProfileDAO interface {
 	Get(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error)
 	Upsert(ctx context.Context, userID uuid.UUID, profile *model.UpdateProfileRequest) error
+	ReplaceAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) (*model.UserProfile, error)
 }
 
 type profileDAO struct {
@@ -47,18 +48,7 @@ func (r *profileDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserProf
 }
 
 func (r *profileDAO) Upsert(ctx context.Context, userID uuid.UUID, profile *model.UpdateProfileRequest) error {
-	// Ensure the user exists in auth.users first (local dev / Supabase compatibility)
 	_, err := r.pool.Exec(ctx, `
-		INSERT INTO auth.users (id)
-		VALUES ($1)
-		ON CONFLICT (id) DO NOTHING`,
-		userID,
-	)
-	if err != nil {
-		return fmt.Errorf("ensuring user in auth.users: %w", err)
-	}
-
-	_, err = r.pool.Exec(ctx, `
 		INSERT INTO user_profiles (id, display_name, avatar_url, onboarding_completed)
 		VALUES ($1, $2, $3, COALESCE($4, false))
 		ON CONFLICT (id) DO UPDATE
@@ -71,4 +61,23 @@ func (r *profileDAO) Upsert(ctx context.Context, userID uuid.UUID, profile *mode
 		return fmt.Errorf("upserting user profile: %w", err)
 	}
 	return nil
+}
+
+// ReplaceAvatar atomically persists an avatar URL and returns the committed
+// profile, avoiding a second read whose failure could obscure a successful
+// write.
+func (r *profileDAO) ReplaceAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) (*model.UserProfile, error) {
+	p := &model.UserProfile{}
+	err := r.pool.QueryRow(ctx, `
+		INSERT INTO user_profiles (id, avatar_url, onboarding_completed)
+		VALUES ($1, $2, false)
+		ON CONFLICT (id) DO UPDATE
+		SET avatar_url = EXCLUDED.avatar_url
+		RETURNING id, display_name, avatar_url, onboarding_completed, created_at`,
+		userID, avatarURL,
+	).Scan(&p.ID, &p.DisplayName, &p.AvatarURL, &p.OnboardingCompleted, &p.CreatedAt)
+	if err != nil {
+		return nil, fmt.Errorf("replacing profile avatar: %w", err)
+	}
+	return p, nil
 }

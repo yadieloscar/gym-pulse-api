@@ -4,6 +4,8 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
+
+	chimiddleware "github.com/go-chi/chi/v5/middleware"
 )
 
 type responseWriter struct {
@@ -31,6 +33,9 @@ func LoggingMiddleware(logger *slog.Logger) func(http.Handler) http.Handler {
 				slog.Int("status", wrapped.statusCode),
 				slog.Duration("duration", duration),
 				slog.String("remote", r.RemoteAddr),
+			}
+			if requestID := chimiddleware.GetReqID(r.Context()); requestID != "" {
+				attrs = append(attrs, slog.String("request_id", requestID))
 			}
 
 			msg := r.Method + " " + r.URL.Path

@@ -92,6 +92,14 @@ func (h *ProfileHandler) UploadAvatar(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadGateway, "avatar upload failed", "STORAGE_UPLOAD_FAILED", nil)
 		return
 	}
+	if errors.Is(err, service.ErrAvatarIdentityInactive) {
+		writeError(w, http.StatusUnauthorized, "authentication required", "AUTHENTICATION_REQUIRED", nil)
+		return
+	}
+	if errors.Is(err, service.ErrAvatarIdentityCheckFailed) {
+		writeError(w, http.StatusServiceUnavailable, "authentication service temporarily unavailable", "AUTHENTICATION_UNAVAILABLE", nil)
+		return
+	}
 	if err != nil {
 		handleServiceError(w, err)
 		return

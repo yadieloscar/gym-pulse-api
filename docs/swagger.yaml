@@ -1108,14 +1108,20 @@ paths:
   /api/v1/account:
     delete:
       description: |-
-        Permanently deletes the authenticated user's account: all
-        application data and, when the server is configured with
-        Supabase admin credentials, the auth user itself. Irreversible.
+        Permanently deletes the authenticated user's account:
+        avatar object, application data, and Supabase auth user.
+        Irreversible; incomplete deletion can be retried safely.
       responses:
         "204":
           description: No Content
         "401":
           description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
           schema:
             additionalProperties:
               type: string
@@ -2535,6 +2541,28 @@ paths:
               type: string
             type: object
       summary: Health check
+      tags:
+      - health
+  /ready:
+    get:
+      description: Returns 200 when required dependencies are available, otherwise
+        503.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "503":
+          description: Service Unavailable
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Readiness check
       tags:
       - health
 securityDefinitions:

@@ -14,16 +14,39 @@
 - Base: `http://localhost:8080` (dev) / Railway prod URL.
 - Auth: all `/api/v1/*` endpoints require `Authorization: Bearer <jwt>`.
   Production validates the configured issuer and audience using bounded JWKS
-  retrieval; development may use legacy HMAC with `SUPABASE_JWT_SECRET`.
+  retrieval. Issuer and JWKS are derived from the canonical `SUPABASE_URL`, and
+  explicit legacy overrides must match that project. Development may use
+  legacy HMAC with `SUPABASE_JWT_SECRET`.
 - Production accepts only expiring `RS256` RSA or `ES256` P-256 tokens whose
   JWKS algorithm exactly matches the token, and `sub` must be a UUID.
+- After signature and claim validation, every `/api/v1/*` request verifies
+  that the JWT subject still exists in `auth.users`. A deleted identity is
+  rejected even while its previously issued access token remains unexpired.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
+- Browser preflight accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and
+  `OPTIONS`, including `Authorization`, `Content-Type`, and `Idempotency-Key`.
+  `X-Request-ID` is exposed to browser clients for support correlation.
 - JSON bodies are limited to 1 MiB and exactly one JSON value. Oversized bodies
   return `413 REQUEST_TOO_LARGE` with `details.max_bytes: 1048576`; malformed or
   trailing JSON returns `400 BAD_REQUEST`.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
   will 422 even if you only intend to change one field. See "gotchas" below.
+
+---
+
+## Operational checks
+
+### `GET /health`
+
+Process liveness. Returns `200 {"status":"ok"}` while the HTTP process is
+running; it does not query dependencies.
+
+### `GET /ready`
+
+Database-backed readiness. Returns `200 {"status":"ready"}` when PostgreSQL
+responds within the bounded readiness timeout. Otherwise returns
+`503 {"status":"unavailable"}`. Neither endpoint requires authentication.
 
 ---
 
@@ -65,9 +88,22 @@ Unrelated display-name or avatar URL changes never complete onboarding.
 ### `PUT /api/v1/profile/avatar`
 
 Authenticated `multipart/form-data` with exactly one `file` part containing a
-JPEG or PNG of at most 5 MiB. The server uploads to the configured private
-credential boundary at `<user_uuid>/avatar` with upsert enabled, then persists
-only its durable cache-busted public URL. Response 200 is the full profile.
+JPEG or PNG of at most 5 MiB. Under the per-user cross-replica lock, the server
+loads the current profile and uploads to the inactive bounded slot:
+`<user_uuid>/avatar-0` or `<user_uuid>/avatar-1`. It then persists the
+cache-busted public URL. The previous active object is never overwritten before
+the database update commits. After any database-write error, the new object is
+never deleted. A detached read that positively confirms its exact URL turns the
+response into success. An unresolved read or one that still shows the old URL
+returns an error, because the original autocommit may still complete afterward.
+Avatar replacement never deletes any supported avatar object, including after
+normal success or positive error confirmation. This preserves compatibility
+with generic `PUT /api/v1/profile`, which may repoint `avatar_url` to a
+previously issued supported URL. Replacement safely overwrites only the
+inactive slot selected from the current database URL. The legacy object and
+both slots—at most three objects—remain accessible until account deletion
+explicitly removes all three. Response 200 is the full profile snapshot with
+the new URL.
 Missing/multiple files → 400; oversized → 413; unsupported bytes → 415;
 storage failure → 502; unconfigured storage → 503.
 
@@ -717,16 +753,38 @@ Validator: `weight gt=0`, `unit oneof=lb kg`.
 
 ### `DELETE /api/v1/account` → 204
 
-**Irreversible.** Deletes every row belonging to the authenticated user
-(templates + exercises, day logs + set logs + overrides, plans, settings,
-body weights, profile) in one transaction, then — when the server is
-configured with `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — deletes the
-Supabase auth user via the Admin API. An auth-provider failure after data
-deletion is logged server-side, not surfaced: the response is still 204 and
-the client must sign out and clear local state.
+**Irreversible.** Explicitly batch-deletes the complete bounded Storage object
+set—legacy `<authenticated_user_uuid>/avatar` plus
+`<authenticated_user_uuid>/avatar-0` and
+`<authenticated_user_uuid>/avatar-1`—every user-owned application row in one
+database transaction, and the Supabase auth user.
+Deletion and avatar mutation share a cross-replica PostgreSQL advisory lock.
+The lock uses a dedicated direct or session-mode database connection; Supavisor
+transaction mode cannot preserve the session-level lock across statements.
+Within it, the server deletes application rows, the avatar, and finally the
+auth identity. Auth deletion is deliberately last: if the provider accepts the
+delete but its response is lost, no application-held personal data is stranded
+after the user loses the ability to authenticate. Avatar upload rechecks the
+auth identity inside the same lock before touching Storage. Production
+requires configured Supabase admin credentials.
 
-Client flow: confirm twice → `DELETE /account` → `supabase.auth.signOut()` →
-`clearCache()`.
+`204` means every required server-side step completed. Missing avatar objects
+and already-deleted auth users count as success, so the operation can be
+retried safely after a partial failure. A Storage, database, or Auth failure
+returns:
+
+```json
+{
+  "error": "account deletion temporarily unavailable",
+  "code": "ACCOUNT_DELETION_INCOMPLETE"
+}
+```
+
+Status is `503`. The client must remain on the deletion flow and offer a retry;
+only after `204` may it sign out, cancel notifications, and clear all
+user-scoped local data. A cryptographically valid, unexpired JWT may call only
+this deletion endpoint after its auth row is gone, allowing final cleanup to
+be retried; every other API route still rejects that identity with `401`.
 
 ---
 
@@ -736,6 +794,28 @@ JWT must have:
 - `sub`: a v4 UUID — this becomes the `userID` everywhere.
 - `kid` header: required when `SUPABASE_JWKS_URL` is set (asymmetric path).
   HMAC path (no JWKS) doesn't require it.
+
+A cryptographically valid token whose `sub` no longer exists returns:
+
+```json
+{
+  "error": "authentication required",
+  "code": "AUTHENTICATION_REQUIRED"
+}
+```
+
+Status is `401`; the client must clear its session. If the server cannot verify
+identity existence because PostgreSQL is unavailable, it fails closed with:
+
+```json
+{
+  "error": "authentication service temporarily unavailable",
+  "code": "AUTHENTICATION_UNAVAILABLE"
+}
+```
+
+Status is `503`; the client may retry and must not treat this as a terminal
+sign-out.
 
 Local dev tip: see `scripts/smoke.sh` for how to mint a short-lived HMAC token
 that the API will accept.

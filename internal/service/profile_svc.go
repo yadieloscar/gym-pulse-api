@@ -2,6 +2,10 @@ package service
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -17,10 +21,25 @@ type ProfileService interface {
 	UploadAvatar(ctx context.Context, userID uuid.UUID, contentType string, data []byte) (*model.UserProfile, error)
 }
 
+var (
+	ErrAvatarIdentityInactive    = errors.New("avatar identity inactive")
+	ErrAvatarIdentityCheckFailed = errors.New("avatar identity check failed")
+)
+
+const (
+	avatarCommitCheckTimeout = 2 * time.Second
+)
+
+type ProfileActiveUserChecker interface {
+	Exists(ctx context.Context, userID uuid.UUID) (bool, error)
+}
+
 type profileService struct {
 	repo      dao.ProfileDAO
 	validator *validator.Validate
 	storage   AvatarStorage
+	active    ProfileActiveUserChecker
+	locker    UserOperationLocker
 }
 
 // NewProfileService creates a new ProfileService.
@@ -32,18 +51,90 @@ func NewProfileService(repo dao.ProfileDAO, v *validator.Validate, storage ...Av
 	return &profileService{repo: repo, validator: v, storage: avatarStorage}
 }
 
+func NewProfileServiceWithUserBoundary(
+	repo dao.ProfileDAO,
+	v *validator.Validate,
+	storage AvatarStorage,
+	active ProfileActiveUserChecker,
+	locker UserOperationLocker,
+) ProfileService {
+	return &profileService{
+		repo: repo, validator: v, storage: storage, active: active, locker: locker,
+	}
+}
+
 func (s *profileService) UploadAvatar(ctx context.Context, userID uuid.UUID, contentType string, data []byte) (*model.UserProfile, error) {
-	if s.storage == nil {
-		return nil, ErrAvatarStorageUnavailable
+	var profile *model.UserProfile
+	upload := func(ctx context.Context) error {
+		if s.active != nil {
+			exists, err := s.active.Exists(ctx, userID)
+			if err != nil {
+				return fmt.Errorf("%w: %w", ErrAvatarIdentityCheckFailed, err)
+			}
+			if !exists {
+				return ErrAvatarIdentityInactive
+			}
+		}
+		if s.storage == nil {
+			return ErrAvatarStorageUnavailable
+		}
+
+		current, err := s.repo.Get(ctx, userID)
+		if err != nil {
+			return fmt.Errorf("loading current profile before avatar upload: %w", err)
+		}
+		if current == nil {
+			current = &model.UserProfile{ID: userID}
+		}
+
+		objectPath := nextAvatarObjectPath(userID, current.AvatarURL)
+		avatarURL, err := s.storage.Upload(ctx, objectPath, contentType, data)
+		if err != nil {
+			return err
+		}
+		committed, err := s.repo.ReplaceAvatar(ctx, userID, avatarURL)
+		if err != nil {
+			persistErr := fmt.Errorf("persisting avatar profile: %w", err)
+			confirmed, confirmErr := s.confirmAvatarCommit(ctx, userID)
+			if confirmErr != nil {
+				// The write result is ambiguous. Keep the newly uploaded object:
+				// deleting it could remove the avatar the database now references.
+				return errors.Join(
+					persistErr,
+					fmt.Errorf("confirming avatar profile commit: %w", confirmErr),
+				)
+			}
+			if confirmed != nil && confirmed.AvatarURL != nil && *confirmed.AvatarURL == avatarURL {
+				profile = confirmed
+				slog.WarnContext(ctx, "avatar profile write returned an error but the commit was confirmed")
+				return nil
+			}
+			// A read that still shows the previous URL is not proof that an
+			// errored autocommit cannot commit afterward. Retain the bounded
+			// inactive object; a retry safely overwrites the inactive slot,
+			// and account deletion eventually removes every bounded path.
+			return persistErr
+		}
+
+		profile = committed
+		return nil
 	}
-	avatarURL, err := s.storage.Upload(ctx, userID.String()+"/avatar", contentType, data)
-	if err != nil {
+	if s.locker != nil {
+		if err := s.locker.WithUserLock(ctx, userID, upload); err != nil {
+			return nil, err
+		}
+		return profile, nil
+	}
+	if err := upload(ctx); err != nil {
 		return nil, err
 	}
-	if err := s.repo.Upsert(ctx, userID, &model.UpdateProfileRequest{AvatarURL: &avatarURL}); err != nil {
-		return nil, err
-	}
-	return s.repo.Get(ctx, userID)
+	return profile, nil
+}
+
+func (s *profileService) confirmAvatarCommit(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error) {
+	confirmCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), avatarCommitCheckTimeout)
+	defer cancel()
+	return s.repo.Get(confirmCtx, userID)
 }
 
 func (s *profileService) Get(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error) {

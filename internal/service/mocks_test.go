@@ -9,8 +9,9 @@ import (
 )
 
 type MockProfileDAO struct {
-	GetFunc    func(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error)
-	UpsertFunc func(ctx context.Context, userID uuid.UUID, profile *model.UpdateProfileRequest) error
+	GetFunc           func(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error)
+	UpsertFunc        func(ctx context.Context, userID uuid.UUID, profile *model.UpdateProfileRequest) error
+	ReplaceAvatarFunc func(ctx context.Context, userID uuid.UUID, avatarURL string) (*model.UserProfile, error)
 }
 
 func (m *MockProfileDAO) Get(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error) {
@@ -25,6 +26,30 @@ func (m *MockProfileDAO) Upsert(ctx context.Context, userID uuid.UUID, profile *
 		return m.UpsertFunc(ctx, userID, profile)
 	}
 	return nil
+}
+
+func (m *MockProfileDAO) ReplaceAvatar(ctx context.Context, userID uuid.UUID, avatarURL string) (*model.UserProfile, error) {
+	if m.ReplaceAvatarFunc != nil {
+		return m.ReplaceAvatarFunc(ctx, userID, avatarURL)
+	}
+	if m.UpsertFunc != nil {
+		if err := m.UpsertFunc(ctx, userID, &model.UpdateProfileRequest{AvatarURL: &avatarURL}); err != nil {
+			return nil, err
+		}
+	}
+	var profile *model.UserProfile
+	if m.GetFunc != nil {
+		var err error
+		profile, err = m.GetFunc(ctx, userID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if profile == nil {
+		profile = &model.UserProfile{ID: userID}
+	}
+	profile.AvatarURL = &avatarURL
+	return profile, nil
 }
 
 type MockBodyWeightDAO struct {

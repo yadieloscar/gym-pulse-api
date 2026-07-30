@@ -10,8 +10,8 @@ import (
 
 type AccountDAO interface {
 	// DeleteUserData removes every row belonging to the user in one
-	// transaction. Child tables (exercises, set_logs, exercise_overrides,
-	// user_profiles) cascade from these roots.
+	// transaction. Global catalog and starter-program rows remain. Auth
+	// identity deletion is coordinated separately through the provider API.
 	DeleteUserData(ctx context.Context, userID uuid.UUID) error
 }
 
@@ -31,16 +31,23 @@ func (r *accountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error
 	// Rollback after a successful commit is a no-op.
 	defer tx.Rollback(ctx)
 
-	// day_logs before workout_templates: set_logs cascade from both sides.
-	// auth.users last: user_profiles cascades from it.
+	// Delete relationship roots in dependency order. Child exercise, set,
+	// workout, and program rows cascade from these roots.
 	statements := []string{
 		`DELETE FROM day_logs WHERE user_id = $1`,
+		`DELETE FROM workout_sessions WHERE user_id = $1`,
+		`DELETE FROM scheduled_workouts WHERE user_id = $1`,
+		`DELETE FROM legacy_adoptions WHERE user_id = $1`,
+		`DELETE FROM programs WHERE user_id = $1`,
+		`DELETE FROM training_profiles WHERE user_id = $1`,
+		`DELETE FROM day_participation WHERE user_id = $1`,
+		`DELETE FROM idempotency_records WHERE user_id = $1`,
 		`DELETE FROM plan_overrides WHERE user_id = $1`,
 		`DELETE FROM weekly_plans WHERE user_id = $1`,
 		`DELETE FROM workout_templates WHERE user_id = $1`,
 		`DELETE FROM user_settings WHERE user_id = $1`,
 		`DELETE FROM body_weights WHERE user_id = $1`,
-		`DELETE FROM auth.users WHERE id = $1`,
+		`DELETE FROM user_profiles WHERE id = $1`,
 	}
 	for _, stmt := range statements {
 		if _, err := tx.Exec(ctx, stmt, userID); err != nil {
