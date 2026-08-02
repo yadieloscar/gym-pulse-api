@@ -26,12 +26,17 @@ echo "→ disabling JWKS via docker-compose.smoke.yml override"
 ( cd "$compose_dir" && docker compose -f docker-compose.yml -f docker-compose.smoke.yml up -d --no-build --force-recreate api >/dev/null )
 
 # wait for healthy
-for i in 1 2 3 4 5 6 7 8; do
-  code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health)
+code=""
+for _ in $(seq 1 30); do
+  code=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/health || true)
   [ "$code" = "200" ] && break
   sleep 1
 done
-[ "$code" = "200" ] || { echo "api did not come back healthy"; exit 1; }
+if [ "$code" != "200" ]; then
+  echo "api did not come back healthy; recent logs follow" >&2
+  ( cd "$compose_dir" && docker compose logs --tail=120 api ) >&2
+  exit 1
+fi
 
 # Mirror the CI fixture so local writes that reference auth.users exercise the
 # real foreign-key path instead of failing because the development database is

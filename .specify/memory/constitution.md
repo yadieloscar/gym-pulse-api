@@ -1,9 +1,9 @@
 <!--
 Sync Impact Report
-- Version: unratified template -> 1.0.0
+- Version: 1.0.0 -> 1.0.1
 - Added: Contract First; Owned Authenticated Data; Idempotent Evolution; Executable Evidence;
   Simple Go Boundaries
-- Updated: plan and tasks templates; AGENTS.md; CLAUDE.md
+- Updated: supported Go version and cross-repository feature identity
 - Deferred items: none
 -->
 # GymPulse API Constitution
@@ -42,10 +42,11 @@ background concurrency MUST be justified in the plan.
 
 ## Technical Constraints
 
-- Go 1.23+, chi, pgx/pgxpool, PostgreSQL, and SQL migrations are the supported stack.
+- Go 1.26+, chi, pgx/pgxpool, PostgreSQL, and SQL migrations are the supported stack.
 - Response structs and fixtures use keyed fields and documented JSON tags.
 - Validator, JSON, response, status, or error changes update `docs/CONTRACTS.md` in the same commit.
-- Cross-repository features share a feature name and link their dependent app specification.
+- Cross-repository features declare the same stable feature ID and link their dependent app
+  specification. Local numeric Spec Kit directory prefixes may differ.
 
 ## Spec-Driven Delivery
 
@@ -63,4 +64,4 @@ MAJOR for removed or redefined governance, MINOR for new or expanded obligations
 clarification. Every plan and review MUST verify compliance; exceptions require explicit Complexity
 Tracking with the simpler rejected alternative.
 
-**Version**: 1.0.0 | **Ratified**: 2026-07-18 | **Last Amended**: 2026-07-18
+**Version**: 1.0.1 | **Ratified**: 2026-07-18 | **Last Amended**: 2026-08-02
