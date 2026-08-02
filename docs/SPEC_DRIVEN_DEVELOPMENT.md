@@ -8,5 +8,6 @@ Use `$speckit-specify`, clarify when needed, then `$speckit-plan`, `$speckit-tas
 `$speckit-analyze`, `$speckit-implement`, and `$speckit-converge`. Contract changes must be specified,
 update `docs/CONTRACTS.md` with their implementation, and pass contract and smoke verification.
 
-Cross-repository work uses the same feature number and slug as the app and links its sibling spec.
+Cross-repository work declares the same stable feature ID as the app and links its sibling spec.
+Each repository retains its own local numeric directory prefix; those numbers may differ.
 Historical Context Specs artifacts remain available in Git history only and are not workflow inputs.

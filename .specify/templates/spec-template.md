@@ -2,6 +2,10 @@
 
 **Feature Branch**: `[###-feature-name]`
 
+**Feature ID**: `[gympulse-feature-name]`
+
+**Sibling Spec**: `[relative path to app spec or N/A]`
+
 **Created**: [DATE]
 
 **Status**: Draft
@@ -77,6 +81,16 @@
 
 - What happens when [boundary condition]?
 - How does system handle [error scenario]?
+
+## Non-Goals *(mandatory)*
+
+<!--
+  State what this feature deliberately does not change. Include adjacent product behavior,
+  compatibility removals, operational work, and repository scope that could otherwise be inferred.
+-->
+
+- [Explicitly excluded outcome or adjacent behavior]
+- [Deferred capability that requires a separate specification]
 
 ## Requirements *(mandatory)*
 

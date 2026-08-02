@@ -12,12 +12,12 @@ Go REST API backend for GymPulse, a mobile fitness tracking app. Handles workout
 ## Architecture
 
 ```
-handler → service → repository → database
+handler → service → DAO → database
 ```
 
 - **handler/** — HTTP concerns: parse request, call service, write response
 - **service/** — Business logic and validation
-- **repository/** — SQL queries, accepts/returns model structs
+- **dao/** — SQL queries and transaction boundaries, accepts/returns model structs
 - **model/** — Shared data structures across layers
 - **middleware/** — Auth (JWT), CORS, request logging
 
@@ -50,27 +50,19 @@ curl http://localhost:8080/health
 # → {"status":"ok"}
 ```
 
-## API Endpoints
+## API Surface
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Health check |
-| GET | `/api/v1/templates` | List templates (optional `?type=&subtype=`) |
-| GET | `/api/v1/templates/:id` | Get template with exercises |
-| POST | `/api/v1/templates` | Create template |
-| PUT | `/api/v1/templates/:id` | Update template |
-| DELETE | `/api/v1/templates/:id` | Delete template |
-| GET | `/api/v1/logs?week=YYYY-MM-DD` | List logs for week |
-| GET | `/api/v1/logs/:date` | Get log with overrides |
-| POST | `/api/v1/logs` | Create day log |
-| PUT | `/api/v1/logs/:date` | Update overrides/notes |
-| DELETE | `/api/v1/logs/:date` | Delete day log |
-| GET | `/api/v1/stats/summary` | Weekly progress, streak, total |
-| GET | `/api/v1/stats/distribution` | Workout type distribution |
-| GET | `/api/v1/settings` | Get user settings |
-| PUT | `/api/v1/settings` | Update user settings |
+The API covers health/readiness, account/profile/settings, templates and the exercise catalog,
+legacy logs and plans, body weight and statistics, training profiles and programs, scheduled
+workouts and sessions, participation, and plan transitions.
 
-All endpoints except `/health` require `Authorization: Bearer <supabase_jwt>`.
+`docs/CONTRACTS.md` is the client-facing source of truth for routes, payloads, validation, statuses,
+stable errors, idempotency, and revisions. Generated Swagger is available from `/docs/` while the
+server is running. Route registration lives in `internal/router/router.go`; avoid duplicating a
+manually maintained endpoint inventory here.
+
+All application endpoints require `Authorization: Bearer <supabase_jwt>`. `/health`, `/ready`, and
+generated documentation are operational surfaces outside the authenticated application API.
 
 ## Environment Variables
 

@@ -17,6 +17,9 @@ Git history, verification, and pull requests separate while preserving a coheren
    side already supports the required behavior.
 5. Identify the user-visible outcome and the end-to-end acceptance evidence.
 
+Coordinated specifications declare one stable feature ID and link each other. Each repository keeps
+its own local numeric Spec Kit directory prefix; those numbers may differ.
+
 Preserve independent repository boundaries. Never stage, commit, push, or discard changes in one
 repository as an implicit side effect of work in the other.
 

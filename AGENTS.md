@@ -17,7 +17,8 @@ review strategy that complements the automated quality gates.
 
 Use `$gym-pulse-cross-repo-delivery` when work may affect the Expo app, API contract compatibility,
 deployment sequencing, or end-to-end acceptance. Keep the two repositories on separate branches and
-PRs, and link their dependency explicitly.
+PRs, and link their dependency explicitly. Coordinated specifications share one stable feature ID;
+their local numeric Spec Kit directory prefixes may differ.
 
 Use subagents only when independent analysis, implementation, or review lanes are likely to save time
 or improve evidence. Keep focused, sequential, and overlapping-file work with the primary agent.
