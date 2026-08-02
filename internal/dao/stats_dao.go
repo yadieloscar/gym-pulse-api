@@ -37,6 +37,8 @@ func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSta
 		  UNION
 		  SELECT date FROM workout_sessions ws WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND status <> 'discarded'
 		    AND (status='completed' OR EXISTS (SELECT 1 FROM set_logs sl WHERE sl.workout_session_id=ws.id AND sl.completed=true))
+		  UNION
+		  SELECT date FROM sport_activities WHERE user_id=$1 AND date BETWEEN $2 AND $3
 		) performed_days`,
 		userID, weekStart, weekEnd,
 	).Scan(&count)

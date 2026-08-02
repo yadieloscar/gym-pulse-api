@@ -532,6 +532,61 @@ does not rewrite a missed scheduled outcome. Stats, record, history, and volume
 queries union legacy day logs with UUID workout sessions; an off-plan session is
 counted as its own performed workout while weekly participation remains date-based.
 
+### Sport activities
+
+Sport activities are completed athlete-owned sports, separate from structured
+workout sessions. All collection dates are inclusive and a range may span at
+most 366 days. Results are ordered by `date`, `created_at`, then `id`, newest first.
+
+#### `GET /api/v1/sport-activities?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response 200 is a JSON array. An athlete with no activities receives `[]`.
+
+#### `POST /api/v1/sport-activities`
+
+Requires `Idempotency-Key` equal to `operation_key`.
+
+```json
+{
+  "date": "2026-08-02",
+  "sport_id": "basketball",
+  "sport_name": "Basketball",
+  "duration_minutes": 60,
+  "notes": "Pickup game",
+  "operation_key": "sport-create-123"
+}
+```
+
+`date` may be omitted and then defaults to today in the athlete's saved
+training-profile timezone. Future dates are rejected. `sport_id` is a lowercase
+slug of at most 64 characters. `sport_name` is trimmed and 1–80 characters;
+the `other` identifier requires a custom name. Duration is a whole number from
+1 through 1,440 minutes. Notes are optional, trimmed, and at most 2,000 characters.
+
+Response 201 is the authoritative activity:
+
+```json
+{
+  "id": "<uuid>", "date": "2026-08-02",
+  "sport_id": "basketball", "sport_name": "Basketball",
+  "duration_minutes": 60, "notes": "Pickup game",
+  "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+Creation and date participation commit atomically. An identical idempotent retry
+returns the original activity with 201; a changed payload returns 409
+`IDEMPOTENCY_CONFLICT`. Multiple activities may share a date, but weekly progress
+counts the date once. A sport preserves participation on a missed planned date
+without changing the planned-workout result. It does not increase
+`total_workouts`, workout distribution, or lifted volume.
+
+#### `GET /api/v1/sport-activities/{id}`
+
+Response 200 is the owned activity. A missing or foreign UUID returns the same
+404 `NOT_FOUND` response. Sport activities have no edit or delete route in v1;
+account deletion removes them.
+
 ---
 
 ## Exercise catalog (read-only v1)
@@ -703,7 +758,9 @@ Response 200:
 
 **Counting semantics:** `rest`-type day logs are logged intent, not workouts.
 They are excluded from `this_week.completed`, the week streak, the day
-streak, and `total_workouts` (this matches the client mock's behavior).
+streak, and `total_workouts` (this matches the client mock's behavior). A sport
+activity contributes its local date to `this_week.completed` and the week streak,
+at most once per date, but is not included in `total_workouts`.
 For goal-based training, the participation streak counts consecutive finalized
 scheduled opportunities with participation. Incomplete and completed outcomes
 count; a finalized missed opportunity without off-plan participation resets it.
