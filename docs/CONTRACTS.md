@@ -587,6 +587,88 @@ Response 200 is the owned activity. A missing or foreign UUID returns the same
 404 `NOT_FOUND` response. Sport activities have no edit or delete route in v1;
 account deletion removes them.
 
+### Criteria-based training blocks
+
+Training blocks are private records of criteria the athlete chooses. They do
+not diagnose, prescribe treatment, or provide return-to-play clearance. They
+never update programs, schedules, workouts, sport activities, participation,
+streaks, volume, or records. An optional owned `program_id` is context only.
+
+All mutations require an `operation_key` UUID equal to the `Idempotency-Key`
+header. Except create, they also require `expected_revision`. A verbatim retry
+replays the original full aggregate; a changed operation payload returns 409
+`IDEMPOTENCY_CONFLICT`. A stale revision returns 409 `REVISION_CONFLICT` with
+the current aggregate under `resource`. Every nested identifier is ownership
+scoped; a missing or foreign resource returns the same 404 `NOT_FOUND` shape.
+
+#### `GET /api/v1/training-blocks?status=active&limit=20&offset=0`
+
+`status` is `active`, `completed`, `archived`, or `all` (default `active`).
+`limit` defaults to 20 and is bounded from 1 through 100; `offset` is zero or
+greater. Summaries are ordered by `updated_at`, then `id`, newest first.
+
+```json
+{
+  "training_blocks": [{
+    "id": "<uuid>", "name": "Return to spiking", "status": "active",
+    "revision": 3,
+    "current_stage": { "id": "<uuid>", "stage_order": 1, "name": "Controlled contacts", "load_level": "easy", "required_qualifying_exposures": 2 },
+    "current_stage_progress": { "required_qualifying_exposures": 2, "qualifying_exposures": 1, "criteria_complete": false },
+    "pending_next_morning_count": 1, "updated_at": "<RFC3339>"
+  }],
+  "next_offset": null
+}
+```
+
+#### `POST /api/v1/training-blocks`
+
+Creates 2–12 immutable ordered stages. `name` is 1–120 characters; optional
+`purpose` is at most 500. Stage names are 1–120, instructions at most 1,000,
+`load_level` is `easy` or `demanding`, count is 1–10,000, duration is 1–1,440
+minutes, intensity is 1–100 percent, and required qualifying exposures are
+1–20. Optional targets may be omitted. Response 201 is the full aggregate at
+stage one, active, revision 1, with empty exposure and transition arrays.
+
+#### `GET /api/v1/training-blocks/{block_id}`
+
+Response 200 is the full aggregate: ordered `stages`, newest-first `exposures`,
+oldest-first `transitions`, and authoritative current-stage progress.
+
+#### `POST /api/v1/training-blocks/{block_id}/exposures`
+
+```json
+{
+  "performed_on": "2026-08-04", "activity_label": "Volleyball hitting",
+  "load_level": "demanding", "performed_count": 20,
+  "duration_minutes": 15, "performed_intensity_percent": 70,
+  "session_outcome": "completed_as_planned", "notes": "Controlled setting",
+  "expected_revision": 1, "operation_key": "<uuid>"
+}
+```
+
+The local date cannot be future in the saved training-profile timezone. An
+active block accepts an exposure only for its current stage. The response is
+the revision-incremented aggregate with `next_morning_response` absent and
+`qualifies:false`.
+
+#### `POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning`
+
+Body fields are `response` (`baseline` or `above_baseline`), revision, and
+operation key. A response can be recorded once. `qualifies` is server-derived
+and true only for `completed_as_planned` plus `baseline`; the client never sends
+it. Modified, stopped, pending, and above-baseline exposures remain visible but
+do not qualify.
+
+#### `POST /api/v1/training-blocks/{block_id}/transitions`
+
+`action` is `advance`, `regress`, `complete`, or `archive`. Advance requires
+sufficient authoritative evidence and moves exactly one stage. Regression
+requires an earlier `to_stage_id` and a 1–500 character `reason`. Completion
+requires sufficient evidence at the final stage. Archive is explicit and may
+follow active or completed state. Each success appends transition history,
+increments the block revision once, and returns the full aggregate. No action
+is automatic and no individual history record has an edit or delete route.
+
 ---
 
 ## Exercise catalog (read-only v1)

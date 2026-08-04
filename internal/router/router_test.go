@@ -183,7 +183,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 
-	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	do := func(req *http.Request) *http.Response {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
