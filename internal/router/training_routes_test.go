@@ -12,7 +12,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -31,6 +31,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/scheduled-workouts/{id}/complete", "GET /api/v1/participation",
 		"POST /api/v1/plan-transitions/preview", "POST /api/v1/plan-transitions/apply",
 		"POST /api/v1/schedule/recover", "PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target",
+		"GET /api/v1/sport-activities/", "POST /api/v1/sport-activities/", "GET /api/v1/sport-activities/{id}",
 	} {
 		if !found[route] {
 			t.Errorf("missing route %s", route)

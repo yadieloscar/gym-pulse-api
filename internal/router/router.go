@@ -33,6 +33,7 @@ func New(
 	planTransitionHandler *handler.PlanTransitionHandler,
 	workoutSessionHandler *handler.WorkoutSessionHandler,
 	participationHandler *handler.ParticipationHandler,
+	sportActivityHandler *handler.SportActivityHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -95,6 +96,11 @@ func New(
 					})
 				})
 				r.Get("/participation", participationHandler.List)
+				r.Route("/sport-activities", func(r chi.Router) {
+					r.Get("/", sportActivityHandler.List)
+					r.Post("/", sportActivityHandler.Create)
+					r.Get("/{id}", sportActivityHandler.Get)
+				})
 
 				// Templates
 				r.Route("/templates", func(r chi.Router) {

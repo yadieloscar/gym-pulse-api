@@ -11,6 +11,7 @@
 #   5. goal profile → starter copy → dated scheduled workout → required and
 #      extra sets → incomplete outcome → participation remains separate
 #   6. notes-only and overrides-only day-log edits preserve performed sets
+#   7. sport creation is idempotent and records participation for the date
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -309,8 +310,32 @@ else
   bad "lossless day-log acceptance failed (template=$template_status create=$create_status notes=$notes_status overrides=$overrides_status rollback=$rollback_status/$readback_status clear=$clear_status)" "$(echo "$clear_body" | head -c 280)"
 fi
 
-# ---------- 13. account deletion (LAST: wipes the smoke user) ----------
-step "13. DELETE /api/v1/account returns 204 and clears the user's data"
+# ---------- 13. completed sport activity ----------
+step "13. POST /api/v1/sport-activities is idempotent and preserves participation"
+sport_op="smoke-sport-v1"
+sport_payload="{\"date\":\"$session_date\",\"sport_id\":\"basketball\",\"sport_name\":\"Basketball\",\"duration_minutes\":60,\"notes\":\"Smoke pickup game\",\"operation_key\":\"$sport_op\"}"
+sport_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_op" \
+  -d "$sport_payload")
+sport_body=$(cat /tmp/smoke.body)
+sport_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$sport_body" 2>/dev/null || true)
+sport_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_op" \
+  -d "$sport_payload")
+sport_replay_body=$(cat /tmp/smoke.body)
+sport_list_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/sport-activities?from=$session_date&to=$session_date" "${auth[@]}")
+sport_list_body=$(cat /tmp/smoke.body)
+sport_part_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/participation?from=$session_date&to=$session_date" "${auth[@]}")
+sport_part_body=$(cat /tmp/smoke.body)
+if [ "$sport_status" = "201" ] && [ "$sport_replay_status" = "201" ] && [ "$sport_list_status" = "200" ] && [ "$sport_part_status" = "200" ] && [ -n "$sport_id" ] && \
+  python3 -c "import json,sys; created,replay,listed,participation=sys.argv[1:]; c=json.loads(created); r=json.loads(replay); l=json.loads(listed); p=json.loads(participation); assert c['id']==r['id'] and len(l)==1 and l[0]['id']==c['id'] and any(x['date']==c['date'] and x['participated'] for x in p['participation'])" "$sport_body" "$sport_replay_body" "$sport_list_body" "$sport_part_body" 2>/dev/null; then
+  ok "sport replay returned one activity and participation=true for its date"
+else
+  bad "sport activity acceptance failed (create=$sport_status replay=$sport_replay_status list=$sport_list_status participation=$sport_part_status)" "$(echo "$sport_list_body" | head -c 280)"
+fi
+
+# ---------- 14. account deletion (LAST: wipes the smoke user) ----------
+step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then
   # After deletion the user's templates must be gone (empty list or null).

@@ -1,0 +1,68 @@
+openapi: 3.0.3
+info: {title: GymPulse Sport Activities Contract, version: 1.0.0}
+paths:
+  /api/v1/sport-activities:
+    get:
+      summary: List owned sport activities in an inclusive date range
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: Newest-first collection; empty is an array
+          content: {application/json: {schema: {type: array, items: {$ref: '#/components/schemas/SportActivity'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    post:
+      summary: Record a sport and preserve date participation atomically
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateSportActivityRequest'}}}
+      responses:
+        '201':
+          description: Created or identical replay
+          content: {application/json: {schema: {$ref: '#/components/schemas/SportActivity'}}}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/sport-activities/{id}:
+    get:
+      summary: Get one owned sport activity
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200': {description: Owned activity, content: {application/json: {schema: {$ref: '#/components/schemas/SportActivity'}}}}
+        '404': {description: Missing and foreign IDs are indistinguishable}
+components:
+  schemas:
+    CreateSportActivityRequest:
+      type: object
+      required: [sport_id, sport_name, duration_minutes, operation_key]
+      properties:
+        date: {type: string, format: date, description: Defaults to athlete-local today}
+        sport_id: {type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 64}
+        sport_name: {type: string, minLength: 1, maxLength: 80}
+        duration_minutes: {type: integer, minimum: 1, maximum: 1440}
+        notes: {type: string, maxLength: 2000, nullable: true}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    SportActivity:
+      type: object
+      required: [id, date, sport_id, sport_name, duration_minutes, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        date: {type: string, format: date}
+        sport_id: {type: string}
+        sport_name: {type: string}
+        duration_minutes: {type: integer}
+        notes: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Error:
+      type: object
+      required: [error, code, details]
+      properties: {error: {type: string}, code: {type: string}, details: {type: object}}
+  responses:
+    ValidationError:
+      description: Invalid field or date range
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ConflictError:
+      description: Operation key reused with a different payload
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
