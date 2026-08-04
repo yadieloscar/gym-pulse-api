@@ -56,10 +56,28 @@ func TestTrainingBlockHandlerContracts(t *testing.T) {
 		t.Fatalf("create status=%d body=%s", create.Code, create.Body.String())
 	}
 
+	get := httptest.NewRecorder()
+	h.Get(get, guidedHandlerRequest(t, http.MethodGet, "/", nil, userID, "", map[string]string{"block_id": blockID.String()}))
+	if get.Code != http.StatusOK {
+		t.Fatalf("get status=%d body=%s", get.Code, get.Body.String())
+	}
+
+	exposure := httptest.NewRecorder()
+	h.AddExposure(exposure, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateTrainingExposureRequest{OperationKey: operationKey}, userID, operationKey, map[string]string{"block_id": blockID.String()}))
+	if exposure.Code != http.StatusOK {
+		t.Fatalf("exposure status=%d body=%s", exposure.Code, exposure.Body.String())
+	}
+
 	next := httptest.NewRecorder()
 	h.RecordNextMorning(next, guidedHandlerRequest(t, http.MethodPost, "/", model.RecordNextMorningRequest{OperationKey: operationKey}, userID, operationKey, map[string]string{"block_id": blockID.String(), "exposure_id": exposureID.String()}))
 	if next.Code != http.StatusOK {
 		t.Fatalf("next-morning status=%d body=%s", next.Code, next.Body.String())
+	}
+
+	transition := httptest.NewRecorder()
+	h.Transition(transition, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateTrainingTransitionRequest{OperationKey: operationKey}, userID, operationKey, map[string]string{"block_id": blockID.String()}))
+	if transition.Code != http.StatusOK {
+		t.Fatalf("transition status=%d body=%s", transition.Code, transition.Body.String())
 	}
 }
 
@@ -70,6 +88,11 @@ func TestTrainingBlockHandlerRejectsBadQueriesAndKeys(t *testing.T) {
 	h.List(badQuery, guidedHandlerRequest(t, http.MethodGet, "/?limit=lots", nil, userID, "", nil))
 	if badQuery.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("bad query status=%d body=%s", badQuery.Code, badQuery.Body.String())
+	}
+	badOffset := httptest.NewRecorder()
+	h.List(badOffset, guidedHandlerRequest(t, http.MethodGet, "/?offset=lots", nil, userID, "", nil))
+	if badOffset.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("bad offset status=%d body=%s", badOffset.Code, badOffset.Body.String())
 	}
 	badKey := httptest.NewRecorder()
 	h.Create(badKey, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateTrainingBlockRequest{OperationKey: "body"}, userID, "header", nil))
