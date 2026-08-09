@@ -34,6 +34,7 @@ func New(
 	workoutSessionHandler *handler.WorkoutSessionHandler,
 	participationHandler *handler.ParticipationHandler,
 	sportActivityHandler *handler.SportActivityHandler,
+	trainingBlockHandler *handler.TrainingBlockHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -100,6 +101,16 @@ func New(
 					r.Get("/", sportActivityHandler.List)
 					r.Post("/", sportActivityHandler.Create)
 					r.Get("/{id}", sportActivityHandler.Get)
+				})
+				r.Route("/training-blocks", func(r chi.Router) {
+					r.Get("/", trainingBlockHandler.List)
+					r.Post("/", trainingBlockHandler.Create)
+					r.Route("/{block_id}", func(r chi.Router) {
+						r.Get("/", trainingBlockHandler.Get)
+						r.Post("/exposures", trainingBlockHandler.AddExposure)
+						r.Post("/exposures/{exposure_id}/next-morning", trainingBlockHandler.RecordNextMorning)
+						r.Post("/transitions", trainingBlockHandler.Transition)
+					})
 				})
 
 				// Templates

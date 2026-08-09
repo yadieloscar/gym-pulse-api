@@ -1,0 +1,195 @@
+openapi: 3.0.3
+info:
+  title: GymPulse Criteria-Based Training Blocks
+  version: 1.0.0
+paths:
+  /api/v1/training-blocks:
+    get:
+      summary: List owned training-block summaries
+      parameters:
+        - {in: query, name: status, schema: {type: string, enum: [active, completed, archived, all], default: active}}
+        - {in: query, name: limit, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+        - {in: query, name: offset, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        '200':
+          description: Bounded page
+          content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlockList'}}}
+    post:
+      summary: Create an athlete-authored training block
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateTrainingBlock'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlock'}}}}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/training-blocks/{block_id}:
+    get:
+      summary: Get one owned aggregate
+      parameters: [{$ref: '#/components/parameters/BlockID'}]
+      responses:
+        '200': {description: Detail, content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlock'}}}}
+        '404': {$ref: '#/components/responses/NotFound'}
+  /api/v1/training-blocks/{block_id}/exposures:
+    post:
+      summary: Add a current-stage exposure
+      parameters: [{$ref: '#/components/parameters/BlockID'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateExposure'}}}}
+      responses:
+        '200': {description: Updated aggregate, content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlock'}}}}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning:
+    post:
+      summary: Record the one-time next-morning response
+      parameters: [{$ref: '#/components/parameters/BlockID'}, {$ref: '#/components/parameters/ExposureID'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/RecordNextMorning'}}}}
+      responses:
+        '200': {description: Updated aggregate, content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlock'}}}}
+        '409': {$ref: '#/components/responses/Conflict'}
+  /api/v1/training-blocks/{block_id}/transitions:
+    post:
+      summary: Advance, regress, complete, or archive explicitly
+      parameters: [{$ref: '#/components/parameters/BlockID'}, {$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateTransition'}}}}
+      responses:
+        '200': {description: Updated aggregate, content: {application/json: {schema: {$ref: '#/components/schemas/TrainingBlock'}}}}
+        '409': {$ref: '#/components/responses/Conflict'}
+components:
+  parameters:
+    BlockID: {in: path, name: block_id, required: true, schema: {type: string, format: uuid}}
+    ExposureID: {in: path, name: exposure_id, required: true, schema: {type: string, format: uuid}}
+    IdempotencyKey: {in: header, name: Idempotency-Key, required: true, schema: {type: string, format: uuid}}
+  responses:
+    Conflict: {description: Revision, state, or idempotency conflict}
+    NotFound: {description: Missing or not owned}
+  schemas:
+    StageInput:
+      type: object
+      required: [name, load_level, required_qualifying_exposures]
+      properties:
+        name: {type: string, maxLength: 120}
+        instructions: {type: string, maxLength: 1000}
+        load_level: {type: string, enum: [easy, demanding]}
+        target_count: {type: integer, minimum: 1, maximum: 10000}
+        target_duration_minutes: {type: integer, minimum: 1, maximum: 1440}
+        target_intensity_percent: {type: integer, minimum: 1, maximum: 100}
+        required_qualifying_exposures: {type: integer, minimum: 1, maximum: 20}
+    CreateTrainingBlock:
+      allOf:
+        - {$ref: '#/components/schemas/Operation'}
+        - type: object
+          required: [name, stages]
+          properties:
+            name: {type: string, maxLength: 120}
+            purpose: {type: string, maxLength: 500}
+            program_id: {type: string, format: uuid}
+            stages: {type: array, minItems: 2, maxItems: 12, items: {$ref: '#/components/schemas/StageInput'}}
+    Operation:
+      type: object
+      required: [operation_key]
+      properties: {operation_key: {type: string, format: uuid}}
+    RevisionedOperation:
+      allOf:
+        - {$ref: '#/components/schemas/Operation'}
+        - type: object
+          required: [expected_revision]
+          properties: {expected_revision: {type: integer, minimum: 1}}
+    CreateExposure:
+      allOf:
+        - {$ref: '#/components/schemas/RevisionedOperation'}
+        - type: object
+          required: [performed_on, activity_label, load_level, session_outcome]
+          properties:
+            performed_on: {type: string, format: date}
+            activity_label: {type: string, maxLength: 120}
+            load_level: {type: string, enum: [easy, demanding]}
+            performed_count: {type: integer, minimum: 1, maximum: 10000}
+            duration_minutes: {type: integer, minimum: 1, maximum: 1440}
+            performed_intensity_percent: {type: integer, minimum: 1, maximum: 100}
+            session_outcome: {type: string, enum: [completed_as_planned, modified, stopped]}
+            notes: {type: string, maxLength: 1000}
+    RecordNextMorning:
+      allOf:
+        - {$ref: '#/components/schemas/RevisionedOperation'}
+        - type: object
+          required: [response]
+          properties: {response: {type: string, enum: [baseline, above_baseline]}}
+    CreateTransition:
+      allOf:
+        - {$ref: '#/components/schemas/RevisionedOperation'}
+        - type: object
+          required: [action]
+          properties:
+            action: {type: string, enum: [advance, regress, complete, archive]}
+            to_stage_id: {type: string, format: uuid}
+            reason: {type: string, maxLength: 500}
+    TrainingBlockList:
+      type: object
+      required: [training_blocks]
+      properties:
+        training_blocks: {type: array, items: {$ref: '#/components/schemas/TrainingBlockSummary'}}
+        next_offset: {type: integer, nullable: true}
+    TrainingBlockSummary:
+      type: object
+      required: [id, name, status, revision, current_stage, current_stage_progress, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        purpose: {type: string, nullable: true}
+        program_id: {type: string, format: uuid, nullable: true}
+        status: {type: string, enum: [active, completed, archived]}
+        revision: {type: integer}
+        current_stage: {$ref: '#/components/schemas/Stage'}
+        current_stage_progress: {$ref: '#/components/schemas/Progress'}
+        pending_next_morning_count: {type: integer}
+        updated_at: {type: string, format: date-time}
+    TrainingBlock:
+      allOf:
+        - {$ref: '#/components/schemas/TrainingBlockSummary'}
+        - type: object
+          required: [stages, exposures, transitions, created_at]
+          properties:
+            stages: {type: array, items: {$ref: '#/components/schemas/Stage'}}
+            exposures: {type: array, items: {$ref: '#/components/schemas/Exposure'}}
+            transitions: {type: array, items: {$ref: '#/components/schemas/Transition'}}
+            created_at: {type: string, format: date-time}
+    Stage:
+      allOf:
+        - {$ref: '#/components/schemas/StageInput'}
+        - type: object
+          required: [id, stage_order]
+          properties:
+            id: {type: string, format: uuid}
+            stage_order: {type: integer}
+    Progress:
+      type: object
+      required: [required_qualifying_exposures, qualifying_exposures, criteria_complete]
+      properties:
+        required_qualifying_exposures: {type: integer}
+        qualifying_exposures: {type: integer}
+        criteria_complete: {type: boolean}
+    Exposure:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        stage_id: {type: string, format: uuid}
+        performed_on: {type: string, format: date}
+        activity_label: {type: string}
+        load_level: {type: string, enum: [easy, demanding]}
+        performed_count: {type: integer, nullable: true}
+        duration_minutes: {type: integer, nullable: true}
+        performed_intensity_percent: {type: integer, nullable: true}
+        session_outcome: {type: string}
+        next_morning_response: {type: string, nullable: true}
+        notes: {type: string, nullable: true}
+        qualifies: {type: boolean, readOnly: true}
+        created_at: {type: string, format: date-time}
+    Transition:
+      type: object
+      properties:
+        id: {type: string, format: uuid}
+        action: {type: string, enum: [advance, regress, complete, archive]}
+        from_stage_id: {type: string, format: uuid, nullable: true}
+        to_stage_id: {type: string, format: uuid, nullable: true}
+        reason: {type: string, nullable: true}
+        created_at: {type: string, format: date-time}
