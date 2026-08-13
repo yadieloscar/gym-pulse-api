@@ -125,7 +125,12 @@ These resources use UUID identity. Dates are filters and snapshot attributes,
 never mutation URLs. Every owned-resource lookup is scoped to the authenticated
 user; a missing or foreign UUID returns the same `404` shape.
 
-All mutations below require `Idempotency-Key: <stable client operation key>`.
+All mutations below require `Idempotency-Key: <stable client operation key>`
+and an equal non-empty `operation_key` JSON field. During the API-first mobile
+migration window, training-profile PUT and custom-program POST/PUT also accept
+an omitted JSON field when the header is present; the server normalizes the
+header into the request before validation and hashing. New clients always send
+both locations, and mismatched values are rejected.
 The identical key and identical JSON payload returns the originally stored
 status/body. Reusing a key with a different payload returns:
 ```json
@@ -148,6 +153,10 @@ creating a singleton training profile, otherwise ≥1). A stale revision returns
 Both conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
 `404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
 `{"error":"string","code":"CODE","details":{}}` shape.
+
+All inclusive `from`/`to` ranges in this section may contain at most 366
+calendar dates. A larger range returns `422 VALIDATION_ERROR` with
+`details.field = "range"` before repository access or schedule generation.
 
 ### Training profile
 
@@ -188,7 +197,8 @@ profile is validated. First creation must still supply every profile field.
   "session_duration_minutes": 60,
   "timezone": "America/New_York",
   "preferences": {},
-  "expected_revision": 0
+  "expected_revision": 0,
+  "operation_key": "profile-create-123"
 }
 ```
 Response 200 is the full training-profile shape at its authoritative revision.
@@ -259,7 +269,7 @@ Response 200: one full `Program`. Foreign/missing ID → 404.
 
 #### `POST /api/v1/programs`
 
-Creates a custom owned program. Body is `name`, `primary_goal`, optional
+Creates a custom owned program. Body is `name`, `primary_goal`, `operation_key`, optional
 `roadmap`, and one or more `workouts` using the nested shape above but omitting
 server IDs/source fields. Response 201: full `Program`.
 
@@ -279,7 +289,7 @@ active program. Unknown ID/version → 404; key/payload mismatch → 409.
 #### `PUT /api/v1/programs/{id}`
 
 Full replacement body: `name`, `primary_goal`, `roadmap`, `active`, `workouts`,
-and `expected_revision`. Response 200: full authoritative `Program`. Replacing
+`expected_revision`, and `operation_key`. Response 200: full authoritative `Program`. Replacing
 the program never changes already materialized scheduled workouts.
 
 #### `POST /api/v1/programs/adopt-legacy`
@@ -287,16 +297,23 @@ the program never changes already materialized scheduled workouts.
 ```json
 { "operation_key": "adopt-legacy-123", "expected_revision": 0 }
 ```
-Idempotently copies owned legacy templates/weekly assignments to one program and
-the next eligible future week. It never deletes legacy rows. Response 200 is
-`{"program":Program,"schedule":[ScheduledWorkout],"adopted":true}`; replay may
-return `adopted:false` with the same authoritative resources.
+Idempotently copies only owned, non-rest weekly template assignments to one
+program and the next Monday-through-Sunday week strictly after the athlete's
+current local date. Assignment order follows ISO weekday; repeated template
+assignments remain distinct workouts. Strength targets and duration-based
+cardio targets are preserved as detached snapshots. It never deletes or updates
+legacy rows. No adoptable assignment returns 404. Response 200 is
+`{"program":Program,"schedule":[ScheduledWorkout],"adopted":true}`. Repeating
+that same operation key returns that exact response. A later adoption request
+with a new operation key returns the same authoritative resources with
+`adopted:false` and creates no duplicate program or schedule.
 
 ### Schedule and scheduled workouts
 
 #### `GET /api/v1/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD`
 
-Both bounds are required and inclusive. Response 200:
+Both bounds are required and inclusive and follow the shared 366-date maximum.
+Response 200:
 ```json
 { "scheduled_workouts": [ScheduledWorkout] }
 ```
@@ -406,8 +423,8 @@ workout returns 404.
 
 Body contains optional `name` and full `required_sets`, plus `operation_key` and
 `expected_revision`. Response 200: full `ScheduledWorkout`. The edit affects
-only this date snapshot. A past finalized workout cannot be deleted; this API
-does not expose a scheduled-workout delete route.
+only this date snapshot. Historical or finalized workouts are immutable and
+return 409. This API does not expose a scheduled-workout delete route.
 
 #### `PUT /api/v1/scheduled-workouts/{id}/sets/{set_id}`
 
@@ -421,7 +438,10 @@ does not expose a scheduled-workout delete route.
 Response 200: authoritative `ScheduledWorkout`. Before finalization zero checked
 sets is `planned`, some is `in_progress`; extra sets never alter this count.
 The returned required set restores its nullable `actual_reps`, `actual_weight`,
-and `actual_duration_seconds` from the performed set.
+and `actual_duration_seconds` from the performed set. Required-set changes,
+their lazy workout-session creation, status, revision, and exact replay record
+commit together. A finalized workout accepts dated-record corrections and
+re-derives only its scheduled outcome; its day participation remains immutable.
 
 #### `PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target`
 
@@ -434,8 +454,8 @@ and `actual_duration_seconds` from the performed set.
 ```
 Updates one dated scheduled-set target without replacing set identity or
 changing the program/template. Response 200 is the authoritative workout.
-Revision conflicts return 409. If the workout was already finalized, its
-derived status remains one of `completed|incomplete|missed`, never a live state.
+Revision conflicts return 409. Finalized workouts accept target corrections;
+the finalized outcome and participation do not change.
 
 #### `POST /api/v1/scheduled-workouts/{id}/extra-sets`
 
@@ -449,7 +469,12 @@ derived status remains one of `completed|incomplete|missed`, never a live state.
 }
 ```
 Response 201: authoritative `ScheduledWorkout`; the returned set always has
-`is_extra:true` and `scheduled_set_id:null`.
+`is_extra:true` and `scheduled_set_id:null`. The set, session/live status,
+workout revision, and exact replay record commit together. Finalized workouts
+reject extra sets with 409. `exercise_id` may reference an owned legacy
+exercise. For migration compatibility, a recognized global catalog UUID in
+that field is accepted but detached to `null`; immutable exercise snapshots
+remain authoritative, and new clients send `null` for catalog-derived sets.
 
 #### `POST /api/v1/scheduled-workouts/{id}/complete`
 
@@ -458,6 +483,9 @@ Response 201: authoritative `ScheduledWorkout`; the returned set always has
 ```
 Response 200: finalized `ScheduledWorkout`. All required sets → `completed`,
 some → `incomplete`, none → `missed`. Clients cannot submit a status directly.
+The workout outcome, any active linked session, day participation, and exact
+replay response commit in one transaction, so replicas and retries cannot
+observe a partial completion.
 
 ### Workout sessions
 
@@ -495,7 +523,8 @@ share a date. `WorkoutSession` is:
 }
 ```
 Response 201: full `WorkoutSession`. Null `scheduled_workout_id` is off-plan and
-never rewrites the plan. A foreign scheduled workout ID → 404.
+never rewrites the plan. A foreign scheduled workout ID → 404. Session creation
+and its exact replay response commit together.
 
 #### `GET /api/v1/workout-sessions/{id}`
 
@@ -506,6 +535,8 @@ Response 200: full `WorkoutSession`.
 Optional `name`, `notes`, and `status`, plus required `operation_key` and
 `expected_revision`. Response 200: full authoritative session. Past sessions
 cannot be deleted; only a current-day unfinalized draft may become `discarded`.
+When the session becomes completed, the session revision, participation, and
+exact replay response commit in one transaction.
 
 ### Participation
 

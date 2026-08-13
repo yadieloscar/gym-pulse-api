@@ -53,6 +53,7 @@ func (h *TrainingProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.UpdateTrainingProfileRequest true "Training profile update"
 // @Success 200 {object} model.TrainingProfile
 // @Security BearerAuth
@@ -60,6 +61,10 @@ func (h *TrainingProfileHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *TrainingProfileHandler) Update(w http.ResponseWriter, r *http.Request) {
 	var req model.UpdateTrainingProfileRequest
 	if !decodeMutation(w, r, &req, "") {
+		return
+	}
+	req.OperationKey = normalizedOperationKey(r, req.OperationKey)
+	if !matchIdempotencyKey(w, r, req.OperationKey) {
 		return
 	}
 	resource, err := h.svc.Update(r.Context(), middleware.MustGetUserID(r.Context()), req)
@@ -129,6 +134,7 @@ func (h *ProgramHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.CreateProgramRequest true "Program"
 // @Success 201 {object} model.Program
 // @Security BearerAuth
@@ -136,6 +142,10 @@ func (h *ProgramHandler) Get(w http.ResponseWriter, r *http.Request) {
 func (h *ProgramHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateProgramRequest
 	if !decodeMutation(w, r, &req, "") {
+		return
+	}
+	req.OperationKey = normalizedOperationKey(r, req.OperationKey)
+	if !matchIdempotencyKey(w, r, req.OperationKey) {
 		return
 	}
 	resource, err := h.svc.Create(r.Context(), middleware.MustGetUserID(r.Context()), req)
@@ -164,11 +174,31 @@ func (h *ProgramHandler) CloneStarter(w http.ResponseWriter, r *http.Request) {
 	respond(w, resource, err, http.StatusCreated)
 }
 
+// AdoptLegacy copies an owned legacy weekly plan into goal-based resources.
+// @Summary Adopt legacy weekly plan
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param body body model.AdoptLegacyProgramRequest true "Legacy adoption"
+// @Success 200 {object} model.AdoptLegacyProgramResponse
+// @Security BearerAuth
+// @Router /api/v1/programs/adopt-legacy [post]
+func (h *ProgramHandler) AdoptLegacy(w http.ResponseWriter, r *http.Request) {
+	var req model.AdoptLegacyProgramRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.AdoptLegacy(r.Context(), middleware.MustGetUserID(r.Context()), req)
+	respond(w, resource, err, http.StatusOK)
+}
+
 // Update replaces an owned program at an expected revision.
 // @Summary Update program
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.UpdateProgramRequest true "Program replacement"
 // @Success 200 {object} model.Program
 // @Security BearerAuth
@@ -180,6 +210,10 @@ func (h *ProgramHandler) Update(w http.ResponseWriter, r *http.Request) {
 	}
 	var req model.UpdateProgramRequest
 	if !decodeMutation(w, r, &req, "") {
+		return
+	}
+	req.OperationKey = normalizedOperationKey(r, req.OperationKey)
+	if !matchIdempotencyKey(w, r, req.OperationKey) {
 		return
 	}
 	resource, err := h.svc.Update(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
@@ -217,6 +251,16 @@ func (h *ScheduleHandler) Materialize(w http.ResponseWriter, r *http.Request) {
 	respond(w, map[string]any{"scheduled_workouts": resources}, err, http.StatusCreated)
 }
 
+// Recover creates a new planned occurrence from the earliest missed workout.
+// @Summary Recover missed workout
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param body body model.RecoverScheduledWorkoutRequest true "Recovery operation"
+// @Success 201 {object} model.ScheduledWorkout
+// @Security BearerAuth
+// @Router /api/v1/schedule/recover [post]
 func (h *ScheduleHandler) Recover(w http.ResponseWriter, r *http.Request) {
 	var req model.RecoverScheduledWorkoutRequest
 	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
@@ -231,6 +275,7 @@ func (h *ScheduleHandler) Recover(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.RegenerateScheduleRequest true "Regeneration"
 // @Success 200 {object} model.RegenerateScheduleResponse
 // @Security BearerAuth
@@ -249,6 +294,7 @@ func (h *ScheduleHandler) Regenerate(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.PatchScheduledWorkoutRequest true "Snapshot edit"
 // @Success 200 {object} model.ScheduledWorkout
 // @Security BearerAuth
@@ -271,6 +317,7 @@ func (h *ScheduleHandler) Patch(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.SetMutationRequest true "Set result"
 // @Success 200 {object} model.ScheduledWorkout
 // @Security BearerAuth
@@ -292,6 +339,16 @@ func (h *ScheduleHandler) PutSet(w http.ResponseWriter, r *http.Request) {
 	respond(w, resource, err, http.StatusOK)
 }
 
+// PatchSetTarget edits one dated scheduled-set target.
+// @Summary Edit scheduled set target
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param body body model.PatchScheduledSetTargetRequest true "Target edit"
+// @Success 200 {object} model.ScheduledWorkout
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id}/sets/{set_id}/target [patch]
 func (h *ScheduleHandler) PatchSetTarget(w http.ResponseWriter, r *http.Request) {
 	workoutID, ok := pathUUID(w, r, "id")
 	if !ok {
@@ -314,6 +371,7 @@ func (h *ScheduleHandler) PatchSetTarget(w http.ResponseWriter, r *http.Request)
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.ExtraSetRequest true "Extra set"
 // @Success 201 {object} model.ScheduledWorkout
 // @Security BearerAuth
@@ -336,6 +394,7 @@ func (h *ScheduleHandler) AddExtra(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.RevisionRequest true "Completion operation"
 // @Success 200 {object} model.ScheduledWorkout
 // @Security BearerAuth
@@ -386,6 +445,7 @@ func (h *WorkoutSessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.CreateWorkoutSessionRequest true "Workout session"
 // @Success 201 {object} model.WorkoutSession
 // @Security BearerAuth
@@ -404,6 +464,7 @@ func (h *WorkoutSessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 // @Tags goal-training
 // @Accept json
 // @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
 // @Param body body model.PatchWorkoutSessionRequest true "Session patch"
 // @Success 200 {object} model.WorkoutSession
 // @Security BearerAuth
@@ -457,6 +518,16 @@ func matchIdempotencyKey(w http.ResponseWriter, r *http.Request, operationKey st
 		return false
 	}
 	return true
+}
+
+// normalizedOperationKey preserves API-first rollout compatibility for the
+// three mutation endpoints that existing app versions already identify only
+// through the header. New clients send the same value in both locations.
+func normalizedOperationKey(r *http.Request, operationKey string) string {
+	if operationKey != "" {
+		return operationKey
+	}
+	return r.Header.Get("Idempotency-Key")
 }
 
 func respond(w http.ResponseWriter, resource any, err error, status int) {

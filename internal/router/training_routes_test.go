@@ -26,7 +26,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 	}
 	for _, route := range []string{
 		"GET /api/v1/training-profile", "PUT /api/v1/training-profile",
-		"GET /api/v1/starter-programs", "POST /api/v1/programs/from-starter",
+		"GET /api/v1/starter-programs", "POST /api/v1/programs/from-starter", "POST /api/v1/programs/adopt-legacy",
 		"POST /api/v1/schedule/materialize", "PUT /api/v1/scheduled-workouts/{id}/sets/{set_id}",
 		"POST /api/v1/scheduled-workouts/{id}/complete", "GET /api/v1/participation",
 		"POST /api/v1/plan-transitions/preview", "POST /api/v1/plan-transitions/apply",

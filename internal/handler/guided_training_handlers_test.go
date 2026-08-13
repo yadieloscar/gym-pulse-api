@@ -39,6 +39,9 @@ func (guidedProgramService) Create(context.Context, uuid.UUID, model.CreateProgr
 func (guidedProgramService) CloneStarter(context.Context, uuid.UUID, model.CloneStarterProgramRequest) (*model.Program, error) {
 	return &model.Program{}, nil
 }
+func (guidedProgramService) AdoptLegacy(context.Context, uuid.UUID, model.AdoptLegacyProgramRequest) (*model.AdoptLegacyProgramResponse, error) {
+	return &model.AdoptLegacyProgramResponse{Schedule: []model.ScheduledWorkout{}}, nil
+}
 func (guidedProgramService) Update(context.Context, uuid.UUID, uuid.UUID, model.UpdateProgramRequest) (*model.Program, error) {
 	return &model.Program{}, nil
 }
@@ -139,7 +142,10 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 		profile.Get(w, guidedHandlerRequest(t, http.MethodGet, "/", nil, userID, "", nil))
 	})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
-		profile.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateTrainingProfileRequest{}, userID, "", nil))
+		profile.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateTrainingProfileRequest{OperationKey: operationKey}, userID, operationKey, nil))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		profile.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateTrainingProfileRequest{}, userID, operationKey, nil))
 	})
 
 	program := NewProgramHandler(guidedProgramService{})
@@ -153,13 +159,22 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 		program.Get(w, guidedHandlerRequest(t, http.MethodGet, "/", nil, userID, "", params))
 	})
 	assertGuidedStatus(t, http.StatusCreated, func(w http.ResponseWriter) {
-		program.Create(w, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateProgramRequest{}, userID, "", nil))
+		program.Create(w, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateProgramRequest{OperationKey: operationKey}, userID, operationKey, nil))
+	})
+	assertGuidedStatus(t, http.StatusCreated, func(w http.ResponseWriter) {
+		program.Create(w, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateProgramRequest{}, userID, operationKey, nil))
 	})
 	assertGuidedStatus(t, http.StatusCreated, func(w http.ResponseWriter) {
 		program.CloneStarter(w, guidedHandlerRequest(t, http.MethodPost, "/", model.CloneStarterProgramRequest{OperationKey: operationKey}, userID, operationKey, nil))
 	})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
-		program.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateProgramRequest{}, userID, "", params))
+		program.AdoptLegacy(w, guidedHandlerRequest(t, http.MethodPost, "/", model.AdoptLegacyProgramRequest{OperationKey: operationKey}, userID, operationKey, nil))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		program.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateProgramRequest{OperationKey: operationKey}, userID, operationKey, params))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		program.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateProgramRequest{}, userID, operationKey, params))
 	})
 
 	schedule := NewScheduleHandler(guidedScheduleService{})
@@ -228,6 +243,18 @@ func TestGuidedTrainingHandlerInputFailures(t *testing.T) {
 	program := NewProgramHandler(guidedProgramService{})
 	assertGuidedStatus(t, http.StatusBadRequest, func(w http.ResponseWriter) {
 		program.Get(w, guidedHandlerRequest(t, http.MethodGet, "/", nil, userID, "", map[string]string{"id": "bad"}))
+	})
+	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+		program.AdoptLegacy(w, guidedHandlerRequest(t, http.MethodPost, "/", model.AdoptLegacyProgramRequest{OperationKey: "body-key"}, userID, "header-key", nil))
+	})
+	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+		profile.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateTrainingProfileRequest{OperationKey: "body-key"}, userID, "header-key", nil))
+	})
+	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+		program.Create(w, guidedHandlerRequest(t, http.MethodPost, "/", model.CreateProgramRequest{OperationKey: "body-key"}, userID, "header-key", nil))
+	})
+	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+		program.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateProgramRequest{OperationKey: "body-key"}, userID, "header-key", map[string]string{"id": uuid.NewString()}))
 	})
 	schedule := NewScheduleHandler(guidedScheduleService{})
 	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {

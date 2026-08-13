@@ -46,6 +46,7 @@ type scheduleService struct {
 	sessions      dao.WorkoutSessionDAO
 	sets          dao.PerformedSetDAO
 	participation dao.ParticipationDAO
+	mutations     dao.TrainingMutationDAO
 	idempotency   dao.IdempotencyDAO
 	validator     *validator.Validate
 	now           func() time.Time
@@ -57,6 +58,7 @@ type workoutSessionService struct {
 	idempotency   dao.IdempotencyDAO
 	participation dao.ParticipationDAO
 	profiles      dao.TrainingProfileDAO
+	mutations     dao.TrainingMutationDAO
 	validator     *validator.Validate
 	now           func() time.Time
 }
@@ -66,12 +68,12 @@ type participationService struct {
 	participation dao.ParticipationDAO
 }
 
-func NewScheduleService(schedules dao.ScheduleDAO, programs dao.ProgramDAO, profiles dao.TrainingProfileDAO, sessions dao.WorkoutSessionDAO, sets dao.PerformedSetDAO, participation dao.ParticipationDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) ScheduleService {
-	return &scheduleService{schedules: schedules, programs: programs, profiles: profiles, sessions: sessions, sets: sets, participation: participation, idempotency: idempotency, validator: v, now: time.Now}
+func NewScheduleService(schedules dao.ScheduleDAO, programs dao.ProgramDAO, profiles dao.TrainingProfileDAO, sessions dao.WorkoutSessionDAO, sets dao.PerformedSetDAO, participation dao.ParticipationDAO, mutations dao.TrainingMutationDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) ScheduleService {
+	return &scheduleService{schedules: schedules, programs: programs, profiles: profiles, sessions: sessions, sets: sets, participation: participation, mutations: mutations, idempotency: idempotency, validator: v, now: time.Now}
 }
 
-func NewWorkoutSessionService(sessions dao.WorkoutSessionDAO, schedules dao.ScheduleDAO, participation dao.ParticipationDAO, profiles dao.TrainingProfileDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) WorkoutSessionService {
-	return &workoutSessionService{sessions: sessions, schedules: schedules, participation: participation, profiles: profiles, idempotency: idempotency, validator: v, now: time.Now}
+func NewWorkoutSessionService(sessions dao.WorkoutSessionDAO, schedules dao.ScheduleDAO, participation dao.ParticipationDAO, profiles dao.TrainingProfileDAO, mutations dao.TrainingMutationDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) WorkoutSessionService {
+	return &workoutSessionService{sessions: sessions, schedules: schedules, participation: participation, profiles: profiles, mutations: mutations, idempotency: idempotency, validator: v, now: time.Now}
 }
 
 func NewParticipationService(schedule ScheduleService, participation dao.ParticipationDAO) ParticipationService {
@@ -209,6 +211,18 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid scheduled workout patch", Field: "body"}
 	}
+	hash, err := hashPayload(struct {
+		WorkoutID uuid.UUID
+		Request   model.PatchScheduledWorkoutRequest
+	}{workoutID, req})
+	if err != nil {
+		return nil, err
+	}
+	if s.mutations != nil {
+		if replay, found, err := replayResponse[model.ScheduledWorkout](ctx, s.idempotency, userID, "scheduled-workouts/patch", req.OperationKey, hash); err != nil || found {
+			return replay, err
+		}
+	}
 	w, err := s.schedules.Get(ctx, userID, workoutID)
 	if err != nil {
 		return nil, err
@@ -225,6 +239,13 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 	if err := w.Validate(); err != nil {
 		return nil, err
 	}
+	if s.mutations != nil {
+		result, _, err := s.mutations.ReplaceScheduledWorkout(ctx, userID, w, req.ExpectedRevision, model.IdempotencyRecord{
+			Scope: "scheduled-workouts/patch", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "scheduled_workout",
+		})
+		return result, err
+	}
 	if err := s.schedules.ReplaceSnapshot(ctx, userID, w, req.ExpectedRevision); err != nil {
 		return nil, err
 	}
@@ -234,6 +255,21 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 func (s *scheduleService) PatchSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.PatchScheduledSetTargetRequest) (*model.ScheduledWorkout, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid scheduled set target", Field: "body"}
+	}
+	if s.mutations != nil {
+		hash, err := hashPayload(struct {
+			WorkoutID uuid.UUID
+			SetID     uuid.UUID
+			Request   model.PatchScheduledSetTargetRequest
+		}{workoutID, setID, req})
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.UpdateScheduledSetTarget(ctx, userID, workoutID, setID, req, model.IdempotencyRecord{
+			Scope: "scheduled-workouts/set-target", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "scheduled_workout",
+		})
+		return result, err
 	}
 	if err := s.schedules.UpdateSetTarget(ctx, userID, workoutID, setID, req); err != nil {
 		return nil, err
@@ -320,6 +356,21 @@ func (s *scheduleService) PutRequiredSet(ctx context.Context, userID, workoutID,
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid set mutation", Field: "body"}
 	}
+	if s.mutations != nil {
+		hash, err := hashPayload(struct {
+			WorkoutID uuid.UUID
+			SetID     uuid.UUID
+			Request   model.SetMutationRequest
+		}{workoutID, setID, req})
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.PutRequiredSet(ctx, userID, workoutID, setID, req, model.IdempotencyRecord{
+			Scope: "scheduled-workouts/required-set", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "scheduled_workout",
+		})
+		return result, err
+	}
 	w, err := s.checkedWorkout(ctx, userID, workoutID, req.ExpectedRevision)
 	if err != nil {
 		return nil, err
@@ -339,16 +390,30 @@ func (s *scheduleService) AddExtraSet(ctx context.Context, userID, workoutID uui
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid extra set", Field: "body"}
 	}
+	set := &model.PerformedSet{ExerciseID: req.ExerciseID, IsExtra: true, ExerciseName: req.ExerciseName, ExerciseCategory: req.ExerciseCategory, ExerciseModality: req.ExerciseModality, SetIndex: req.SetIndex, ActualReps: req.ActualReps, ActualWeight: req.ActualWeight, DurationSeconds: req.DurationSeconds, Completed: req.Completed, OperationKey: req.OperationKey}
+	if err := set.Validate(); err != nil {
+		return nil, err
+	}
+	if s.mutations != nil {
+		hash, err := hashPayload(struct {
+			WorkoutID uuid.UUID
+			Request   model.ExtraSetRequest
+		}{workoutID, req})
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.AddExtraSet(ctx, userID, workoutID, req, model.IdempotencyRecord{
+			Scope: "scheduled-workouts/extra-set", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 201, ResourceType: "scheduled_workout",
+		})
+		return result, err
+	}
 	w, err := s.checkedWorkout(ctx, userID, workoutID, req.ExpectedRevision)
 	if err != nil {
 		return nil, err
 	}
 	session, err := s.ensureSession(ctx, userID, w)
 	if err != nil {
-		return nil, err
-	}
-	set := &model.PerformedSet{ExerciseID: req.ExerciseID, IsExtra: true, ExerciseName: req.ExerciseName, ExerciseCategory: req.ExerciseCategory, ExerciseModality: req.ExerciseModality, SetIndex: req.SetIndex, ActualReps: req.ActualReps, ActualWeight: req.ActualWeight, DurationSeconds: req.DurationSeconds, Completed: req.Completed, OperationKey: req.OperationKey}
-	if err := set.Validate(); err != nil {
 		return nil, err
 	}
 	if _, err := s.sets.AddExtra(ctx, userID, session.ID, set, session.Revision); err != nil {
@@ -361,11 +426,25 @@ func (s *scheduleService) Complete(ctx context.Context, userID, workoutID uuid.U
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid completion request", Field: "body"}
 	}
+	if s.mutations != nil {
+		hash, err := hashPayload(struct {
+			WorkoutID uuid.UUID
+			Request   model.RevisionRequest
+		}{workoutID, req})
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.FinalizeScheduledWorkout(ctx, userID, workoutID, req.ExpectedRevision, s.now(), model.IdempotencyRecord{
+			Scope: "scheduled-workouts/complete", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "scheduled_workout",
+		})
+		return result, err
+	}
 	w, err := s.checkedWorkout(ctx, userID, workoutID, req.ExpectedRevision)
 	if err != nil {
 		return nil, err
 	}
-	return s.finalize(ctx, userID, w)
+	return s.finalizeLegacy(ctx, userID, w)
 }
 
 func (s *scheduleService) checkedWorkout(ctx context.Context, userID, workoutID uuid.UUID, revision int64) (*model.ScheduledWorkout, error) {
@@ -441,11 +520,26 @@ func (s *scheduleService) lazyFinalize(ctx context.Context, userID uuid.UUID, w 
 	if w.Date >= s.now().In(location).Format("2006-01-02") {
 		return nil
 	}
-	_, err = s.finalize(ctx, userID, w)
+	if s.mutations != nil {
+		operationKey := "lazy-finalize:" + w.ID.String()
+		hash, hashErr := hashPayload(struct {
+			WorkoutID        uuid.UUID
+			ExpectedRevision int64
+		}{w.ID, w.Revision})
+		if hashErr != nil {
+			return hashErr
+		}
+		_, _, err = s.mutations.FinalizeScheduledWorkout(ctx, userID, w.ID, w.Revision, s.now(), model.IdempotencyRecord{
+			Scope: "scheduled-workouts/lazy-finalize", OperationKey: operationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "scheduled_workout",
+		})
+		return err
+	}
+	_, err = s.finalizeLegacy(ctx, userID, w)
 	return err
 }
 
-func (s *scheduleService) finalize(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout) (*model.ScheduledWorkout, error) {
+func (s *scheduleService) finalizeLegacy(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout) (*model.ScheduledWorkout, error) {
 	if w.FinalizedAt != nil {
 		return w, nil
 	}
@@ -511,6 +605,18 @@ func (s *workoutSessionService) Create(ctx context.Context, userID uuid.UUID, re
 	if _, err := model.ParseDate(req.Date); err != nil {
 		return nil, &model.ValidationError{Message: "date must be YYYY-MM-DD", Field: "date"}
 	}
+	if s.mutations != nil {
+		hash, err := hashPayload(req)
+		if err != nil {
+			return nil, err
+		}
+		session := &model.WorkoutSession{ScheduledWorkoutID: req.ScheduledWorkoutID, Date: req.Date, Name: req.Name, Status: "draft", Notes: req.Notes}
+		result, _, err := s.mutations.CreateWorkoutSession(ctx, userID, session, model.IdempotencyRecord{
+			Scope: "workout-sessions/create", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 201, ResourceType: "workout_session",
+		})
+		return result, err
+	}
 	if req.ScheduledWorkoutID != nil {
 		if _, err := s.schedules.Get(ctx, userID, *req.ScheduledWorkoutID); err != nil {
 			return nil, err
@@ -526,6 +632,18 @@ func (s *workoutSessionService) Create(ctx context.Context, userID uuid.UUID, re
 func (s *workoutSessionService) Patch(ctx context.Context, userID, sessionID uuid.UUID, req model.PatchWorkoutSessionRequest) (*model.WorkoutSession, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid workout session patch", Field: "body"}
+	}
+	hash, err := hashPayload(struct {
+		SessionID uuid.UUID
+		Request   model.PatchWorkoutSessionRequest
+	}{sessionID, req})
+	if err != nil {
+		return nil, err
+	}
+	if s.mutations != nil {
+		if replay, found, err := replayResponse[model.WorkoutSession](ctx, s.idempotency, userID, "workout-sessions/update", req.OperationKey, hash); err != nil || found {
+			return replay, err
+		}
 	}
 	session, err := s.sessions.Get(ctx, userID, sessionID)
 	if err != nil {
@@ -553,6 +671,13 @@ func (s *workoutSessionService) Patch(ctx context.Context, userID, sessionID uui
 			now := s.now().UTC()
 			session.CompletedAt = &now
 		}
+	}
+	if s.mutations != nil {
+		result, _, err := s.mutations.ReplaceWorkoutSession(ctx, userID, session, req.ExpectedRevision, s.now(), model.IdempotencyRecord{
+			Scope: "workout-sessions/update", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "workout_session",
+		})
+		return result, err
 	}
 	if err := s.sessions.Update(ctx, userID, session, req.ExpectedRevision); err != nil {
 		return nil, err
@@ -585,6 +710,27 @@ func hashPayload(value any) (string, error) {
 	}
 	digest := sha256.Sum256(body)
 	return hex.EncodeToString(digest[:]), nil
+}
+
+func replayResponse[T any](ctx context.Context, repo dao.IdempotencyDAO, userID uuid.UUID, scope, operationKey, requestHash string) (*T, bool, error) {
+	if repo == nil {
+		return nil, false, nil
+	}
+	record, err := repo.Get(ctx, userID, scope, operationKey)
+	if err != nil {
+		if isNotFound(err) {
+			return nil, false, nil
+		}
+		return nil, false, err
+	}
+	if record.RequestHash != requestHash {
+		return nil, false, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+	}
+	var response T
+	if err := json.Unmarshal(record.ResponseBody, &response); err != nil {
+		return nil, false, fmt.Errorf("decoding idempotency response: %w", err)
+	}
+	return &response, true, nil
 }
 
 func recordResource(ctx context.Context, repo dao.IdempotencyDAO, userID uuid.UUID, scope, operationKey, requestHash, resourceType string, resourceID uuid.UUID, revision int64) error {

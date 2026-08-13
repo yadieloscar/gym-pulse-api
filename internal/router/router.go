@@ -70,6 +70,7 @@ func New(
 					r.Get("/", programHandler.List)
 					r.Post("/", programHandler.Create)
 					r.Post("/from-starter", programHandler.CloneStarter)
+					r.Post("/adopt-legacy", programHandler.AdoptLegacy)
 					r.Route("/{id}", func(r chi.Router) {
 						r.Get("/", programHandler.Get)
 						r.Put("/", programHandler.Update)

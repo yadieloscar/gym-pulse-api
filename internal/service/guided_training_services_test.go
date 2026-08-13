@@ -309,13 +309,13 @@ func coverageProfileFixture() model.TrainingProfile {
 func TestGuidedProgramAndProfileServices(t *testing.T) {
 	ctx, userID := context.Background(), uuid.New()
 	profileRepo := &trainingProfileRepoStub{profile: func() *model.TrainingProfile { value := coverageProfileFixture(); return &value }()}
-	profileService := NewTrainingProfileService(profileRepo)
+	profileService := NewTrainingProfileService(profileRepo, nil, validator.New())
 	if _, err := profileService.Get(ctx, userID); err != nil {
 		t.Fatal(err)
 	}
 	goal, days, activity, experience := model.GoalPower, []int{2, 4}, "moderate", "intermediate"
 	equipment, duration, timezone, preferences := []string{"barbell"}, 60, "America/New_York", map[string]any{"deload": true}
-	if _, err := profileService.Update(ctx, userID, model.UpdateTrainingProfileRequest{PrimaryGoal: &goal, AvailableDays: &days, UsualActivity: &activity, Experience: &experience, Equipment: &equipment, SessionDurationMinutes: &duration, Timezone: &timezone, Preferences: &preferences, ExpectedRevision: 1}); err != nil {
+	if _, err := profileService.Update(ctx, userID, model.UpdateTrainingProfileRequest{PrimaryGoal: &goal, AvailableDays: &days, UsualActivity: &activity, Experience: &experience, Equipment: &equipment, SessionDurationMinutes: &duration, Timezone: &timezone, Preferences: &preferences, ExpectedRevision: 1, OperationKey: "update-profile"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -324,7 +324,7 @@ func TestGuidedProgramAndProfileServices(t *testing.T) {
 	starters := &coverageStarterRepo{starters: []model.StarterProgram{starter, {ID: uuid.New(), Version: 1, Name: "Other", PrimaryGoal: model.GoalConditioning, MinDays: 4, MaxDays: 6, Experience: []string{"advanced"}, Equipment: []string{"full_gym"}, DurationMinutes: 90, Workouts: program.Workouts}}}
 	programs := newCoverageProgramRepo(program)
 	idempotency := newCoverageIdempotencyRepo()
-	service := NewProgramService(starters, programs, idempotency, validator.New())
+	service := NewProgramService(starters, programs, nil, idempotency, validator.New())
 	filter := model.StarterProgramFilter{PrimaryGoal: model.GoalStrength, AvailableDays: 3, AvailableWeekdays: []int{1, 3, 5}, UsualActivity: "light", Experience: "beginner", Equipment: []string{"dumbbells"}, SessionDurationMinutes: 50}
 	ranked, err := service.ListStarters(ctx, filter)
 	if err != nil || len(ranked) != 2 || ranked[0].ID != starter.ID {
@@ -339,7 +339,7 @@ func TestGuidedProgramAndProfileServices(t *testing.T) {
 	if _, err := service.Get(ctx, userID, program.ID); err != nil {
 		t.Fatal(err)
 	}
-	create := model.CreateProgramRequest{Name: "Custom", PrimaryGoal: model.GoalStrength, Workouts: program.Workouts}
+	create := model.CreateProgramRequest{Name: "Custom", PrimaryGoal: model.GoalStrength, Workouts: program.Workouts, OperationKey: "create-program"}
 	created, err := service.Create(ctx, userID, create)
 	if err != nil || created.ID == uuid.Nil {
 		t.Fatalf("create failed: %+v %v", created, err)
@@ -353,7 +353,7 @@ func TestGuidedProgramAndProfileServices(t *testing.T) {
 	if err != nil || replayed.ID != cloned.ID {
 		t.Fatalf("clone replay failed: %+v %v", replayed, err)
 	}
-	update := model.UpdateProgramRequest{Name: "Updated", PrimaryGoal: model.GoalStrength, Active: true, Workouts: program.Workouts, ExpectedRevision: 1}
+	update := model.UpdateProgramRequest{Name: "Updated", PrimaryGoal: model.GoalStrength, Active: true, Workouts: program.Workouts, ExpectedRevision: 1, OperationKey: "update-program"}
 	if _, err := service.Update(ctx, userID, program.ID, update); err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +376,7 @@ func TestGuidedScheduleSessionAndParticipationServices(t *testing.T) {
 	participation := &coverageParticipationRepo{}
 	idempotency := newCoverageIdempotencyRepo()
 	sets := &coverageSetRepo{schedules: schedules, sessions: sessions}
-	scheduleContract := NewScheduleService(schedules, programs, profiles, sessions, sets, participation, idempotency, validator.New())
+	scheduleContract := NewScheduleService(schedules, programs, profiles, sessions, sets, participation, nil, idempotency, validator.New())
 	service, ok := scheduleContract.(*scheduleService)
 	if !ok {
 		t.Fatal("unexpected schedule service implementation")
@@ -463,7 +463,7 @@ func TestGuidedScheduleSessionAndParticipationServices(t *testing.T) {
 		t.Fatalf("lazy finalization failed: %+v", finalizedPast)
 	}
 
-	sessionContract := NewWorkoutSessionService(sessions, schedules, participation, profiles, idempotency, validator.New())
+	sessionContract := NewWorkoutSessionService(sessions, schedules, participation, profiles, nil, idempotency, validator.New())
 	sessionService, ok := sessionContract.(*workoutSessionService)
 	if !ok {
 		t.Fatal("unexpected workout session service implementation")
@@ -530,7 +530,7 @@ func TestCloneStarterUsesAtomicProgramWorkflow(t *testing.T) {
 	}
 	programs := &atomicProgramRepo{coverageProgramRepo: newCoverageProgramRepo()}
 	idempotency := newCoverageIdempotencyRepo()
-	service := NewProgramService(&coverageStarterRepo{starters: []model.StarterProgram{starter}}, programs, idempotency, validator.New())
+	service := NewProgramService(&coverageStarterRepo{starters: []model.StarterProgram{starter}}, programs, nil, idempotency, validator.New())
 
 	result, err := service.CloneStarter(ctx, userID, model.CloneStarterProgramRequest{
 		StarterProgramID: starter.ID, StarterVersion: starter.Version, OperationKey: "atomic-clone",

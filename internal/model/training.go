@@ -2,12 +2,16 @@ package model
 
 import (
 	"slices"
+	"sort"
 	"time"
 
 	"github.com/google/uuid"
 )
 
 const (
+	MaxTrainingRangeDays = 366
+	LegacyProgramName    = "Imported weekly plan"
+
 	GoalGeneralHealth   = "general_health"
 	GoalStrength        = "strength"
 	GoalHypertrophy     = "hypertrophy"
@@ -123,6 +127,7 @@ type UpdateTrainingProfileRequest struct {
 	Timezone               *string         `json:"timezone,omitempty"`
 	Preferences            *map[string]any `json:"preferences,omitempty"`
 	ExpectedRevision       int64           `json:"expected_revision" validate:"gte=0"`
+	OperationKey           string          `json:"operation_key" validate:"required"`
 }
 
 type StarterProgramFilter struct {
@@ -191,10 +196,11 @@ type ProgramExercise struct {
 }
 
 type CreateProgramRequest struct {
-	Name        string           `json:"name" validate:"required,min=1,max=200"`
-	PrimaryGoal string           `json:"primary_goal" validate:"required"`
-	Roadmap     map[string]any   `json:"roadmap"`
-	Workouts    []ProgramWorkout `json:"workouts" validate:"required,min=1"`
+	Name         string           `json:"name" validate:"required,min=1,max=200"`
+	PrimaryGoal  string           `json:"primary_goal" validate:"required"`
+	Roadmap      map[string]any   `json:"roadmap"`
+	Workouts     []ProgramWorkout `json:"workouts" validate:"required,min=1"`
+	OperationKey string           `json:"operation_key" validate:"required"`
 }
 
 type UpdateProgramRequest struct {
@@ -204,6 +210,7 @@ type UpdateProgramRequest struct {
 	Active           bool             `json:"active"`
 	Workouts         []ProgramWorkout `json:"workouts" validate:"required,min=1"`
 	ExpectedRevision int64            `json:"expected_revision" validate:"required,min=1"`
+	OperationKey     string           `json:"operation_key" validate:"required"`
 }
 
 type CloneStarterProgramRequest struct {
@@ -211,6 +218,122 @@ type CloneStarterProgramRequest struct {
 	StarterVersion   int       `json:"starter_version" validate:"required,min=1"`
 	Name             *string   `json:"name,omitempty"`
 	OperationKey     string    `json:"operation_key" validate:"required"`
+}
+
+type AdoptLegacyProgramRequest struct {
+	OperationKey     string `json:"operation_key" validate:"required"`
+	ExpectedRevision int64  `json:"expected_revision" validate:"eq=0"`
+}
+
+type AdoptLegacyProgramResponse struct {
+	Program  Program            `json:"program"`
+	Schedule []ScheduledWorkout `json:"schedule"`
+	Adopted  bool               `json:"adopted"`
+}
+
+// LegacyWeeklyAssignment is an owned legacy template assigned to an ISO
+// weekday. It is an import input and never becomes mutable goal-training
+// provenance.
+type LegacyWeeklyAssignment struct {
+	Weekday  int
+	Template WorkoutTemplate
+}
+
+// ProgramFromLegacyWeeklyPlan maps owned recurring assignments into a detached
+// goal-training program without mutating or retaining legacy row identity.
+func ProgramFromLegacyWeeklyPlan(primaryGoal string, assignments []LegacyWeeklyAssignment) (*Program, []int, error) {
+	if !IsValidTrainingGoal(primaryGoal) {
+		return nil, nil, validationError("primary_goal", "unknown training goal")
+	}
+	ordered := append([]LegacyWeeklyAssignment(nil), assignments...)
+	sort.SliceStable(ordered, func(i, j int) bool { return ordered[i].Weekday < ordered[j].Weekday })
+	if len(ordered) == 0 {
+		return nil, nil, validationError("weekly_plan", "no adoptable weekly workouts")
+	}
+
+	program := &Program{
+		Name:        LegacyProgramName,
+		PrimaryGoal: primaryGoal,
+		Roadmap:     map[string]any{"source": "legacy_weekly_plan"},
+		Active:      true,
+		Workouts:    make([]ProgramWorkout, 0, len(ordered)),
+	}
+	weekdays := make([]int, 0, len(ordered))
+	seen := make(map[int]bool, len(ordered))
+	for index, assignment := range ordered {
+		if assignment.Weekday < 1 || assignment.Weekday > 7 || seen[assignment.Weekday] {
+			return nil, nil, validationError("weekly_plan", "weekly assignments must use unique ISO weekdays")
+		}
+		seen[assignment.Weekday] = true
+		if len(assignment.Template.Exercises) == 0 {
+			return nil, nil, validationError("weekly_plan", "assigned templates must contain an exercise")
+		}
+		weekday := assignment.Weekday
+		workout := ProgramWorkout{
+			Name:             assignment.Template.Name,
+			PreferredWeekday: &weekday,
+			SequencePosition: index + 1,
+			Exercises:        make([]ProgramExercise, 0, len(assignment.Template.Exercises)),
+		}
+		for exerciseIndex, legacy := range assignment.Template.Exercises {
+			if legacy.Name == "" {
+				return nil, nil, validationError("weekly_plan", "assigned exercises require a name")
+			}
+			modality := "strength"
+			targetSets := 1
+			if legacy.Sets != nil && *legacy.Sets > 0 {
+				targetSets = *legacy.Sets
+			}
+			var durationSeconds *int
+			if legacy.DurationMinutes != nil {
+				modality = "cardio"
+				targetSets = 1
+				seconds := *legacy.DurationMinutes * 60
+				durationSeconds = &seconds
+			}
+			category := assignment.Template.SubtypeID
+			if category == "" || category == "general" {
+				category = assignment.Template.TypeID
+			}
+			if category == "" {
+				category = "other"
+			}
+			workout.Exercises = append(workout.Exercises, ProgramExercise{
+				CatalogID:             legacy.CatalogID,
+				Name:                  legacy.Name,
+				Category:              category,
+				Modality:              modality,
+				ExerciseOrder:         exerciseIndex + 1,
+				TargetSets:            targetSets,
+				TargetReps:            legacy.Reps,
+				TargetWeight:          legacy.Weight,
+				TargetDurationSeconds: durationSeconds,
+				RestSeconds:           legacy.RestSeconds,
+				Notes:                 legacy.Notes,
+			})
+		}
+		program.Workouts = append(program.Workouts, workout)
+		weekdays = append(weekdays, weekday)
+	}
+	return program, weekdays, nil
+}
+
+// NextFutureWeek returns the next local Monday-through-Sunday range. If today
+// is Monday, it starts seven days later so adoption never targets this week.
+func NextFutureWeek(now time.Time, timezone string) (string, string, error) {
+	location, err := time.LoadLocation(timezone)
+	if err != nil {
+		return "", "", validationError("timezone", "timezone must be a valid IANA timezone")
+	}
+	local := now.In(location)
+	date := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, location)
+	daysUntilMonday := (int(time.Monday) - int(date.Weekday()) + 7) % 7
+	if daysUntilMonday == 0 {
+		daysUntilMonday = 7
+	}
+	from := date.AddDate(0, 0, daysUntilMonday)
+	to := from.AddDate(0, 0, 6)
+	return from.Format(time.DateOnly), to.Format(time.DateOnly), nil
 }
 
 type ScheduledWorkout struct {
@@ -500,6 +623,9 @@ func ValidateDateRange(from, to string) error {
 	}
 	if toDate.Before(fromDate) {
 		return validationError("to", "to must not be before "+from)
+	}
+	if toDate.After(fromDate.AddDate(0, 0, MaxTrainingRangeDays-1)) {
+		return validationError("range", "date range must not exceed 366 inclusive days")
 	}
 	return nil
 }

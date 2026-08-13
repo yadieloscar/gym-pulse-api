@@ -1125,6 +1125,13 @@ const docTemplate = `{
                 "summary": "Create program",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Program",
                         "name": "body",
                         "in": "body",
@@ -1139,6 +1146,51 @@ const docTemplate = `{
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/model.Program"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/programs/adopt-legacy": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Adopt legacy weekly plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Legacy adoption",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.AdoptLegacyProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.AdoptLegacyProgramResponse"
                         }
                     }
                 }
@@ -1229,6 +1281,13 @@ const docTemplate = `{
                 ],
                 "summary": "Update program",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "Program replacement",
                         "name": "body",
@@ -1330,6 +1389,51 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/schedule/recover": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Recover missed workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Recovery operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RecoverScheduledWorkoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/schedule/regenerate": {
             "post": {
                 "security": [
@@ -1348,6 +1452,13 @@ const docTemplate = `{
                 ],
                 "summary": "Regenerate schedule",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "Regeneration",
                         "name": "body",
@@ -1387,6 +1498,13 @@ const docTemplate = `{
                 "summary": "Edit scheduled workout",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Snapshot edit",
                         "name": "body",
                         "in": "body",
@@ -1424,6 +1542,13 @@ const docTemplate = `{
                 ],
                 "summary": "Complete scheduled workout",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "Completion operation",
                         "name": "body",
@@ -1463,6 +1588,13 @@ const docTemplate = `{
                 "summary": "Add extra set",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Extra set",
                         "name": "body",
                         "in": "body",
@@ -1501,12 +1633,64 @@ const docTemplate = `{
                 "summary": "Record required set",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Set result",
                         "name": "body",
                         "in": "body",
                         "required": true,
                         "schema": {
                             "$ref": "#/definitions/model.SetMutationRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/sets/{set_id}/target": {
+            "patch": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Edit scheduled set target",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Target edit",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.PatchScheduledSetTargetRequest"
                         }
                     }
                 ],
@@ -2099,6 +2283,13 @@ const docTemplate = `{
                 "summary": "Update training profile",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Training profile update",
                         "name": "body",
                         "in": "body",
@@ -2165,6 +2356,13 @@ const docTemplate = `{
                 "summary": "Create workout session",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "Workout session",
                         "name": "body",
                         "in": "body",
@@ -2224,6 +2422,13 @@ const docTemplate = `{
                 ],
                 "summary": "Update workout session",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "Session patch",
                         "name": "body",
@@ -2301,6 +2506,37 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "model.AdoptLegacyProgramRequest": {
+            "type": "object",
+            "required": [
+                "operation_key"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.AdoptLegacyProgramResponse": {
+            "type": "object",
+            "properties": {
+                "adopted": {
+                    "type": "boolean"
+                },
+                "program": {
+                    "$ref": "#/definitions/model.Program"
+                },
+                "schedule": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ScheduledWorkout"
+                    }
+                }
+            }
+        },
         "model.BodyWeight": {
             "type": "object",
             "properties": {
@@ -2499,6 +2735,7 @@ const docTemplate = `{
             "type": "object",
             "required": [
                 "name",
+                "operation_key",
                 "primary_goal",
                 "workouts"
             ],
@@ -2507,6 +2744,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 200,
                     "minLength": 1
+                },
+                "operation_key": {
+                    "type": "string"
                 },
                 "primary_goal": {
                     "type": "string"
@@ -2918,6 +3158,37 @@ const docTemplate = `{
                 }
             }
         },
+        "model.PatchScheduledSetTargetRequest": {
+            "type": "object",
+            "required": [
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "rest_seconds": {
+                    "type": "integer"
+                },
+                "target_duration_seconds": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
         "model.PatchScheduledWorkoutRequest": {
             "type": "object",
             "required": [
@@ -3183,6 +3454,21 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/model.WeeklyPlanDay"
                     }
+                }
+            }
+        },
+        "model.RecoverScheduledWorkoutRequest": {
+            "type": "object",
+            "required": [
+                "date",
+                "operation_key"
+            ],
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
                 }
             }
         },
@@ -3665,6 +3951,7 @@ const docTemplate = `{
             "required": [
                 "expected_revision",
                 "name",
+                "operation_key",
                 "primary_goal",
                 "workouts"
             ],
@@ -3680,6 +3967,9 @@ const docTemplate = `{
                     "type": "string",
                     "maxLength": 200,
                     "minLength": 1
+                },
+                "operation_key": {
+                    "type": "string"
                 },
                 "primary_goal": {
                     "type": "string"
@@ -3699,6 +3989,9 @@ const docTemplate = `{
         },
         "model.UpdateTrainingProfileRequest": {
             "type": "object",
+            "required": [
+                "operation_key"
+            ],
             "properties": {
                 "available_days": {
                     "type": "array",
@@ -3717,6 +4010,9 @@ const docTemplate = `{
                     "minimum": 0
                 },
                 "experience": {
+                    "type": "string"
+                },
+                "operation_key": {
                     "type": "string"
                 },
                 "preferences": {

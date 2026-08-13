@@ -1,5 +1,25 @@
 basePath: /
 definitions:
+  model.AdoptLegacyProgramRequest:
+    properties:
+      expected_revision:
+        type: integer
+      operation_key:
+        type: string
+    required:
+    - operation_key
+    type: object
+  model.AdoptLegacyProgramResponse:
+    properties:
+      adopted:
+        type: boolean
+      program:
+        $ref: '#/definitions/model.Program'
+      schedule:
+        items:
+          $ref: '#/definitions/model.ScheduledWorkout'
+        type: array
+    type: object
   model.BodyWeight:
     properties:
       date:
@@ -137,6 +157,8 @@ definitions:
         maxLength: 200
         minLength: 1
         type: string
+      operation_key:
+        type: string
       primary_goal:
         type: string
       roadmap:
@@ -149,6 +171,7 @@ definitions:
         type: array
     required:
     - name
+    - operation_key
     - primary_goal
     - workouts
     type: object
@@ -419,6 +442,27 @@ definitions:
     - program_id
     - to
     type: object
+  model.PatchScheduledSetTargetRequest:
+    properties:
+      expected_revision:
+        minimum: 1
+        type: integer
+      notes:
+        type: string
+      operation_key:
+        type: string
+      rest_seconds:
+        type: integer
+      target_duration_seconds:
+        type: integer
+      target_reps:
+        type: integer
+      target_weight:
+        type: number
+    required:
+    - expected_revision
+    - operation_key
+    type: object
   model.PatchScheduledWorkoutRequest:
     properties:
       expected_revision:
@@ -595,6 +639,16 @@ definitions:
         items:
           $ref: '#/definitions/model.WeeklyPlanDay'
         type: array
+    type: object
+  model.RecoverScheduledWorkoutRequest:
+    properties:
+      date:
+        type: string
+      operation_key:
+        type: string
+    required:
+    - date
+    - operation_key
     type: object
   model.RegenerateScheduleRequest:
     properties:
@@ -923,6 +977,8 @@ definitions:
         maxLength: 200
         minLength: 1
         type: string
+      operation_key:
+        type: string
       primary_goal:
         type: string
       roadmap:
@@ -936,6 +992,7 @@ definitions:
     required:
     - expected_revision
     - name
+    - operation_key
     - primary_goal
     - workouts
     type: object
@@ -954,6 +1011,8 @@ definitions:
         type: integer
       experience:
         type: string
+      operation_key:
+        type: string
       preferences:
         additionalProperties: {}
         type: object
@@ -965,6 +1024,8 @@ definitions:
         type: string
       usual_activity:
         type: string
+    required:
+    - operation_key
     type: object
   model.UpdateUserSettingsRequest:
     properties:
@@ -1823,6 +1884,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Program
         in: body
         name: body
@@ -1859,6 +1925,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Program replacement
         in: body
         name: body
@@ -1875,6 +1946,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Update program
+      tags:
+      - goal-training
+  /api/v1/programs/adopt-legacy:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Legacy adoption
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.AdoptLegacyProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.AdoptLegacyProgramResponse'
+      security:
+      - BearerAuth: []
+      summary: Adopt legacy weekly plan
       tags:
       - goal-training
   /api/v1/programs/from-starter:
@@ -1955,11 +2054,44 @@ paths:
       summary: Materialize schedule
       tags:
       - goal-training
+  /api/v1/schedule/recover:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Recovery operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RecoverScheduledWorkoutRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Recover missed workout
+      tags:
+      - goal-training
   /api/v1/schedule/regenerate:
     post:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Regeneration
         in: body
         name: body
@@ -1983,6 +2115,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Snapshot edit
         in: body
         name: body
@@ -2006,6 +2143,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Completion operation
         in: body
         name: body
@@ -2029,6 +2171,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Extra set
         in: body
         name: body
@@ -2052,6 +2199,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Set result
         in: body
         name: body
@@ -2068,6 +2220,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Record required set
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/sets/{set_id}/target:
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Target edit
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.PatchScheduledSetTargetRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Edit scheduled set target
       tags:
       - goal-training
   /api/v1/settings:
@@ -2434,6 +2614,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Training profile update
         in: body
         name: body
@@ -2474,6 +2659,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Workout session
         in: body
         name: body
@@ -2510,6 +2700,11 @@ paths:
       consumes:
       - application/json
       parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
       - description: Session patch
         in: body
         name: body

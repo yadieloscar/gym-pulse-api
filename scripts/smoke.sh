@@ -8,10 +8,11 @@
 #   3. PUT /api/v1/settings accepts weekly_goal=1 (regression for the bug
 #      where validator required min=3 and broke onboarding)
 #   4. GET /api/v1/stats/distribution returns either an array or `null`
-#   5. goal profile → starter copy → dated scheduled workout → required and
+#   5. legacy adoption, exact goal-mutation replay, and bounded date ranges
+#   6. goal profile → starter copy → dated scheduled workout → required and
 #      extra sets → incomplete outcome → participation remains separate
-#   6. notes-only and overrides-only day-log edits preserve performed sets
-#   7. sport creation is idempotent and records participation for the date
+#   7. notes-only and overrides-only day-log edits preserve performed sets
+#   8. sport creation is idempotent and records participation for the date
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -115,11 +116,17 @@ fi
 
 # ---------- 6. weekly plan round-trip ----------
 step "6. PUT /api/v1/plan/weekly then GET /api/v1/plan returns it"
+legacy_template_resp=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/templates" \
+  "${auth[@]}" -H "Content-Type: application/json" \
+  -d '{"name":"Smoke Legacy Strength","type_id":"legs","subtype_id":"strength","exercises":[{"name":"Smoke Legacy Squat","sort_order":1,"sets":3,"reps":5}]}')
+legacy_template_status=${legacy_template_resp##*$'\n'}
+legacy_template_body=${legacy_template_resp%$'\n'*}
+legacy_template_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$legacy_template_body" 2>/dev/null || true)
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/plan/weekly" \
   "${auth[@]}" -H "Content-Type: application/json" \
-  -d '{"days":[{"weekday":1,"rest":true},{"weekday":3,"rest":true}]}')
+  -d "{\"days\":[{\"weekday\":1,\"template_id\":\"$legacy_template_id\",\"rest\":false},{\"weekday\":3,\"rest\":true}]}" )
 body=$(cat /tmp/smoke.body)
-if [ "$resp" != "200" ]; then
+if [ "$legacy_template_status" != "201" ] || [ -z "$legacy_template_id" ] || [ "$resp" != "200" ]; then
   bad "PUT weekly plan expected 200, got $resp" "$body"
 else
   resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/plan" "${auth[@]}")
@@ -167,12 +174,72 @@ step "10. Goal profile → starter program → scheduled workout → participati
 profile_op="smoke-profile-v1"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
   "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $profile_op" \
-  -d "{\"primary_goal\":\"strength\",\"available_days\":[1,4],\"usual_activity\":\"moderate\",\"experience\":\"beginner\",\"equipment\":[\"bodyweight\"],\"session_duration_minutes\":45,\"timezone\":\"UTC\",\"preferences\":{},\"expected_revision\":0}")
+  -d "{\"primary_goal\":\"strength\",\"available_days\":[1,4],\"usual_activity\":\"moderate\",\"experience\":\"beginner\",\"equipment\":[\"bodyweight\"],\"session_duration_minutes\":45,\"timezone\":\"UTC\",\"preferences\":{},\"expected_revision\":0,\"operation_key\":\"$profile_op\"}")
 body=$(cat /tmp/smoke.body)
 if [ "$resp" != "200" ] || ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['primary_goal']=='strength' and d['revision']>=1" "$body" 2>/dev/null; then
   bad "training profile expected 200 with primary_goal=strength, got $resp" "$(echo "$body" | head -c 240)"
 else
   ok "training profile persisted primary_goal=strength"
+  profile_initial_body=$body
+  profile_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body")
+  profile_advance_op="smoke-profile-v2"
+  profile_advance_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $profile_advance_op" \
+    -d "{\"session_duration_minutes\":50,\"expected_revision\":$profile_revision,\"operation_key\":\"$profile_advance_op\"}")
+  profile_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $profile_op" \
+    -d "{\"primary_goal\":\"strength\",\"available_days\":[1,4],\"usual_activity\":\"moderate\",\"experience\":\"beginner\",\"equipment\":[\"bodyweight\"],\"session_duration_minutes\":45,\"timezone\":\"UTC\",\"preferences\":{},\"expected_revision\":0,\"operation_key\":\"$profile_op\"}")
+  profile_replay_body=$(cat /tmp/smoke.body)
+  profile_conflict_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $profile_op" \
+    -d "{\"primary_goal\":\"strength\",\"available_days\":[1,4],\"usual_activity\":\"moderate\",\"experience\":\"beginner\",\"equipment\":[\"bodyweight\"],\"session_duration_minutes\":46,\"timezone\":\"UTC\",\"preferences\":{},\"expected_revision\":0,\"operation_key\":\"$profile_op\"}")
+  profile_conflict_body=$(cat /tmp/smoke.body)
+  profile_current_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/training-profile" "${auth[@]}")
+  profile_current_body=$(cat /tmp/smoke.body)
+  if [ "$profile_advance_status" = "200" ] && [ "$profile_replay_status" = "200" ] && [ "$profile_conflict_status" = "409" ] && [ "$profile_current_status" = "200" ] && \
+    python3 -c "import json,sys; original,replay,conflict,current=map(json.loads,sys.argv[1:]); assert original==replay and conflict['code']=='IDEMPOTENCY_CONFLICT' and current['session_duration_minutes']==50 and current['revision']>original['revision']" "$profile_initial_body" "$profile_replay_body" "$profile_conflict_body" "$profile_current_body" 2>/dev/null; then
+    ok "profile retry replayed the original response after a later revision without reverting state"
+  else
+    bad "profile exact replay failed (advance=$profile_advance_status replay=$profile_replay_status conflict=$profile_conflict_status current=$profile_current_status)" "$(echo "$profile_current_body" | head -c 280)"
+  fi
+
+  adopt_op="smoke-adopt-legacy-v1"
+  adopt_payload="{\"operation_key\":\"$adopt_op\",\"expected_revision\":0}"
+  curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/programs/adopt-legacy" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $adopt_op" -d "$adopt_payload" > /tmp/smoke.adopt.1 &
+  adopt_pid_1=$!
+  curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/programs/adopt-legacy" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $adopt_op" -d "$adopt_payload" > /tmp/smoke.adopt.2 &
+  adopt_pid_2=$!
+  wait "$adopt_pid_1"
+  wait "$adopt_pid_2"
+  adopt_result=$(cat /tmp/smoke.adopt.1)
+  adopt_status=${adopt_result##*$'\n'}
+  adopt_body=${adopt_result%$'\n'*}
+  adopt_replay_result=$(cat /tmp/smoke.adopt.2)
+  adopt_replay_status=${adopt_replay_result##*$'\n'}
+  adopt_replay_body=${adopt_replay_result%$'\n'*}
+  adopt_program_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['program']['id'])" "$adopt_body" 2>/dev/null || true)
+  adopt_again_op="smoke-adopt-legacy-v2"
+  adopt_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs/adopt-legacy" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $adopt_again_op" \
+    -d "{\"operation_key\":\"$adopt_again_op\",\"expected_revision\":0}")
+  adopt_again_body=$(cat /tmp/smoke.body)
+  if [ "$adopt_status" = "200" ] && [ "$adopt_replay_status" = "200" ] && [ "$adopt_again_status" = "200" ] && [ -n "$adopt_program_id" ] && \
+    python3 -c "import json,sys; a,r,n=map(json.loads,sys.argv[1:]); assert a==r and a['adopted'] is True and n['adopted'] is False and a['program']['id']==n['program']['id'] and len(a['schedule'])==1" "$adopt_body" "$adopt_replay_body" "$adopt_again_body" 2>/dev/null; then
+    ok "concurrent legacy adoption created once; exact replay and later retry created no duplicates"
+  else
+    bad "legacy adoption/replay failed (create=$adopt_status replay=$adopt_replay_status again=$adopt_again_status)" "$(echo "$adopt_again_body" | head -c 280)"
+  fi
+
+  range_ok_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/schedule?from=2030-01-01&to=2031-01-01" "${auth[@]}")
+  range_reject_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/schedule?from=2030-01-01&to=2031-01-02" "${auth[@]}")
+  range_reject_body=$(cat /tmp/smoke.body)
+  if [ "$range_ok_status" = "200" ] && [ "$range_reject_status" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['details']['field']=='range'" "$range_reject_body" 2>/dev/null; then
+    ok "366 inclusive dates accepted and 367 rejected with field=range"
+  else
+    bad "shared range boundary failed (366=$range_ok_status 367=$range_reject_status)" "$range_reject_body"
+  fi
 
   resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/starter-programs?primary_goal=strength&available_days=2&experience=beginner&equipment=bodyweight&session_duration_minutes=45" "${auth[@]}")
   body=$(cat /tmp/smoke.body)
@@ -206,34 +273,86 @@ EOF
       body=$(cat /tmp/smoke.body)
       workout_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['id'])" "$body" 2>/dev/null || true)
       set_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['required_sets'][0]['id'])" "$body" 2>/dev/null || true)
+      correction_set_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['required_sets'][1]['id'])" "$body" 2>/dev/null || true)
+      set_catalog_json=$(python3 -c "import json,sys; value=json.loads(sys.argv[1])['scheduled_workouts'][0]['required_sets'][0].get('catalog_id'); print(json.dumps(value))" "$body" 2>/dev/null || echo null)
       workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workouts'][0]['revision'])" "$body" 2>/dev/null || true)
-      if [ "$resp" != "201" ] || [ -z "$workout_id" ] || [ -z "$set_id" ]; then
+      if [ "$resp" != "201" ] || [ -z "$workout_id" ] || [ -z "$set_id" ] || [ -z "$correction_set_id" ]; then
         bad "schedule materialize expected dated scheduled_workout, got $resp" "$(echo "$body" | head -c 280)"
       else
+        foreign_set_id=$(python3 -c "import uuid; print(uuid.uuid4())")
+        rollback_op="smoke-required-rollback-v1"
+        rollback_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$foreign_set_id" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $rollback_op" \
+          -d "{\"operation_key\":\"$rollback_op\",\"expected_revision\":$workout_revision,\"actual_reps\":10,\"completed\":true}")
+        rollback_sessions_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/workout-sessions?from=$week_from&to=$week_to" "${auth[@]}")
+        rollback_sessions_body=$(cat /tmp/smoke.body)
+        if [ "$rollback_status" = "404" ] && [ "$rollback_sessions_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert not any(x.get('scheduled_workout_id')==sys.argv[2] for x in d['workout_sessions'])" "$rollback_sessions_body" "$workout_id" 2>/dev/null; then
+          ok "failed required-set mutation rolled back lazy session creation"
+        else
+          bad "required-set rollback failed (mutation=$rollback_status sessions=$rollback_sessions_status)" "$(echo "$rollback_sessions_body" | head -c 280)"
+        fi
+
         set_op="smoke-check-required-v1"
         resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$set_id" \
           "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $set_op" \
           -d "{\"operation_key\":\"$set_op\",\"expected_revision\":$workout_revision,\"actual_reps\":10,\"completed\":true}")
         body=$(cat /tmp/smoke.body)
+        required_status=$resp
+        required_body=$body
+        required_revision=$workout_revision
         workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
         extra_op="smoke-extra-set-v1"
         resp_extra=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/extra-sets" \
           "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $extra_op" \
-          -d "{\"operation_key\":\"$extra_op\",\"expected_revision\":$workout_revision,\"exercise_name\":\"Air Squat\",\"exercise_category\":\"legs\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":20,\"completed\":true}")
+          -d "{\"operation_key\":\"$extra_op\",\"expected_revision\":$workout_revision,\"exercise_id\":$set_catalog_json,\"exercise_name\":\"Air Squat\",\"exercise_category\":\"legs\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":20,\"completed\":true}")
         body=$(cat /tmp/smoke.body)
+        extra_body=$body
         workout_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
         complete_op="smoke-complete-incomplete-v1"
         resp_complete=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/complete" \
           "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $complete_op" \
           -d "{\"operation_key\":\"$complete_op\",\"expected_revision\":$workout_revision}")
         body=$(cat /tmp/smoke.body)
+        complete_body=$body
+        complete_revision=$workout_revision
+        finalized_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
         status=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['status'])" "$body" 2>/dev/null || true)
+
+        correction_op="smoke-correct-finalized-v1"
+        correction_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$correction_set_id" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $correction_op" \
+          -d "{\"operation_key\":\"$correction_op\",\"expected_revision\":$finalized_revision,\"actual_reps\":8,\"completed\":true}")
+        correction_body=$(cat /tmp/smoke.body)
+        correction_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$correction_body" 2>/dev/null || true)
+        target_op="smoke-target-finalized-v1"
+        target_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PATCH "$API/api/v1/scheduled-workouts/$workout_id/sets/$correction_set_id/target" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $target_op" \
+          -d "{\"operation_key\":\"$target_op\",\"expected_revision\":$correction_revision,\"target_reps\":9}")
+        target_body=$(cat /tmp/smoke.body)
+        finalized_extra_op="smoke-extra-finalized-v1"
+        finalized_extra_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/extra-sets" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $finalized_extra_op" \
+          -d "{\"operation_key\":\"$finalized_extra_op\",\"expected_revision\":$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$target_body" 2>/dev/null || true),\"exercise_id\":null,\"exercise_name\":\"Too late\",\"exercise_category\":\"legs\",\"exercise_modality\":\"strength\",\"set_index\":2,\"completed\":true}")
+
+        required_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$set_id" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $set_op" \
+          -d "{\"operation_key\":\"$set_op\",\"expected_revision\":$required_revision,\"actual_reps\":10,\"completed\":true}")
+        required_replay_body=$(cat /tmp/smoke.body)
+        required_conflict_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/scheduled-workouts/$workout_id/sets/$set_id" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $set_op" \
+          -d "{\"operation_key\":\"$set_op\",\"expected_revision\":$required_revision,\"actual_reps\":9,\"completed\":true}")
+        required_conflict_body=$(cat /tmp/smoke.body)
+        complete_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/complete" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $complete_op" \
+          -d "{\"operation_key\":\"$complete_op\",\"expected_revision\":$complete_revision}")
+        complete_replay_body=$(cat /tmp/smoke.body)
         resp_part=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/participation?from=$week_from&to=$week_to" "${auth[@]}")
         participation_body=$(cat /tmp/smoke.body)
-        if [ "$resp" = "200" ] && [ "$resp_extra" = "201" ] && [ "$resp_complete" = "200" ] && [ "$status" = "incomplete" ] && [ "$resp_part" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert any(x['participated'] for x in d['participation'])" "$participation_body" 2>/dev/null; then
-          ok "required + extra sets produced incomplete scheduled workout and separate participation=true"
+        if [ "$required_status" = "200" ] && [ "$resp_extra" = "201" ] && [ "$resp_complete" = "200" ] && [ "$status" = "incomplete" ] && [ "$correction_status" = "200" ] && [ "$target_status" = "200" ] && [ "$finalized_extra_status" = "409" ] && [ "$required_replay_status" = "200" ] && [ "$required_conflict_status" = "409" ] && [ "$complete_replay_status" = "200" ] && [ "$resp_part" = "200" ] && \
+          python3 -c "import json,sys; original,replay,extra,complete,correction,target,complete_replay,conflict,participation=map(json.loads,sys.argv[1:]); assert original==replay and complete==complete_replay and correction['finalized_at']==complete['finalized_at'] and correction['status']=='incomplete' and target['status']=='incomplete' and all(x.get('exercise_id') is None for x in extra['extra_sets']) and conflict['code']=='IDEMPOTENCY_CONFLICT' and any(x['participated'] for x in participation['participation'])" "$required_body" "$required_replay_body" "$extra_body" "$complete_body" "$correction_body" "$target_body" "$complete_replay_body" "$required_conflict_body" "$participation_body" 2>/dev/null; then
+          ok "retries stayed exact; history corrections preserved finalization and participation"
         else
-          bad "goal training lifecycle failed (set=$resp extra=$resp_extra complete=$resp_complete status=$status participation=$resp_part)" "$(echo "$participation_body" | head -c 280)"
+          bad "goal training lifecycle failed (set=$required_status/$required_replay_status/$required_conflict_status extra=$resp_extra/$finalized_extra_status complete=$resp_complete/$complete_replay_status correction=$correction_status/$target_status status=$status participation=$resp_part)" "$(echo "$participation_body" | head -c 280)"
         fi
       fi
     fi
@@ -246,16 +365,49 @@ session_date=$(python3 -c "from datetime import date; print(date.today().isoform
 session_ids=""
 for suffix in a b; do
   session_op="smoke-off-plan-$suffix-v1"
+  session_payload="{\"scheduled_workout_id\":null,\"date\":\"$session_date\",\"name\":\"Off-plan $suffix\",\"operation_key\":\"$session_op\",\"expected_revision\":0}"
   resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/workout-sessions" \
     "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_op" \
-    -d "{\"scheduled_workout_id\":null,\"date\":\"$session_date\",\"name\":\"Off-plan $suffix\",\"operation_key\":\"$session_op\",\"expected_revision\":0}")
+    -d "$session_payload")
   body=$(cat /tmp/smoke.body)
-  [ "$resp" = "201" ] && session_ids="$session_ids $(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$body" 2>/dev/null || true)"
+  session_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$body" 2>/dev/null || true)
+  [ "$resp" = "201" ] && session_ids="$session_ids $session_id"
+  if [ "$suffix" = "a" ]; then
+    first_session_id=$session_id
+    first_session_body=$body
+    first_session_status=$resp
+    first_session_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$body" 2>/dev/null || true)
+    first_session_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/workout-sessions" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_op" -d "$session_payload")
+    first_session_replay_body=$(cat /tmp/smoke.body)
+  fi
 done
-if [ "$(echo "$session_ids" | xargs -n1 | sort -u | wc -l | tr -d ' ')" = "2" ]; then
-  ok "multiple off-plan session UUIDs coexist on one date"
+if [ "$(echo "$session_ids" | xargs -n1 | sort -u | wc -l | tr -d ' ')" = "2" ] && [ "$first_session_status" = "201" ] && [ "$first_session_replay_status" = "201" ] && \
+  python3 -c "import json,sys; assert json.loads(sys.argv[1])==json.loads(sys.argv[2])" "$first_session_body" "$first_session_replay_body" 2>/dev/null; then
+  ok "multiple off-plan session UUIDs coexist and create replay is exact"
 else
   bad "expected two distinct off-plan workout session IDs" "$session_ids"
+fi
+
+session_complete_op="smoke-complete-session-v1"
+session_complete_payload="{\"status\":\"completed\",\"operation_key\":\"$session_complete_op\",\"expected_revision\":$first_session_revision}"
+session_complete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PATCH "$API/api/v1/workout-sessions/$first_session_id" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_complete_op" -d "$session_complete_payload")
+session_complete_body=$(cat /tmp/smoke.body)
+session_complete_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PATCH "$API/api/v1/workout-sessions/$first_session_id" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_complete_op" -d "$session_complete_payload")
+session_complete_replay_body=$(cat /tmp/smoke.body)
+session_complete_conflict_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PATCH "$API/api/v1/workout-sessions/$first_session_id" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $session_complete_op" \
+  -d "{\"status\":\"active\",\"operation_key\":\"$session_complete_op\",\"expected_revision\":$first_session_revision}")
+session_complete_conflict_body=$(cat /tmp/smoke.body)
+session_participation_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/participation?from=$session_date&to=$session_date" "${auth[@]}")
+session_participation_body=$(cat /tmp/smoke.body)
+if [ "$session_complete_status" = "200" ] && [ "$session_complete_replay_status" = "200" ] && [ "$session_complete_conflict_status" = "409" ] && [ "$session_participation_status" = "200" ] && \
+  python3 -c "import json,sys; a,r,c,p=map(json.loads,sys.argv[1:]); assert a==r and a['status']=='completed' and c['code']=='IDEMPOTENCY_CONFLICT' and any(x['date']==a['date'] and x['participated'] for x in p['participation'])" "$session_complete_body" "$session_complete_replay_body" "$session_complete_conflict_body" "$session_participation_body" 2>/dev/null; then
+  ok "session completion replayed exactly and participation committed atomically"
+else
+  bad "session completion acceptance failed (complete=$session_complete_status replay=$session_complete_replay_status conflict=$session_complete_conflict_status participation=$session_participation_status)" "$(echo "$session_participation_body" | head -c 280)"
 fi
 
 # ---------- 12. lossless day-log partial updates ----------
