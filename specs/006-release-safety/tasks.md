@@ -43,7 +43,7 @@
 
 - [x] T008 [P] [US1] Add failing adoption model and mapping tests for strength, cardio, repeated templates, weekday order, and next-week dates in internal/model/goal_based_training_acceptance_test.go
 - [x] T009 [P] [US1] Add failing handler and route inventory tests for POST /api/v1/programs/adopt-legacy in internal/handler/guided_training_handlers_test.go and internal/router/training_routes_test.go
-- [ ] T010 [US1] Add failing service/DAO adoption tests for ownership, no-plan, exact replay, changed payload, concurrent calls, and rollback in internal/service/guided_training_services_test.go and internal/dao/training_mutation_dao_test.go
+- [x] T010 [US1] Add failing service/DAO adoption tests for ownership, no-plan, exact replay, changed payload, concurrent calls, and rollback in internal/service/guided_training_services_test.go and internal/dao/training_mutation_dao_test.go
 
 ### Implementation for User Story 1
 
@@ -110,7 +110,7 @@
 
 - [x] T031 [P] Regenerate Swagger outputs in docs/docs.go, docs/swagger.json, and docs/swagger.yaml
 - [x] T032 Run gofmt and goimports on every changed Go file
-- [ ] T033 Run go test ./..., go test -race ./..., golangci-lint run, govulncheck ./..., and ./scripts/smoke-toggle.sh
+- [x] T033 Run go test ./..., go test -race ./..., golangci-lint run, govulncheck ./..., and ./scripts/smoke-toggle.sh
 - [x] T034 Run the quickstart acceptance scenarios and record any unavailable external gate in specs/006-release-safety/quickstart.md
 - [x] T035 Perform an independent final diff review for contract drift, ownership leaks, replay ordering, deadlocks, partial commits, and unbounded work
 

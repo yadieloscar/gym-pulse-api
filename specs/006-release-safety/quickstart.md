@@ -67,7 +67,8 @@ After this API branch is deployed to the target environment, run the sibling app
 - Swagger generation and `git diff --check`: passed.
 - `bash -n scripts/smoke.sh scripts/smoke-toggle.sh`: passed.
 - Local container acceptance was unavailable because the Docker daemon was not
-  running. The expanded smoke workflow remains a required GitHub Actions gate
-  and covers concurrent adoption, exact replay after revision advancement,
+  running. GitHub Actions run `31662834536` passed the expanded PostgreSQL smoke,
+  unit/race/lint/security CI, and container scan on pull request 18. The smoke
+  covers concurrent adoption, exact replay after revision advancement,
   changed-payload conflicts, rollback of lazy session creation, atomic
   completion/participation, and the 366/367-day wire boundary.
