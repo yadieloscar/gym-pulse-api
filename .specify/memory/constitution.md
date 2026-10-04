@@ -48,7 +48,7 @@ background concurrency MUST be justified in the plan.
 
 ## Technical Constraints
 
-- Go 1.26+, chi, pgx/pgxpool, PostgreSQL, and SQL migrations are the supported stack.
+- Go 1.26.8+, chi, pgx/pgxpool, PostgreSQL, and SQL migrations are the supported stack.
 - Response structs and fixtures use keyed fields and documented JSON tags.
 - Validator, JSON, response, status, or error changes update `docs/CONTRACTS.md` in the same commit.
 - Cross-repository features declare the same stable feature ID and link their dependent app
