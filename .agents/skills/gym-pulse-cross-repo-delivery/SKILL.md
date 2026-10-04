@@ -11,7 +11,8 @@ Git history, verification, and pull requests separate while preserving a coheren
 ## Establish Scope
 
 1. Locate both repositories and record each branch, status, remote, and unrelated user changes.
-2. Read both `AGENTS.md` files and invoke the applicable repository engineering skill.
+2. Read both `AGENTS.md` files and `docs/SPEC_WORKFLOW.md`; invoke the applicable repository
+   engineering skills and resolve each intended feature before running its stage scripts.
 3. Read the relevant API contract, product specification, implementation, and tests on both sides.
 4. Classify the work as API-only, app-only, or cross-repository. Do not force two-repo work when one
    side already supports the required behavior.

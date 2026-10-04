@@ -4,11 +4,18 @@
 
 **Input**: Feature specification from `/specs/[###-feature-name]/spec.md`
 
-**Note**: This template is filled in by the `/speckit-plan` command. See `.specify/templates/plan-template.md` for the execution workflow.
+**Note**: This template is filled in by the `/speckit-plan` command. See `docs/SPEC_WORKFLOW.md` and `.agents/skills/speckit-plan/SKILL.md` for the workflow.
 
 ## Summary
 
 [Extract from feature spec: primary requirement + technical approach from research]
+
+## Workflow and Specialist Scope
+
+<!-- Record the owning feature, whether this is new or amended scope, and only the skills whose
+expertise affects this work. Reuse existing artifacts when resuming. Link specialist decisions to
+requirements, affected design sections, and planned verification instead of creating parallel plans.
+For each relevant skill, state its role in requirements, design, implementation, or review. -->
 
 ## Technical Context
 

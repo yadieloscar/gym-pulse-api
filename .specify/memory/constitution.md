@@ -1,19 +1,24 @@
 <!--
 Sync Impact Report
-- Version: 1.0.0 -> 1.0.1
-- Added: Contract First; Owned Authenticated Data; Idempotent Evolution; Executable Evidence;
-  Simple Go Boundaries
-- Updated: supported Go version and cross-repository feature identity
-- Deferred items: none
+- Version: 1.0.1 -> 1.1.0 (MINOR: expanded routing, resumption, and evidence guidance)
+- Modified principles: clarified specification reuse and the scope of implementation obligations
+- Expanded section: Spec-Driven Delivery; no principles removed
+- Updated: AGENTS.md, CLAUDE.md, docs/SPEC_WORKFLOW.md, docs/CODEX_PLAYBOOK.md, docs/SPEC_DRIVEN_DEVELOPMENT.md,
+  engineering skills, .specify/templates/plan-template.md, .specify/templates/tasks-template.md
+- Reviewed unchanged: .specify/templates/spec-template.md; core speckit-* skills
+- Impact: existing feature artifacts remain valid; amend only affected scope and evidence
+- Migration: no product, schema, or contract migration; preserve existing feature/task identifiers
+- Follow-up TODOs: none
 -->
 # GymPulse API Constitution
 
 ## Core Principles
 
 ### I. Contract First
-Every observable API change MUST begin in a version-controlled specification and MUST update
+Every observable API change MUST be governed by a version-controlled specification and MUST update
 `docs/CONTRACTS.md` with request fields, validation, responses, statuses, and errors in the same
-change. That document is client-facing truth; generated Swagger is secondary. JSON remains
+change. Reuse an existing spec when restoring its documented behavior; amend it before changing
+intended behavior. That document is client-facing truth; generated Swagger is secondary. JSON remains
 `snake_case`, and promised collections return `[]`, never `null`.
 
 ### II. Owned Authenticated Data
@@ -31,7 +36,8 @@ Additive contract evolution is preferred; breaking changes require a coordinated
 ### IV. Executable Evidence
 Changed behavior MUST have tests identified before implementation and failing for the intended gap
 where practical. Service and middleware logic MUST maintain at least 90% coverage. Contract changes
-MUST update contract tests and run `scripts/smoke-toggle.sh`; all work MUST pass `go test ./...`.
+MUST update contract tests and run `scripts/smoke-toggle.sh`; implementation changes MUST pass
+`go test ./...`.
 Tests MUST NOT be skipped, weakened, or deleted merely to pass a gate.
 
 ### V. Simple Go Boundaries
@@ -50,11 +56,25 @@ background concurrency MUST be justified in the plan.
 
 ## Spec-Driven Delivery
 
-New work follows `$speckit-specify` → optional `$speckit-clarify` → `$speckit-plan` →
-`$speckit-tasks` → `$speckit-analyze` → `$speckit-implement` → `$speckit-converge`. Plans MUST name
-migrations and contract effects and pass the Constitution Check. Before review, run `go test ./...`
-and, for contract work, `./scripts/smoke-toggle.sh`. Artifacts live under
-`specs/<number>-<feature>/`.
+Use `docs/SPEC_WORKFLOW.md` to classify work and resume the intended feature. New non-trivial scope
+follows `$speckit-specify` → optional `$speckit-clarify` → `$speckit-plan` → `$speckit-tasks` →
+`$speckit-analyze` → `$speckit-implement` → `$speckit-converge`. Add focused requirements checklists
+when risk or ambiguity warrants them. Existing features MUST reuse valid artifacts and preserve
+completed work; changed intent MUST update affected requirements, design, tasks, and evidence before
+implementation. Focused corrections may reuse a governing spec without restarting the full cycle.
+
+Plans MUST pass the Constitution Check. Relevant engineering and specialist skills MUST inform the
+stages where their expertise affects decisions. Changed requirements MUST map to implementation
+tasks and verification evidence; unchecked or unrun verification MUST remain explicitly unverified.
+A completed task list or clean convergence report alone does not establish release readiness.
+
+API implementation changes MUST pass `go test ./...`; contract changes also require
+`./scripts/smoke-toggle.sh`. Plans MUST identify migrations and contract effects.
+Documentation/workflow-only changes use direct edits and validation of skills, links, consistency,
+and applicable tooling; they do not require a new product spec or application test suites solely for
+prose changes. Executable behavior, dependency, or configuration changes retain their code gates.
+Artifacts live under `specs/<number>-<feature>/`; review-only requests remain read-only unless
+remediation is authorized. Follow the user's delivery boundary and reuse existing authorization.
 
 ## Governance
 
@@ -64,4 +84,4 @@ MAJOR for removed or redefined governance, MINOR for new or expanded obligations
 clarification. Every plan and review MUST verify compliance; exceptions require explicit Complexity
 Tracking with the simpler rejected alternative.
 
-**Version**: 1.0.1 | **Ratified**: 2026-07-18 | **Last Amended**: 2026-08-02
+**Version**: 1.1.0 | **Ratified**: 2026-07-18 | **Last Amended**: 2026-10-04
