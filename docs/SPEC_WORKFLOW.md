@@ -50,6 +50,12 @@ routing invokes those instructions rather than approximating the stage from memo
 5. If several features plausibly match and the request cannot distinguish them, ask one concise
    question before feature-specific mutations. Continue independent read-only investigation.
 
+For read-only feature resolution, use `check-prerequisites.sh --paths-only --json` from
+`.specify/scripts/bash/`, with the intended feature override if needed, then inspect prerequisite
+files separately. Paths-only mode does not validate their existence. Normal prerequisite/setup
+scripts can persist the override even when their surrounding stage is described as read-only; use
+an isolated checkout if a stage requires such a helper and the shared pointer must remain untouched.
+
 For an existing feature, edit the affected artifacts in place. Do not blindly rerun a setup or
 generation script over a populated plan or task list; inspect its behavior and preserve prior work.
 Use `analyze` to report artifact inconsistencies. Use `converge` only after implementation has run
@@ -119,3 +125,16 @@ and PRs, and explicit API-first compatibility/rollout evidence. Local numeric pr
 Finish with the feature path, completed scope/stage, verification evidence, unresolved decisions,
 and next action when work remains. Keep these details concise; never infer completion from task
 checkboxes alone.
+
+## Verify Workflow Changes
+
+After changing routing or upgrading Spec Kit, run documentation/skill checks and forward-test
+representative start, fix, resume, review-only, and cross-repository requests. When the parent
+workspace is available, run `make context` and `make spec-check` there. The latter exercises each
+repository's installed scripts in disposable fixtures, including stale pointers, preservation of
+plans/tasks, and missing prerequisites; it does not use live feature state.
+
+Script checks and instruction review do not establish end-to-end agent reliability. Validate the
+next bounded real feature through acceptance, record concrete workflow failures, and correct the
+owning instruction or script. Keep improvements tied to observed failures rather than adding gates
+for hypothetical problems.
