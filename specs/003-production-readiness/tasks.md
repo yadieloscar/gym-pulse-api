@@ -32,3 +32,7 @@
   handler 91.5%, router/config 100%. No reachable vulnerabilities reported.
 - Container scan and database smoke require the repair PR's GitHub Actions run;
   local Docker daemon was stopped. No API, schema, or contract behavior changes.
+
+- Container CI exposed additional fixed advisories: update `golang.org/x/crypto`
+  to 0.55.0 and apply Alpine security updates when building the runtime image.
+  The initial PR smoke passed; rerun the complete pipeline after these fixes.
