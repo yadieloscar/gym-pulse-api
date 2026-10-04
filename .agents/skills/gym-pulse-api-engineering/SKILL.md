@@ -16,9 +16,10 @@ pipeline as necessary evidence, not proof that the design is correct.
 4. Inspect the client contract usage for cross-repository or compatibility-sensitive work.
 5. Preserve unrelated user changes and record the initial Git status.
 
-For a new feature, follow the repository Spec Kit workflow from `$speckit-specify` through
-`$speckit-converge`. For a focused fix, keep the process proportional while retaining the design
-and verification gates below.
+Read `docs/SPEC_WORKFLOW.md` to classify and resume work. Reuse a governing spec for focused fixes,
+amend artifacts for changed intent, and follow the full Spec Kit cycle for new non-trivial scope.
+Apply relevant specialists during specification and planning, then carry their obligations into
+tasks and verification. Preserve the design and verification gates below for implementation work.
 
 ## Classify the Change
 
@@ -147,6 +148,9 @@ Test observable behavior rather than duplicating implementation details. Coverag
 substitute for meaningful assertions.
 
 ## Run Verification
+
+For documentation/workflow-only edits, use the documentation validation in `AGENTS.md`. The gates
+below apply to changes in code, dependencies, configuration, or executable behavior.
 
 Always run the narrowest useful test during iteration, then complete the repository gates:
 

@@ -23,10 +23,16 @@ their local numeric Spec Kit directory prefixes may differ.
 Use subagents only when independent analysis, implementation, or review lanes are likely to save time
 or improve evidence. Keep focused, sequential, and overlapping-file work with the primary agent.
 
-Read `.specify/memory/constitution.md` before non-trivial planning or implementation. New features
-use GitHub Spec Kit (`$speckit-specify` through `$speckit-converge`).
+Read `.specify/memory/constitution.md` and `docs/SPEC_WORKFLOW.md` before non-trivial planning,
+implementation, or feature resumption. Reuse specs for focused fixes, amend them for changed intent,
+and use the full Spec Kit cycle for new non-trivial scope. Apply specialists at the stage where their
+expertise affects decisions. Documentation-only work uses direct edits and documentation validation.
 
 ## Verification
+
+For documentation/workflow-only changes, validate the edited skills, links, mirrored guidance, and
+`git diff --check`; run the parent context lint when available. The application gates below apply
+when code, dependencies, configuration, or executable behavior changes.
 
 ```bash
 golangci-lint run # when available; mirrors the CI lint policy

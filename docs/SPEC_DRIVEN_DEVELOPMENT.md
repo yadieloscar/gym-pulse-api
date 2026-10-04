@@ -1,5 +1,8 @@
 # Spec-Driven Development
 
+Use [SPEC_WORKFLOW.md](SPEC_WORKFLOW.md) for natural-language routing, feature resumption, proportional
+workflows, and specialist participation. Use [CODEX_PLAYBOOK.md](CODEX_PLAYBOOK.md) for examples.
+
 GymPulse uses GitHub Spec Kit as its sole workflow for new non-trivial API features. The governing
 constitution is `.specify/memory/constitution.md`, and feature artifacts live under
 `specs/<number>-<feature>/`.
