@@ -144,3 +144,13 @@
 - No schema migration or dependency installation is planned.
 - Tests are written failing before each implementation group.
 - Runtime training recommendations remain deterministic and outside this feature.
+
+## 2026-10-05 Review Follow-up
+
+- [x] T036 Reload the current owned program and original adoption week's schedule for fresh adoption operation keys while preserving exact same-key replay in `internal/dao/training_mutation_dao.go`; verify renamed/deactivated programs, regenerated workout identities/dates, and 100 unchanged original replays in `TestReleaseFreshAdoptionLoadsCurrentResourcesIntegration`.
+- [x] T037 Add PostgreSQL failure-injection evidence at participation and idempotency insertion for scheduled finalization and session completion, and at replacement-set/idempotency insertion for regeneration in `internal/dao/release_safety_integration_test.go`; compare complete persisted domain rows before/after each failure.
+- [x] T038 Add PostgreSQL-observed concurrent duplicate/replay/mismatch checks for clone, materialize, recovery, finalization, and session completion, plus both session-start/regeneration lock acquisition orders; require the race-enabled integration suite in the CI smoke job.
+
+The focused PostgreSQL acceptance suite and integration-tag lint passed locally
+on 2026-10-05. The earlier T033 record describes the original implementation;
+full gates and the new mandatory CI step must also pass on the final PR head.

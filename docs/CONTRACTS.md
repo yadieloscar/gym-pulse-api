@@ -306,7 +306,12 @@ legacy rows. No adoptable assignment returns 404. Response 200 is
 `{"program":Program,"schedule":[ScheduledWorkout],"adopted":true}`. Repeating
 that same operation key returns that exact response. A later adoption request
 with a new operation key returns the same authoritative resources with
-`adopted:false` and creates no duplicate program or schedule.
+`adopted:false` and creates no duplicate program or schedule. Fresh operation
+keys reload the current owned program and schedule for the original adoption
+week, including regenerated replacements; renamed or deactivated programs and
+corrected workouts therefore reflect their current revisions. Each operation's
+subsequent same-key retries still return its own exact committed response,
+including when those resources have changed again.
 
 ### Schedule and scheduled workouts
 

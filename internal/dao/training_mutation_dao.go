@@ -279,6 +279,16 @@ func (r *trainingMutationDAO) AdoptLegacy(ctx context.Context, userID uuid.UUID,
 		if err := json.Unmarshal(body, &replay); err != nil {
 			return nil, false, fmt.Errorf("decoding prior legacy adoption: %w", err)
 		}
+		program, err := loadProgram(ctx, tx, userID, replay.Program.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		schedule, err := loadAdoptedSchedule(ctx, tx, userID, program.ID, replay.Schedule)
+		if err != nil {
+			return nil, false, err
+		}
+		replay.Program = *program
+		replay.Schedule = schedule
 		replay.Adopted = false
 		record.ResourceID = &replay.Program.ID
 		record.ResourceRevision = &replay.Program.Revision
@@ -360,6 +370,51 @@ func (r *trainingMutationDAO) AdoptLegacy(ctx context.Context, userID uuid.UUID,
 		return nil, false, fmt.Errorf("committing legacy adoption: %w", err)
 	}
 	return response, false, nil
+}
+
+// loadAdoptedSchedule reloads the original adoption week, including replacements
+// made by regeneration. Exact operation replays still use their stored body.
+func loadAdoptedSchedule(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID, original []model.ScheduledWorkout) ([]model.ScheduledWorkout, error) {
+	result := []model.ScheduledWorkout{}
+	if len(original) == 0 {
+		return result, nil
+	}
+	date, err := model.ParseDate(original[0].Date)
+	if err != nil {
+		return nil, fmt.Errorf("parsing original adoption date: %w", err)
+	}
+	daysSinceMonday := (int(date.Weekday()) + 6) % 7
+	monday := date.AddDate(0, 0, -daysSinceMonday)
+	from, to := monday.Format(time.DateOnly), monday.AddDate(0, 0, 6).Format(time.DateOnly)
+	rows, err := tx.Query(ctx, `
+		SELECT id FROM scheduled_workouts
+		WHERE user_id=$1 AND program_id=$2 AND date BETWEEN $3 AND $4
+		ORDER BY date, created_at, id`, userID, programID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("querying adopted schedule: %w", err)
+	}
+	ids := []uuid.UUID{}
+	for rows.Next() {
+		var id uuid.UUID
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scanning adopted schedule identity: %w", err)
+		}
+		ids = append(ids, id)
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return nil, fmt.Errorf("iterating adopted schedule: %w", err)
+	}
+	rows.Close()
+	for _, id := range ids {
+		workout, err := loadScheduledWorkout(ctx, tx, userID, id)
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, *workout)
+	}
+	return result, nil
 }
 
 func loadLegacyWeeklyAssignments(ctx context.Context, tx pgx.Tx, userID uuid.UUID) ([]model.LegacyWeeklyAssignment, error) {

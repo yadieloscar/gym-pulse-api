@@ -87,7 +87,7 @@ An authenticated athlete can request normal calendar ranges while accidentally o
 - **FR-001**: The system MUST let an authenticated athlete adopt only their own referenced legacy templates and weekly assignments into one active program.
 - **FR-002**: Adoption MUST create dated snapshots for the next Monday-through-Sunday week strictly after the athlete's current local date.
 - **FR-003**: Adoption MUST preserve all legacy rows and MUST not alter historical or current-week workouts.
-- **FR-004**: Adoption MUST return the authoritative program, authoritative dated schedule, and whether this call performed the adoption.
+- **FR-004**: Adoption MUST return the authoritative program, authoritative dated schedule, and whether this call performed the adoption. A later request with a fresh operation identity MUST reload the current program and schedule for the original adoption week, including regenerated replacements; an exact same-key replay MUST retain its original committed response.
 - **FR-005**: An identical adoption replay MUST return the previously committed resources without creating another program or schedule; changed input under the same operation identity MUST conflict.
 - **FR-006**: Every published goal-training mutation MUST require a client operation identity. When both body and header identities are supplied they MUST match; the three pre-existing header-only profile/custom-program calls MAY normalize a missing body identity during the API-first migration window.
 - **FR-007**: Every supported mutation MUST atomically store its state transition and replayable response under the authenticated athlete and mutation scope.

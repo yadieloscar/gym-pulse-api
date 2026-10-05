@@ -15,6 +15,20 @@ golangci-lint run
 ./scripts/smoke-toggle.sh
 ```
 
+Against a disposable migrated PostgreSQL database with DDL permissions, run the
+mandatory CI acceptance suite (the smoke job supplies its database URL):
+
+```bash
+GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
+  go test -race -tags=integration ./internal/dao -run '^TestRelease' -count=1 -timeout=5m
+golangci-lint run --build-tags integration
+```
+
+The integration suite fails when its database URL is missing; it never skips
+rollback or concurrency scenarios. Each case owns an isolated UUID user and
+removes its fault triggers and fixtures. Use a disposable database because fault
+injection requires temporary trigger/function creation.
+
 Regenerate Swagger with the pinned CI command and confirm no uncommitted drift:
 
 ```bash
@@ -72,3 +86,25 @@ After this API branch is deployed to the target environment, run the sibling app
   covers concurrent adoption, exact replay after revision advancement,
   changed-payload conflicts, rollback of lazy session creation, atomic
   completion/participation, and the 366/367-day wire boundary.
+
+## 2026-10-05 review follow-up verification
+
+- `go test -race -tags=integration ./internal/dao -run '^TestRelease' -count=1`:
+  passed against disposable PostgreSQL 16 with migrations through 019.
+- `golangci-lint run --build-tags integration`: passed with zero issues.
+- Four injected completion failures (scheduled/session × participation/replay
+  insertion) preserved every persisted domain row.
+- Regeneration failures at replacement-set insertion and replay insertion
+  restored deleted originals and their required sets.
+- PostgreSQL-observed duplicate requests for clone, materialize, recovery,
+  finalization, and session completion produced one mutation and one identical
+  replay. Replays stayed exact after revision advancement; mismatches conflicted
+  without changes.
+- Both session-start/regeneration lock orders preserved the winning operation:
+  an active session prevented regeneration; completed regeneration made the
+  superseded workout unavailable without creating an orphan session.
+- Fresh adoption keys returned current renamed/deactivated programs and
+  regenerated schedule identities, while 100 original-key replays remained
+  identical and changed no persisted state.
+- The CI smoke job now requires this race-enabled PostgreSQL suite. This local
+  record does not claim a completed new remote CI run or deployed acceptance.

@@ -117,6 +117,11 @@ jobs:
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
       - name: Boot API with JWKS disabled (HMAC test path)
         working-directory: ${{ github.workspace }}
         run: |
@@ -126,6 +131,7 @@ jobs:
           services:
             db:
               image: postgres:16-alpine@sha256:4e6e670bb069649261c9c18031f0aded7bb249a5b6664ddec29c013a89310d50
+              ports: ["127.0.0.1:15432:5432"]
               environment:
                 POSTGRES_DB: gympulse
                 POSTGRES_USER: gympulse
@@ -169,6 +175,11 @@ jobs:
 
       - name: Run smoke
         run: ./scripts/smoke.sh
+
+      - name: PostgreSQL rollback and concurrency acceptance
+        env:
+          GYMPULSE_TEST_DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
+        run: go test -race -tags=integration ./internal/dao -run '^TestRelease' -count=1 -timeout=5m
 
       - name: Tear down
         if: always()
