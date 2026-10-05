@@ -23,6 +23,26 @@ For example:
 Explicit `$skill-name` invocation remains available when you intentionally want to override the
 normal routing, but it is not the default usage.
 
+## Four everyday requests
+
+| Say this | Expected behavior |
+| --- | --- |
+| “Start this feature: …” | Find related specs, define bounded scope, select engineering and specialist skills, then follow Spec Kit within your requested delivery boundary. |
+| “Fix this behavior: …” | Diagnose against the current spec and contract. Restore documented behavior with regression evidence, or update the spec first if intended behavior changes. |
+| “Resume this work: …” | Resolve the intended feature, inspect artifacts and implementation evidence, and continue at the next incomplete or invalidated stage. |
+| “Check whether this is complete: …” | Assess requirements against code and verification evidence; report gaps without editing unless remediation is authorized. |
+
+You can also say “Help me understand this” or “Investigate before editing.” Read-only requests do
+not start implementation. Explicit command names are optional.
+
+To learn stage by stage, add: “Explain each stage and stop after the spec and plan for my review.”
+For authorized end-to-end work, add: “Carry this through implementation and verification; ask about
+material unresolved product decisions.” Existing authorization carries forward within its scope.
+
+Codex briefly states the repository, feature, next stage, and relevant skills. It asks for feature
+selection only when the request and repository evidence cannot identify the intended work.
+See [SPEC_WORKFLOW.md](SPEC_WORKFLOW.md) for the governing routing and resumption procedure.
+
 ## Start from the right workspace
 
 - Start Codex inside `gym-pulse-api` for backend-only work.
@@ -82,10 +102,21 @@ engineering-lead and cross-repository workflows.
 | Screens, components, styling, gestures, motion, or accessibility | App engineering + interaction design |
 | Architecture, security-sensitive, ambiguous, or multi-lane work | Engineering lead |
 | Contract, authentication, rollout, or acceptance spanning both repos | Engineering lead + cross-repo delivery + relevant specialists |
-| New non-trivial feature | Relevant engineering workflow + Spec Kit |
+| New non-trivial feature | Relevant engineering workflow + full Spec Kit cycle |
+| Existing feature behavior change | Amend the owning spec/design/tasks + analyze, implement, and converge |
+| Focused fix restoring documented behavior | Reuse its governing spec + engineering and regression checks |
+| Documentation/workflow-only change | Direct edits + documentation and skill validation |
 
 Codex should apply the narrowest complete workflow. It should not force multi-repository work or
 spawn agents when a focused sequential change is more efficient.
+
+## When specialist skills join
+
+Spec Kit selects the stage and artifacts; engineering skills apply project rules. Specialist skills
+join when the work reaches their domain: interaction design for UI, Expo Auth for protected routes
+and sessions, Supabase for Supabase work, and PostgreSQL expertise for schema or query work. They
+inform requirements and planning as well as implementation and review. Their findings feed the same
+spec, plan, tasks, and evidence. Selecting skills does not automatically spawn separate agents.
 
 ## What completion should include
 
@@ -94,7 +125,7 @@ Unless you narrow the request, implementation work should finish with:
 - the requested user-visible behavior and compatible contracts;
 - targeted regression tests plus the repository-required verification;
 - design and security review appropriate to the changed boundary;
-- clean Git status and intentional commits;
+- intentional changes and commits within the delivery scope, preserving unrelated local work;
 - linked PRs and explicit rollout order for cross-repository delivery;
 - a concise statement of anything still unverified.
 

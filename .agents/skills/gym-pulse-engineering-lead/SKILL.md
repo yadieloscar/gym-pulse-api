@@ -27,7 +27,9 @@ Preserve unrelated work. Do not broaden the task merely because another improvem
   be affected.
 - Invoke narrower installed skills such as Expo Auth, Supabase, PostgreSQL, GitHub, document, or
   browser workflows only when their trigger applies.
-- Use the repository Spec Kit workflow for new non-trivial features as required by its constitution.
+- Read `docs/SPEC_WORKFLOW.md` to choose proportional Spec Kit work, resolve the intended feature,
+  and resume the first incomplete or invalidated stage. Apply relevant specialists before the
+  decisions they inform, and record their obligations in the existing feature artifacts.
 
 For a small, clearly scoped task, route directly to the applicable engineering skill and keep the
 lead process brief.
