@@ -18,6 +18,9 @@ go tool cover -func=coverage.out
 ## Go Development Conventions
 
 Follow the Google Go Style Guide at all times:
+Read `.agents/skills/google-go-style/SKILL.md` for the reusable standards workflow and official
+sources. The conventions below include GymPulse-specific requirements.
+
 - **Receiver Names:** Use 1-2 letter lowercase receiver names (e.g. `s` for Service, `r` for Repository/DAO, `h` for Handler). Avoid generic names like `this` or `self`.
 - **Context Handling:** Pass `context.Context` as the first parameter to functions that make network, DB, or concurrent calls. Name the parameter `ctx`.
 - **Error Formatting:** Error strings must be lowercase and have no trailing punctuation.
