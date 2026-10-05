@@ -149,3 +149,38 @@ func TestScheduledWorkoutRejectsExtraSetAsRequired(t *testing.T) {
 		t.Fatal("extra set was allowed to satisfy required completion")
 	}
 }
+
+func TestValidateDateRangeInclusiveLimit(t *testing.T) {
+	tests := []struct {
+		name      string
+		from      string
+		to        string
+		wantField string
+	}{
+		{name: "one day", from: "2026-01-01", to: "2026-01-01"},
+		{name: "366 inclusive days", from: "2026-01-01", to: "2027-01-01"},
+		{name: "leap day within limit", from: "2028-01-01", to: "2028-12-31"},
+		{name: "367 inclusive days", from: "2026-01-01", to: "2027-01-02", wantField: "range"},
+		{name: "reversed", from: "2026-01-02", to: "2026-01-01", wantField: "to"},
+		{name: "bad from", from: "01/01/2026", to: "2026-01-02", wantField: "from"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateDateRange(tc.from, tc.to)
+			if tc.wantField == "" {
+				if err != nil {
+					t.Fatalf("ValidateDateRange() error = %v", err)
+				}
+				return
+			}
+			var validationErr *ValidationError
+			if !errors.As(err, &validationErr) {
+				t.Fatalf("want ValidationError, got %T: %v", err, err)
+			}
+			if validationErr.Field != tc.wantField {
+				t.Fatalf("field = %q, want %q", validationErr.Field, tc.wantField)
+			}
+		})
+	}
+}

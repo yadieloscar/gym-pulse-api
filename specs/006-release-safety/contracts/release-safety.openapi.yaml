@@ -1,0 +1,85 @@
+openapi: 3.1.0
+info:
+  title: GymPulse Release Safety Contract Delta
+  version: 1.0.0
+paths:
+  /api/v1/programs/adopt-legacy:
+    post:
+      summary: Adopt owned legacy weekly training into goal-based resources
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdoptLegacyRequest'
+      responses:
+        '200':
+          description: First adoption or authoritative replay
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdoptLegacyResponse'
+        '404':
+          description: No owned adoptable weekly assignment
+        '409':
+          description: Revision or idempotency conflict
+        '422':
+          description: Invalid or mismatched operation identity
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema:
+        type: string
+        minLength: 1
+  schemas:
+    AdoptLegacyRequest:
+      type: object
+      additionalProperties: false
+      required: [operation_key, expected_revision]
+      properties:
+        operation_key:
+          type: string
+          minLength: 1
+        expected_revision:
+          type: integer
+          const: 0
+    AdoptLegacyResponse:
+      type: object
+      additionalProperties: false
+      required: [program, schedule, adopted]
+      properties:
+        program:
+          type: object
+          description: Full authoritative Program from docs/CONTRACTS.md
+        schedule:
+          type: array
+          items:
+            type: object
+            description: Full authoritative ScheduledWorkout from docs/CONTRACTS.md
+        adopted:
+          type: boolean
+    GoalTrainingDateRange:
+      type: object
+      description: Shared inclusive range rule for all goal-training range inputs
+      required: [from, to]
+      properties:
+        from:
+          type: string
+          format: date
+        to:
+          type: string
+          format: date
+      x-gympulse-max-inclusive-days: 366
+    IdempotentMutation:
+      type: object
+      description: Shared fields required by every published goal-training mutation
+      required: [operation_key]
+      properties:
+        operation_key:
+          type: string
+          minLength: 1

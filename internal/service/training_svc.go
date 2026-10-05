@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -12,6 +13,8 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
+
+var errTrainingMutationsUnavailable = errors.New("training mutation repository is unavailable")
 
 type TrainingProfileService interface {
 	Get(ctx context.Context, userID uuid.UUID) (*model.TrainingProfile, error)
@@ -24,24 +27,31 @@ type ProgramService interface {
 	Get(ctx context.Context, userID, programID uuid.UUID) (*model.Program, error)
 	Create(ctx context.Context, userID uuid.UUID, req model.CreateProgramRequest) (*model.Program, error)
 	CloneStarter(ctx context.Context, userID uuid.UUID, req model.CloneStarterProgramRequest) (*model.Program, error)
+	AdoptLegacy(ctx context.Context, userID uuid.UUID, req model.AdoptLegacyProgramRequest) (*model.AdoptLegacyProgramResponse, error)
 	Update(ctx context.Context, userID, programID uuid.UUID, req model.UpdateProgramRequest) (*model.Program, error)
 }
 
-type trainingProfileService struct{ repo dao.TrainingProfileDAO }
+type trainingProfileService struct {
+	repo      dao.TrainingProfileDAO
+	mutations dao.TrainingMutationDAO
+	validator *validator.Validate
+}
 
 type programService struct {
 	starters    dao.StarterProgramDAO
 	programs    dao.ProgramDAO
+	mutations   dao.TrainingMutationDAO
 	idempotency dao.IdempotencyDAO
 	validator   *validator.Validate
+	now         func() time.Time
 }
 
-func NewTrainingProfileService(repo dao.TrainingProfileDAO) TrainingProfileService {
-	return &trainingProfileService{repo: repo}
+func NewTrainingProfileService(repo dao.TrainingProfileDAO, mutations dao.TrainingMutationDAO, v *validator.Validate) TrainingProfileService {
+	return &trainingProfileService{repo: repo, mutations: mutations, validator: v}
 }
 
-func NewProgramService(starters dao.StarterProgramDAO, programs dao.ProgramDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) ProgramService {
-	return &programService{starters: starters, programs: programs, idempotency: idempotency, validator: v}
+func NewProgramService(starters dao.StarterProgramDAO, programs dao.ProgramDAO, mutations dao.TrainingMutationDAO, idempotency dao.IdempotencyDAO, v *validator.Validate) ProgramService {
+	return &programService{starters: starters, programs: programs, mutations: mutations, idempotency: idempotency, validator: v, now: time.Now}
 }
 
 func (s *trainingProfileService) Get(ctx context.Context, userID uuid.UUID) (*model.TrainingProfile, error) {
@@ -49,6 +59,9 @@ func (s *trainingProfileService) Get(ctx context.Context, userID uuid.UUID) (*mo
 }
 
 func (s *trainingProfileService) Update(ctx context.Context, userID uuid.UUID, req model.UpdateTrainingProfileRequest) (*model.TrainingProfile, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "invalid training profile update", Field: "body"}
+	}
 	var profile model.TrainingProfile
 	if req.ExpectedRevision == 0 {
 		profile = model.TrainingProfile{Preferences: map[string]any{}}
@@ -86,10 +99,21 @@ func (s *trainingProfileService) Update(ctx context.Context, userID uuid.UUID, r
 	if err := profile.Validate(); err != nil {
 		return nil, err
 	}
-	if err := s.repo.Put(ctx, userID, &profile, req.ExpectedRevision); err != nil {
+	if s.mutations == nil {
+		if err := s.repo.Put(ctx, userID, &profile, req.ExpectedRevision); err != nil {
+			return nil, err
+		}
+		return &profile, nil
+	}
+	hash, err := hashPayload(req)
+	if err != nil {
 		return nil, err
 	}
-	return &profile, nil
+	result, _, err := s.mutations.PutTrainingProfile(ctx, userID, &profile, req.ExpectedRevision, model.IdempotencyRecord{
+		Scope: "training-profile/put", OperationKey: req.OperationKey, RequestHash: hash,
+		ResponseStatus: 200, ResourceType: "training_profile",
+	})
+	return result, err
 }
 
 func (s *programService) ListStarters(ctx context.Context, filter model.StarterProgramFilter) ([]model.StarterProgram, error) {
@@ -174,6 +198,17 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 		return nil, err
 	}
 	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: true, Workouts: req.Workouts}
+	if s.mutations != nil {
+		hash, err := hashPayload(req)
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.CreateProgram(ctx, userID, p, model.IdempotencyRecord{
+			Scope: "programs/create", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 201, ResourceType: "program",
+		})
+		return result, err
+	}
 	if err := s.programs.Create(ctx, userID, p); err != nil {
 		return nil, err
 	}
@@ -232,6 +267,27 @@ func (s *programService) CloneStarter(ctx context.Context, userID uuid.UUID, req
 	return p, nil
 }
 
+func (s *programService) AdoptLegacy(ctx context.Context, userID uuid.UUID, req model.AdoptLegacyProgramRequest) (*model.AdoptLegacyProgramResponse, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "invalid legacy adoption request", Field: "body"}
+	}
+	if s.mutations == nil {
+		return nil, errTrainingMutationsUnavailable
+	}
+	hash, err := hashPayload(req)
+	if err != nil {
+		return nil, err
+	}
+	response, _, err := s.mutations.AdoptLegacy(ctx, userID, s.now(), model.IdempotencyRecord{
+		Scope:          "programs/adopt-legacy",
+		OperationKey:   req.OperationKey,
+		RequestHash:    hash,
+		ResponseStatus: 200,
+		ResourceType:   "program",
+	})
+	return response, err
+}
+
 func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID, req model.UpdateProgramRequest) (*model.Program, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid program", Field: "body"}
@@ -240,6 +296,20 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		return nil, err
 	}
 	p := &model.Program{ID: programID, Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: req.Active, Workouts: req.Workouts}
+	if s.mutations != nil {
+		hash, err := hashPayload(struct {
+			ProgramID uuid.UUID
+			Request   model.UpdateProgramRequest
+		}{ProgramID: programID, Request: req})
+		if err != nil {
+			return nil, err
+		}
+		result, _, err := s.mutations.ReplaceProgram(ctx, userID, p, req.ExpectedRevision, model.IdempotencyRecord{
+			Scope: "programs/update", OperationKey: req.OperationKey, RequestHash: hash,
+			ResponseStatus: 200, ResourceType: "program", ResourceID: &programID,
+		})
+		return result, err
+	}
 	if err := s.programs.Replace(ctx, userID, p, req.ExpectedRevision); err != nil {
 		return nil, err
 	}

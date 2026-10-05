@@ -11,9 +11,9 @@
 
 ## Phase 2
 
-- [ ] Add regeneration rollback and concurrent session-start tests.
+- [x] Add regeneration rollback and concurrent session-start tests. Evidence: `TestReleaseRegenerationRollbackIntegration` and `TestReleaseSessionStartRegenerationOrderingIntegration` in `internal/dao/release_safety_integration_test.go`; PostgreSQL-backed race run passed 2026-10-05, including both lock acquisition orders.
 - [x] Implement one regeneration transaction.
-- [ ] Add concurrent same-key and payload-mismatch tests for clone, materialize, and recovery.
+- [x] Add concurrent same-key and payload-mismatch tests for clone, materialize, and recovery. Evidence: `TestReleaseDuplicateMutationsIntegration` in `internal/dao/release_safety_integration_test.go`; PostgreSQL-backed race run passed 2026-10-05 for all three mutation families, exact replay after revision advancement, and mismatch without persisted changes.
 - [x] Store mutation and exact response with idempotency state in one transaction.
 - [x] Add replay-after-unrelated-change coverage.
 

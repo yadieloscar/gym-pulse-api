@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"testing"
 	"time"
@@ -11,6 +12,62 @@ import (
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
+
+type scheduleMutationCapture struct {
+	*adoptionMutationStub
+	records []model.IdempotencyRecord
+	workout *model.ScheduledWorkout
+	session *model.WorkoutSession
+}
+
+func newScheduleMutationCapture() *scheduleMutationCapture {
+	return &scheduleMutationCapture{adoptionMutationStub: &adoptionMutationStub{}}
+}
+
+func (s *scheduleMutationCapture) captureWorkout(record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.records = append(s.records, record)
+	return s.workout, false, nil
+}
+
+func (s *scheduleMutationCapture) ReplaceScheduledWorkout(_ context.Context, _ uuid.UUID, workout *model.ScheduledWorkout, _ int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = workout
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) UpdateScheduledSetTarget(_ context.Context, _, workoutID, _ uuid.UUID, _ model.PatchScheduledSetTargetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 2}
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) PutRequiredSet(_ context.Context, _, workoutID, _ uuid.UUID, _ model.SetMutationRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 2}
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) AddExtraSet(_ context.Context, _, workoutID uuid.UUID, _ model.ExtraSetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 2}
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) FinalizeScheduledWorkout(_ context.Context, _, workoutID uuid.UUID, _ int64, _ time.Time, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 2, Status: model.WorkoutStatusCompleted}
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) CreateWorkoutSession(_ context.Context, _ uuid.UUID, session *model.WorkoutSession, record model.IdempotencyRecord) (*model.WorkoutSession, bool, error) {
+	s.records = append(s.records, record)
+	session.ID = uuid.New()
+	session.Revision = 1
+	s.session = session
+	return session, false, nil
+}
+
+func (s *scheduleMutationCapture) ReplaceWorkoutSession(_ context.Context, _ uuid.UUID, session *model.WorkoutSession, _ int64, _ time.Time, record model.IdempotencyRecord) (*model.WorkoutSession, bool, error) {
+	s.records = append(s.records, record)
+	session.Revision++
+	s.session = session
+	return session, false, nil
+}
 
 func newReleaseScheduleService(t *testing.T) (*scheduleService, uuid.UUID, model.Program, *coverageScheduleRepo, *coverageSessionRepo, *coverageIdempotencyRepo) {
 	t.Helper()
@@ -27,6 +84,7 @@ func newReleaseScheduleService(t *testing.T) (*scheduleService, uuid.UUID, model
 		sessions,
 		&coverageSetRepo{schedules: schedules, sessions: sessions},
 		&coverageParticipationRepo{},
+		nil,
 		idempotency,
 		validator.New(),
 	)
@@ -46,6 +104,9 @@ func TestScheduleServiceRejectsInvalidAndStaleReleaseMutations(t *testing.T) {
 		if _, err := svc.List(ctx, userID, "2026-07-21", "2026-07-20"); err == nil {
 			t.Fatal("expected invalid date range")
 		}
+		if _, err := svc.List(ctx, userID, "2026-01-01", "2027-01-02"); err == nil {
+			t.Fatal("expected oversized date range")
+		}
 	})
 
 	t.Run("materialize validation range and revision", func(t *testing.T) {
@@ -59,6 +120,13 @@ func TestScheduleServiceRejectsInvalidAndStaleReleaseMutations(t *testing.T) {
 		}
 		if _, err := svc.Materialize(ctx, userID, badRange); err == nil {
 			t.Fatal("expected date range error")
+		}
+		oversized := model.MaterializeScheduleRequest{
+			ProgramID: program.ID, From: "2026-01-01", To: "2027-01-02",
+			OperationKey: "oversized-range", ExpectedRevision: program.Revision,
+		}
+		if _, err := svc.Materialize(ctx, userID, oversized); err == nil {
+			t.Fatal("expected oversized date range error")
 		}
 		stale := model.MaterializeScheduleRequest{
 			ProgramID: program.ID, From: "2026-07-20", To: "2026-07-26",
@@ -80,6 +148,13 @@ func TestScheduleServiceRejectsInvalidAndStaleReleaseMutations(t *testing.T) {
 		}
 		if _, err := svc.Regenerate(ctx, userID, badRange); err == nil {
 			t.Fatal("expected date range error")
+		}
+		oversized := model.RegenerateScheduleRequest{
+			ProgramID: program.ID, From: "2026-01-01", To: "2027-01-02",
+			OperationKey: "oversized-range", ExpectedRevision: program.Revision,
+		}
+		if _, err := svc.Regenerate(ctx, userID, oversized); err == nil {
+			t.Fatal("expected oversized date range error")
 		}
 		staleRevision := model.RegenerateScheduleRequest{
 			ProgramID: program.ID, From: "2026-07-20", To: "2026-07-26",
@@ -137,6 +212,14 @@ func TestScheduleServiceRejectsInvalidAndStaleReleaseMutations(t *testing.T) {
 		}
 		if _, err := svc.PatchSetTarget(ctx, userID, current.ID, uuid.New(), model.PatchScheduledSetTargetRequest{}); err == nil {
 			t.Fatal("expected set target validation error")
+		}
+	})
+
+	t.Run("participation range", func(t *testing.T) {
+		svc, userID, _, _, _, _ := newReleaseScheduleService(t)
+		participation := NewParticipationService(svc, &coverageParticipationRepo{})
+		if _, err := participation.List(ctx, userID, "2026-01-01", "2027-01-02"); err == nil {
+			t.Fatal("expected oversized participation range")
 		}
 	})
 }
@@ -204,13 +287,212 @@ func TestScheduleRecoveryIdempotencyAndMutationGuards(t *testing.T) {
 	})
 }
 
+func TestTrainingMutationsUseAtomicReplayBoundary(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	program := coverageProgramFixture()
+	schedules := newCoverageScheduleRepo()
+	sessions := newCoverageSessionRepo()
+	idempotency := newCoverageIdempotencyRepo()
+	mutations := newScheduleMutationCapture()
+	profile := coverageProfileFixture()
+	reps := 5
+	workout := model.ScheduledWorkout{
+		ID: uuid.New(), Date: "2026-07-20", Name: "Full Body",
+		Status: model.WorkoutStatusPlanned, Revision: 1,
+		RequiredSets: []model.ScheduledSet{{
+			ID: uuid.New(), ExerciseName: "Squat", ExerciseCategory: "legs",
+			ExerciseModality: "strength", ExerciseOrder: 1, SetIndex: 1, TargetReps: &reps,
+		}},
+		ExtraSets: []model.PerformedSet{},
+	}
+	schedules.workouts[workout.ID] = workout
+	contract := NewScheduleService(
+		schedules, newCoverageProgramRepo(program), &trainingProfileRepoStub{profile: &profile},
+		sessions, &coverageSetRepo{schedules: schedules, sessions: sessions},
+		&coverageParticipationRepo{}, mutations, idempotency, validator.New(),
+	)
+	svc, ok := contract.(*scheduleService)
+	if !ok {
+		t.Fatal("unexpected schedule service implementation")
+	}
+	svc.now = func() time.Time { return time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC) }
+
+	name := "Full Body A"
+	if _, err := svc.PatchWorkout(ctx, userID, workout.ID, model.PatchScheduledWorkoutRequest{
+		Name: &name, OperationKey: "patch-workout", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PatchSetTarget(ctx, userID, workout.ID, workout.RequiredSets[0].ID, model.PatchScheduledSetTargetRequest{
+		TargetReps: &reps, OperationKey: "patch-target", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.PutRequiredSet(ctx, userID, workout.ID, workout.RequiredSets[0].ID, model.SetMutationRequest{
+		ActualReps: &reps, Completed: true, OperationKey: "required-set", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.AddExtraSet(ctx, userID, workout.ID, model.ExtraSetRequest{
+		ExerciseName: "Carry", ExerciseCategory: "conditioning", ExerciseModality: "cardio",
+		SetIndex: 1, Completed: true, OperationKey: "extra-set", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.Complete(ctx, userID, workout.ID, model.RevisionRequest{
+		OperationKey: "complete", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	wantScopes := []string{
+		"scheduled-workouts/patch", "scheduled-workouts/set-target",
+		"scheduled-workouts/required-set", "scheduled-workouts/extra-set",
+		"scheduled-workouts/complete",
+	}
+	if len(mutations.records) != len(wantScopes) {
+		t.Fatalf("mutation records=%+v", mutations.records)
+	}
+	for i, want := range wantScopes {
+		if got := mutations.records[i]; got.Scope != want || got.OperationKey == "" || got.RequestHash == "" {
+			t.Fatalf("mutation record %d=%+v want scope %q", i, got, want)
+		}
+	}
+	if schedules.workouts[workout.ID].Revision != 1 {
+		t.Fatal("legacy schedule DAO was used by an atomic mutation")
+	}
+
+	sessionContract := NewWorkoutSessionService(
+		sessions, schedules, &coverageParticipationRepo{}, &trainingProfileRepoStub{profile: &profile},
+		mutations, idempotency, validator.New(),
+	)
+	sessionSvc, ok := sessionContract.(*workoutSessionService)
+	if !ok {
+		t.Fatal("unexpected workout session service implementation")
+	}
+	sessionSvc.now = svc.now
+	created, err := sessionSvc.Create(ctx, userID, model.CreateWorkoutSessionRequest{
+		Date: "2026-07-20", Name: "Independent", OperationKey: "create-session",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sessions.sessions[created.ID] = *created
+	completed := "completed"
+	if _, err := sessionSvc.Patch(ctx, userID, created.ID, model.PatchWorkoutSessionRequest{
+		Status: &completed, OperationKey: "complete-session", ExpectedRevision: 1,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	last := mutations.records[len(mutations.records)-2:]
+	if last[0].Scope != "workout-sessions/create" || last[1].Scope != "workout-sessions/update" {
+		t.Fatalf("session mutation scopes=%+v", last)
+	}
+}
+
+func TestAtomicMutationReplayReturnsStoredResponseBeforeResourceChecks(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	schedules := newCoverageScheduleRepo()
+	sessions := newCoverageSessionRepo()
+	idempotency := newCoverageIdempotencyRepo()
+	mutations := newScheduleMutationCapture()
+	profile := coverageProfileFixture()
+	missingWorkoutID := uuid.New()
+	name := "Stored workout"
+	workoutRequest := model.PatchScheduledWorkoutRequest{Name: &name, OperationKey: "replay-workout", ExpectedRevision: 1}
+	workoutHash, err := hashPayload(struct {
+		WorkoutID uuid.UUID
+		Request   model.PatchScheduledWorkoutRequest
+	}{missingWorkoutID, workoutRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedWorkout := model.ScheduledWorkout{ID: missingWorkoutID, Date: "2026-07-19", Name: name, Status: model.WorkoutStatusPlanned, Revision: 2}
+	workoutBody, _ := json.Marshal(storedWorkout)
+	idempotency.records["scheduled-workouts/patch|replay-workout"] = model.IdempotencyRecord{RequestHash: workoutHash, ResponseBody: workoutBody}
+	scheduleContract := NewScheduleService(
+		schedules, newCoverageProgramRepo(), &trainingProfileRepoStub{profile: &profile}, sessions,
+		&coverageSetRepo{schedules: schedules, sessions: sessions}, &coverageParticipationRepo{},
+		mutations, idempotency, validator.New(),
+	)
+	replayedWorkout, err := scheduleContract.PatchWorkout(ctx, userID, missingWorkoutID, workoutRequest)
+	if err != nil || replayedWorkout.ID != storedWorkout.ID || len(mutations.records) != 0 {
+		t.Fatalf("workout replay=%+v err=%v mutations=%+v", replayedWorkout, err, mutations.records)
+	}
+
+	missingSessionID := uuid.New()
+	status := "completed"
+	sessionRequest := model.PatchWorkoutSessionRequest{Status: &status, OperationKey: "replay-session", ExpectedRevision: 1}
+	sessionHash, err := hashPayload(struct {
+		SessionID uuid.UUID
+		Request   model.PatchWorkoutSessionRequest
+	}{missingSessionID, sessionRequest})
+	if err != nil {
+		t.Fatal(err)
+	}
+	storedSession := model.WorkoutSession{ID: missingSessionID, Date: "2026-07-19", Name: "Stored", Status: "completed", Revision: 2}
+	sessionBody, _ := json.Marshal(storedSession)
+	idempotency.records["workout-sessions/update|replay-session"] = model.IdempotencyRecord{RequestHash: sessionHash, ResponseBody: sessionBody}
+	sessionContract := NewWorkoutSessionService(
+		sessions, schedules, &coverageParticipationRepo{}, &trainingProfileRepoStub{profile: &profile},
+		mutations, idempotency, validator.New(),
+	)
+	replayedSession, err := sessionContract.Patch(ctx, userID, missingSessionID, sessionRequest)
+	if err != nil || replayedSession.ID != storedSession.ID || len(mutations.records) != 0 {
+		t.Fatalf("session replay=%+v err=%v mutations=%+v", replayedSession, err, mutations.records)
+	}
+}
+
+func TestLazyFinalizationUsesAtomicCompletionBoundary(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	schedules := newCoverageScheduleRepo()
+	sessions := newCoverageSessionRepo()
+	mutations := newScheduleMutationCapture()
+	profile := coverageProfileFixture()
+	past := model.ScheduledWorkout{
+		ID: uuid.New(), Date: "2026-07-19", Name: "Past", Status: model.WorkoutStatusPlanned,
+		Revision: 1, RequiredSets: []model.ScheduledSet{}, ExtraSets: []model.PerformedSet{},
+	}
+	schedules.workouts[past.ID] = past
+	contract := NewScheduleService(
+		schedules, newCoverageProgramRepo(), &trainingProfileRepoStub{profile: &profile}, sessions,
+		&coverageSetRepo{schedules: schedules, sessions: sessions}, &coverageParticipationRepo{},
+		mutations, newCoverageIdempotencyRepo(), validator.New(),
+	)
+	svc, ok := contract.(*scheduleService)
+	if !ok {
+		t.Fatal("unexpected schedule service implementation")
+	}
+	svc.now = func() time.Time { return time.Date(2026, 7, 20, 12, 0, 0, 0, time.UTC) }
+	if _, err := svc.List(ctx, userID, "2026-07-19", "2026-07-20"); err != nil {
+		t.Fatal(err)
+	}
+	if len(mutations.records) != 1 || mutations.records[0].Scope != "scheduled-workouts/lazy-finalize" || mutations.records[0].OperationKey != "lazy-finalize:"+past.ID.String() {
+		t.Fatalf("lazy finalization record=%+v", mutations.records)
+	}
+}
+
+func TestAtomicMutationReplayRejectsHashDriftAndCorruptResponse(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	idempotency := newCoverageIdempotencyRepo()
+	request := model.PatchScheduledWorkoutRequest{OperationKey: "replay", ExpectedRevision: 1}
+	idempotency.records["scheduled-workouts/patch|replay"] = model.IdempotencyRecord{RequestHash: "different", ResponseBody: []byte(`{}`)}
+	if _, _, err := replayResponse[model.ScheduledWorkout](ctx, idempotency, userID, "scheduled-workouts/patch", request.OperationKey, "current"); err == nil {
+		t.Fatal("expected replay payload conflict")
+	}
+	idempotency.records["scheduled-workouts/patch|replay"] = model.IdempotencyRecord{RequestHash: "current", ResponseBody: []byte(`not-json`)}
+	if _, _, err := replayResponse[model.ScheduledWorkout](ctx, idempotency, userID, "scheduled-workouts/patch", request.OperationKey, "current"); err == nil {
+		t.Fatal("expected corrupt replay response error")
+	}
+}
+
 func TestWorkoutSessionServiceReleaseGuards(t *testing.T) {
 	ctx := context.Background()
 	scheduleSvc, userID, _, schedules, sessions, idempotency := newReleaseScheduleService(t)
 	profile := coverageProfileFixture()
 	contract := NewWorkoutSessionService(
 		sessions, schedules, &coverageParticipationRepo{}, &trainingProfileRepoStub{profile: &profile},
-		idempotency, validator.New(),
+		nil, idempotency, validator.New(),
 	)
 	svc, ok := contract.(*workoutSessionService)
 	if !ok {
@@ -220,6 +502,9 @@ func TestWorkoutSessionServiceReleaseGuards(t *testing.T) {
 
 	if _, err := svc.List(ctx, userID, "2026-07-21", "2026-07-20"); err == nil {
 		t.Fatal("expected invalid list date range")
+	}
+	if _, err := svc.List(ctx, userID, "2026-01-01", "2027-01-02"); err == nil {
+		t.Fatal("expected oversized list date range")
 	}
 	if _, err := svc.Create(ctx, userID, model.CreateWorkoutSessionRequest{}); err == nil {
 		t.Fatal("expected create validation error")
@@ -273,6 +558,7 @@ func TestProgramServiceReleaseValidationAndReplayGuards(t *testing.T) {
 	svc := NewProgramService(
 		&coverageStarterRepo{starters: []model.StarterProgram{starter}},
 		newCoverageProgramRepo(program),
+		nil,
 		idempotency,
 		validator.New(),
 	)
@@ -334,7 +620,7 @@ func TestTrainingProfileCreationAndMissingRevision(t *testing.T) {
 
 	t.Run("creates a complete profile at revision zero", func(t *testing.T) {
 		repo := &trainingProfileRepoStub{}
-		svc := NewTrainingProfileService(repo)
+		svc := NewTrainingProfileService(repo, nil, validator.New())
 		goal := model.GoalStrength
 		days := []int{1, 3}
 		activity := "light"
@@ -345,7 +631,7 @@ func TestTrainingProfileCreationAndMissingRevision(t *testing.T) {
 		created, err := svc.Update(ctx, userID, model.UpdateTrainingProfileRequest{
 			PrimaryGoal: &goal, AvailableDays: &days, UsualActivity: &activity,
 			Experience: &experience, Equipment: &equipment, SessionDurationMinutes: &duration,
-			Timezone: &timezone, ExpectedRevision: 0,
+			Timezone: &timezone, ExpectedRevision: 0, OperationKey: "create-profile",
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -356,8 +642,8 @@ func TestTrainingProfileCreationAndMissingRevision(t *testing.T) {
 	})
 
 	t.Run("requires an existing profile for nonzero revision", func(t *testing.T) {
-		svc := NewTrainingProfileService(&trainingProfileRepoStub{})
-		if _, err := svc.Update(ctx, userID, model.UpdateTrainingProfileRequest{ExpectedRevision: 1}); err == nil {
+		svc := NewTrainingProfileService(&trainingProfileRepoStub{}, nil, validator.New())
+		if _, err := svc.Update(ctx, userID, model.UpdateTrainingProfileRequest{ExpectedRevision: 1, OperationKey: "missing-profile"}); err == nil {
 			t.Fatal("expected missing profile error")
 		}
 	})
@@ -405,6 +691,11 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 	badRange.From, badRange.To = "2026-07-21", "2026-07-20"
 	if _, err := svc.Preview(ctx, userID, badRange); err == nil {
 		t.Fatal("expected transition date range error")
+	}
+	oversizedRange := valid
+	oversizedRange.From, oversizedRange.To = "2026-01-01", "2027-01-02"
+	if _, err := svc.Preview(ctx, userID, oversizedRange); err == nil {
+		t.Fatal("expected oversized transition date range error")
 	}
 	preview, err := svc.Preview(ctx, userID, valid)
 	if err != nil {
