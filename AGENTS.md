@@ -15,6 +15,10 @@ Use `$gym-pulse-api-engineering` for non-trivial backend planning, implementatio
 refactoring, or review. It applies the design, API, Go, PostgreSQL, security, testing, and independent
 review strategy that complements the automated quality gates.
 
+For Go source or test changes and Go code reviews, also read and apply
+`.agents/skills/google-go-style/SKILL.md`. It supplies Google's coding standards alongside the
+repository's architecture and contract requirements.
+
 Use `$gym-pulse-cross-repo-delivery` when work may affect the Expo app, API contract compatibility,
 deployment sequencing, or end-to-end acceptance. Keep the two repositories on separate branches and
 PRs, and link their dependency explicitly. Coordinated specifications share one stable feature ID;
