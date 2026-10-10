@@ -4,7 +4,7 @@ Go REST API backend for GymPulse, a mobile fitness tracking app. Handles workout
 
 ## Tech Stack
 
-- **Go 1.26.8+** with [chi](https://github.com/go-chi/chi) router
+- **Go 1.26.9+** with [chi](https://github.com/go-chi/chi) router
 - **PostgreSQL** (Supabase-hosted) via [pgx](https://github.com/jackc/pgx)
 - **Supabase Auth** — JWT validation only (no auth logic in the API)
 - **Deployed on** [Railway](https://railway.app)
@@ -25,7 +25,7 @@ handler → service → DAO → database
 
 ### Prerequisites
 
-- Go 1.26.8+
+- Go 1.26.9+
 - PostgreSQL (or a Supabase project)
 
 ### Setup
