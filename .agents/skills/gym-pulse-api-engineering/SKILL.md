@@ -68,6 +68,10 @@ completion claims.
 
 ## Apply Idiomatic Go Judgment
 
+Read and apply `../google-go-style/SKILL.md` (relative to this skill) when writing, refactoring,
+or reviewing Go code. Use Google's core guide and style decisions for coding standards, and its
+best practices as advisory guidance; preserve the GymPulse requirements below.
+
 - Keep packages cohesive, dependency direction clear, and public APIs narrow.
 - Prefer concrete types. Define small interfaces at the consuming boundary when substitution is
   required by a real collaborator or test seam.

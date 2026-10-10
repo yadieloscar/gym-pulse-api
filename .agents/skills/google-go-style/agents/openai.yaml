@@ -1,0 +1,4 @@
+interface:
+  display_name: "Google Go Style"
+  short_description: "Apply Google's Go standards to code and reviews"
+  default_prompt: "Use $google-go-style to write or review this Go change against Google's official guidance and the repository's requirements."
