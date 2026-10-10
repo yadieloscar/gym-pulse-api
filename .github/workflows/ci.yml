@@ -39,6 +39,13 @@ jobs:
           git diff --exit-code docs/ || \
             (echo "Swagger docs are out of date — run 'swag init -g cmd/server/main.go --output docs' and commit the result." && exit 1)
 
+      - name: Database design drift gate
+        run: |
+          # docs/DATABASE_DESIGN.md is a manually maintained inventory, so it
+          # only stays trustworthy if something compares it to the migrations.
+          # Exact set comparison of tables, columns, and named indexes.
+          ./scripts/validate-database-design.sh
+
       - name: Contract drift gate
         if: github.event_name == 'pull_request'
         run: |
@@ -172,6 +179,20 @@ jobs:
           docker compose -f docker-compose.ci.yml exec -T db \
             psql -U gympulse -d gympulse -v ON_ERROR_STOP=1 \
             -c "INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-000000000001') ON CONFLICT (id) DO NOTHING;"
+
+      - name: Supabase data-API security gate
+        env:
+          DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
+        run: |
+          # Asserts against the live migrated schema: RLS on every public
+          # application table, FORCE RLS off, and no residual Data API role or
+          # default privileges. Needs a database, so it runs here rather than
+          # in the static `ci` job.
+          if ! command -v psql >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq postgresql-client
+          fi
+          ./scripts/validate-supabase-security.sh
 
       - name: Run smoke
         run: ./scripts/smoke.sh

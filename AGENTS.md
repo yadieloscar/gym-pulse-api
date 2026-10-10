@@ -37,8 +37,19 @@ when code, dependencies, configuration, or executable behavior changes.
 ```bash
 golangci-lint run # when available; mirrors the CI lint policy
 go test ./...
+./scripts/validate-database-design.sh # any migration or docs/DATABASE_DESIGN.md change
 ./scripts/smoke-toggle.sh # handler, validator, middleware, or contract changes
 ```
+
+`./scripts/validate-database-design.sh` needs no database: it compares the tables, columns, and
+named indexes in `docs/DATABASE_DESIGN.md` against `migrations/*.up.sql` as exact sets. Run it in
+the same change that touches a migration, because that document is a manually maintained inventory
+and this is the only thing that keeps it honest. CI enforces it in the `ci` job.
+
+`./scripts/validate-supabase-security.sh` asserts row-level security and Data API privileges against
+a live migrated schema, so it needs `DATABASE_URL` and `psql`. Run it for migration, RLS, grant, or
+Supabase-exposure changes — against a local stack, or via `make acceptance` from the parent
+workspace. CI enforces it in the `smoke` job, where a migrated database already exists.
 
 Add `go test -race ./...` for concurrency or shared-state changes, `govulncheck ./...` for dependency
 or security-sensitive changes when available, and targeted fuzz or PostgreSQL integration tests when
