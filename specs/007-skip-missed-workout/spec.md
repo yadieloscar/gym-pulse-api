@@ -8,7 +8,7 @@
 
 **Created**: 2026-10-11
 
-**Status**: Draft
+**Status**: Approved
 
 **Input**: User description: "An athlete can explicitly skip a missed planned workout so the next workout in the sequence becomes next, and can undo that skip. The missed date stays recorded as missed; skipping never rewrites history, participation, or records."
 
@@ -22,6 +22,10 @@ Decisions from the experience blueprint review with the product owner (workspace
 - Q: What does skipping change? → A: Only whether the missed workout is still offered as next. Its missed outcome, participation, and history stay exactly as recorded.
 - Q: Can a skip be undone? → A: Yes, unless the workout has since been performed through recovery.
 - Q: Is moving a missed workout to another future day included? → A: No.
+
+### Session 2026-10-11 (planning discovery)
+
+- Q: The contract says recovery selects the earliest *unresolved* missed workout, but nothing records that a missed workout was already recovered, so recovery keeps selecting it. What counts as resolved? → A: A missed workout is resolved when the athlete skips it or recovers it. This feature records both resolutions on the missed workout; recovery marks its source as recovered in the same operation. Only a skip can be undone.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -44,6 +48,7 @@ confirm the workout is marked as skipped, its outcome is still missed, and recov
 2. **Given** a skipped workout, **When** the athlete asks to recover a missed workout for a date, **Then** recovery selects the earliest missed workout that is not skipped, or reports that none remains.
 3. **Given** the same skip request is repeated with the same operation key, **When** it is received again, **Then** the original result is returned and nothing changes twice.
 4. **Given** a workout that is not missed (planned, in progress, completed, or incomplete), **When** the athlete tries to skip it, **Then** the request is rejected with a stable error and nothing changes.
+5. **Given** a missed workout the athlete recovered for another day, **When** the schedule is read, **Then** that missed workout is marked as recovered, recovery never selects it again, and skipping it is rejected with a stable error.
 
 ---
 
@@ -85,26 +90,27 @@ as skipped and recovery selects it again.
 
 - **FR-001**: The API MUST let an authenticated athlete mark one of their own missed scheduled workouts as skipped.
 - **FR-002**: Skipping MUST NOT change the workout's missed outcome, its date, its sets, the athlete's participation, streaks, records, volume, or history.
-- **FR-003**: Each scheduled workout MUST expose whether and when it was skipped, so every client can exclude it from "next".
-- **FR-004**: Recovering a missed workout MUST select the earliest missed workout that is not skipped.
-- **FR-005**: The API MUST let the athlete undo a skip, making the workout eligible again, unless its sequence item has since been performed through recovery.
+- **FR-003**: Each scheduled workout MUST expose whether and when a missed workout was resolved and how (skipped or recovered), so every client can exclude resolved workouts from "next".
+- **FR-004**: Recovering a missed workout MUST select the earliest unresolved missed workout and MUST mark it as recovered in the same atomic operation that plans the copy.
+- **FR-005**: The API MUST let the athlete undo a skip, making the workout unresolved again. A recovered resolution MUST NOT be undoable through this operation.
 - **FR-006**: Skipping a workout that is not missed MUST be rejected with a stable, documented error.
 - **FR-007**: Skip and undo MUST be idempotent per operation key and protected by the workout's revision, consistent with other scheduled-workout mutations.
 - **FR-008**: Workouts owned by another athlete MUST be treated as not found.
 - **FR-009**: Replacing or regenerating unstarted future workouts MUST preserve skip marks on historical missed workouts.
 - **FR-010**: The client-facing contract MUST document the skip and undo operations, the skipped field, error cases, and their interaction with recovery before the app depends on them.
-- **FR-011**: Existing clients that ignore the new field MUST keep working unchanged.
+- **FR-011**: Existing clients that ignore the new fields MUST keep working unchanged.
+- **FR-012**: Missed workouts that were already recovered before this change MUST be marked as recovered where a later workout copies the same program workout and sequence position, so they stop being offered.
 
 ### Key Entities
 
-- **Scheduled workout**: Gains a record of whether the athlete skipped it and when. Its outcome remains derived exactly as before.
+- **Scheduled workout**: Gains a resolution (none, skipped, or recovered) and the time it was resolved, meaningful only for missed workouts. Its outcome remains derived exactly as before.
 - **Skip operation**: An athlete's explicit, idempotent decision to stop offering a missed workout as next, reversible by an undo operation.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: After a skip, the skipped workout is excluded from recovery selection in 100% of contract tests.
+- **SC-001**: After a skip or a recovery, the resolved workout is excluded from recovery selection in 100% of contract tests, and recovering twice never copies the same missed workout twice.
 - **SC-002**: Skipping and undoing leave participation, streak, record, and volume results identical to before, verified by comparison tests.
 - **SC-003**: Repeated skip or undo requests with the same operation key never change state twice.
 - **SC-004**: Existing clients pass their current contract checks without modification.
@@ -113,5 +119,5 @@ as skipped and recovery selects it again.
 
 - "Missed" keeps its current definition: a finalized scheduled workout with no checked required sets.
 - The app derives "next" from the schedule as it does today and will exclude skipped workouts using the new field.
-- The change is additive: a nullable skipped timestamp on the scheduled workout plus skip and undo operations.
+- The change is additive: resolution fields on the scheduled workout, skip and undo operations, and recovery recording its resolution.
 - The API ships and is deployed before the dependent app behavior.
