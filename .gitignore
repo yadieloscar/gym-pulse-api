@@ -24,3 +24,6 @@ Thumbs.db
 vendor/
 *.test
 *.out
+
+# Local agent configuration (skill links)
+.claude/

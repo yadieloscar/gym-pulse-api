@@ -75,6 +75,12 @@ func (guidedScheduleService) AddExtraSet(context.Context, uuid.UUID, uuid.UUID, 
 func (guidedScheduleService) Complete(context.Context, uuid.UUID, uuid.UUID, model.RevisionRequest) (*model.ScheduledWorkout, error) {
 	return &model.ScheduledWorkout{}, nil
 }
+func (guidedScheduleService) Skip(context.Context, uuid.UUID, uuid.UUID, model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	return &model.ScheduledWorkout{}, nil
+}
+func (guidedScheduleService) Unskip(context.Context, uuid.UUID, uuid.UUID, model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	return &model.ScheduledWorkout{}, nil
+}
 
 type guidedSessionService struct{}
 
@@ -204,6 +210,12 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 	})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
 		schedule.Complete(w, guidedHandlerRequest(t, http.MethodPost, "/", model.RevisionRequest{OperationKey: operationKey}, userID, operationKey, params))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		schedule.Skip(w, guidedHandlerRequest(t, http.MethodPost, "/", model.RevisionRequest{OperationKey: operationKey}, userID, operationKey, params))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		schedule.Unskip(w, guidedHandlerRequest(t, http.MethodPost, "/", model.RevisionRequest{OperationKey: operationKey}, userID, operationKey, params))
 	})
 
 	sessions := NewWorkoutSessionHandler(guidedSessionService{})
