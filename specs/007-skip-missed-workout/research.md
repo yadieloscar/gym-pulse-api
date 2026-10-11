@@ -27,25 +27,32 @@ All decisions trace to [spec.md](spec.md). Code references were mapped on 2026-1
   (`internal/dao/schedule_dao.go:449`). Nothing marks the source after a copy is made, so a second
   recovery with a new operation key copies the same workout again. The non-atomic fallback filters
   the same way in Go (`schedule_svc.go:306-318`).
-- **Decision**: Add `AND resolution IS NULL` to the selection (both paths) and, in the same
+- **Decision**: Add `AND resolution IS NULL` to the selection and, in the same
   transaction, set the source's `resolution='recovered'`, `resolved_at=now()`,
   `revision=revision+1`. The response stays the new copy (contract unchanged apart from the
   documented side effect).
+- **Fallback path**: `RecoverToday`'s non-atomic fallback runs only when the DAO lacks
+  `IdempotentScheduleDAO`; production always has it. The fallback gets the unresolved filter only and is
+  documented as legacy. Service tests use a fake that implements `RecoverIdempotent` (analysis I1).
 - **Rationale**: Satisfies FR-004 and the existing contract wording "earliest unresolved missed
   sequence item" (`docs/CONTRACTS.md:423`) that the code did not implement.
 
 ## R3. Backfill for workouts recovered before this change (FR-012)
 
-- **Decision**: In migration `020`, mark a missed row as recovered when another row of the same user
-  has the same non-null `program_workout_id`, the same `sequence_position`, a later `date`, and a
-  `created_at` after the missed row's `finalized_at`. Set `resolved_at` to that copy's `created_at`.
-- **Rationale**: Recovery copies `program_workout_id` and `sequence_position` from the source
-  (`schedule_dao.go:326` insert) and runs only after the source is finalized as missed. Materialized
-  future weeks get new sequence positions, so they do not match.
-- **Risk**: A row recovered from a source with null `program_workout_id` is not backfilled and stays
-  offered once; acceptable and documented.
-- **Alternatives considered**: No backfill (existing users keep seeing already-recovered misses);
-  rejected because it is the visible bug the app spec fixes.
+- **Rejected first design (analysis C1)**: matching on `program_workout_id` + `sequence_position` +
+  later date. `sequence_position` is the program workout's own position and repeats every cycle
+  (`internal/model/training_materialization.go:44-48`), so later weeks of the same workout would match
+  and most historical misses would be wrongly and irreversibly marked recovered.
+- **Decision**: Use recovery provenance. Each recovery stores an `idempotency_records` row with
+  `scope='schedule/recover'` and `resource_id` = the copy (`schedule_svc.go:292`, `:342`); records are
+  removed only on account deletion (`account_dao.go:46`). For each such record, the source is the
+  earliest missed row (by `sequence_position NULLS LAST, date`) of the same user with the copy's
+  `program_workout_id` and `sequence_position`, `date <= copy.date`, and
+  `finalized_at <= record.created_at`, which is exactly the row the old selection returned. Mark it
+  `recovered` with `resolved_at` = the earliest such record's `created_at`.
+- **Risk**: Recoveries whose record no longer exists stay unresolved and remain skippable.
+- **Alternatives considered**: No backfill (users skip old misses by hand); rejected by the product
+  owner.
 
 ## R4. Endpoint shape
 
@@ -74,6 +81,20 @@ All decisions trace to [spec.md](spec.md). Code references were mapped on 2026-1
 - **Rationale**: Reuses the existing mapping in `handleServiceError` (`internal/handler/response.go`)
   and adds one stable code (FR-006). Idempotent no-ops match the spec edge case for repeated skips.
 - **Implementation note**: Add a typed `ResolutionConflictError` rather than matching on message text.
+
+## R5a. Resolution after corrections (FR-013)
+
+- **Finding**: `PutRequiredSet` accepts sets on finalized workouts and `updateScheduledStatus`
+  re-derives a finalized row's outcome (`training_mutation_dao.go:781-798`, `:809-888`).
+- **Decision**: In the same statement that re-derives status, clear `resolution` and `resolved_at`
+  when the new status is not `missed`.
+
+## R5b. Concurrency
+
+- Skip, unskip, and recover all take the per-user schedule advisory lock
+  (`training_mutation_dao.go:474`, `schedule_dao.go:439`), so they serialize. Recover bumps the source
+  revision; a later skip with the old revision gets `REVISION_CONFLICT`, and with the new revision gets
+  `RESOLUTION_CONFLICT`.
 
 ## R6. Preservation across plan changes (FR-009)
 

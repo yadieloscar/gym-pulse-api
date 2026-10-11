@@ -31,5 +31,6 @@ Expected: all pass; swagger regeneration produces no diff after the committed up
 | 8 | Skip with another user's token | 404 `NOT_FOUND` | FR-008 |
 | 9 | Skip, then regenerate and apply a plan transition | `resolution` unchanged | FR-009 |
 | 10 | Compare `/stats`, participation, and records before and after skip/unskip | Identical | FR-002, SC-002 |
-| 11 | Migrate a database containing a recovered pair created before 020 | Source marked recovered | FR-012 |
+| 11 | Migrate a database with a pre-020 recovery record and a later-cycle occurrence of the same workout | Only the recovered source is marked; the later occurrence stays unresolved | FR-012 |
 | 12 | Migrate down then up | Columns dropped and recreated; backfill reapplied | Rollback |
+| 13 | Skip a miss, then log a set on it as a correction | Outcome becomes incomplete; `resolution` cleared | FR-013 |

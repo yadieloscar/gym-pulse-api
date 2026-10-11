@@ -56,7 +56,7 @@ repeatedly. A migration backfills sources already recovered.
 - [x] Migrations document compatibility, existing-data behavior, and rollback. (Additive nullable columns, documented backfill, down migration drops columns; research R3, R7.)
 - [x] New dependencies, layers, and concurrency are justified. (None added.)
 
-Post-design re-check: passes; no violations to track.
+Post-design re-check: passes; no violations to track. Analysis remediation (2026-10-11): the critical backfill flaw (sequence positions repeat each cycle) was replaced by a provenance backfill; resolution clearing on corrections and an always-available undo were specified.
 
 ## Project Structure
 

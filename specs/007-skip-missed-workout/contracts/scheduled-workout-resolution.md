@@ -21,11 +21,12 @@ Proposed additions to `docs/CONTRACTS.md`. Conventions (auth, `Idempotency-Key`,
   history.
 - `resolved_at`: when the resolution was recorded; omitted when unresolved.
 - Clients treat a missed workout as *unresolved* when `resolution` is absent.
+- If a correction changes the outcome to `completed` or `incomplete`, `resolution` and `resolved_at` are cleared.
 
 ## `POST /api/v1/scheduled-workouts/{id}/skip`
 
 ```json
-{ "operation_key": "skip-<id>-2026-10-06", "expected_revision": 3 }
+{ "operation_key": "skip-<id>-<revision>", "expected_revision": 3 }
 ```
 
 Marks the athlete's own missed workout as skipped. Response 200: full `ScheduledWorkout` with
