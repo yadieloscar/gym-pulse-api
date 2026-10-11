@@ -44,7 +44,8 @@ with the unchanged workout.
 ## `POST /api/v1/scheduled-workouts/{id}/unskip`
 
 Same body. Clears a skip, making the workout unresolved. Response 200: full `ScheduledWorkout`
-without `resolution`, `revision` incremented. On an unresolved workout, returns 200 unchanged.
+without `resolution`, `revision` incremented. Any workout that is neither skipped nor recovered
+returns 200 unchanged. `expected_revision` is checked before resolution rules.
 A `recovered` workout returns 409 `RESOLUTION_CONFLICT`. Other errors as for skip.
 
 ## `POST /api/v1/schedule/recover` (behavior clarified)
@@ -59,7 +60,8 @@ A `recovered` workout returns 409 `RESOLUTION_CONFLICT`. Other errors as for ski
 ## Regenerate and plan transitions
 
 Unchanged. They only replace unstarted planned workouts, so `resolution` on historical missed
-workouts is always preserved.
+workouts is always preserved. If a recovered copy is removed this way, its source stays `recovered`
+and the sequence moves on.
 
 ## New stable error code
 

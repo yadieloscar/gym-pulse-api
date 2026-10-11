@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **30 tables and 277 supported columns**. For the Supabase-managed
+The current inventory contains **30 tables and 279 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -712,6 +712,8 @@ active program when necessary, changes the revision, and replaces all child work
 | `sequence_position` | `integer` | nullable | Program sequence position | Health |
 | `status` | `text` | not null; `'planned'` | Planned/finalized outcome | Health |
 | `finalized_at` | `timestamptz` | nullable | Outcome finalization instant | Health |
+| `resolution` | `text` | nullable | How a missed workout was resolved: `skipped` or `recovered` | Health |
+| `resolved_at` | `timestamptz` | nullable | Resolution instant | Health |
 | `revision` | `bigint` | not null; `1` | Optimistic concurrency revision | Operational |
 | `created_at` | `timestamptz` | not null; `now()` | Materialization instant | Private |
 | `updated_at` | `timestamptz` | not null; `now()` | Last snapshot/outcome change | Private |
@@ -723,10 +725,13 @@ active program when necessary, changes the revision, and replaces all child work
 - FKs `program_id → programs SET NULL` and `program_workout_id → program_workouts SET NULL`.
 - Status: `planned|in_progress|completed|incomplete|missed`; revision `> 0`.
 - Named index `idx_scheduled_workouts_user_date(user_id, date)`.
+- Resolution: `skipped|recovered`; `scheduled_workouts_resolution_check` limits values and `scheduled_workouts_resolution_pair` requires `resolution` and `resolved_at` to be both null or both set.
+- Migration `020` backfilled `recovered` from `idempotency_records` rows with scope `schedule/recover`, marking the missed source each recovery copied.
 - **Gap**: no DB check ties finalized states to `finalized_at`.
+- **Gap**: no DB check limits `resolution` to `missed` rows; corrections clear it in application code.
 - **Gap**: no provenance FK indexes.
 
-**Migration source**: `012_create_training_domain`.
+**Migration source**: `012_create_training_domain`, `020_add_scheduled_workout_resolution`.
 
 ### Table: `public.scheduled_sets`
 
@@ -1033,10 +1038,10 @@ columns:
 | Profile/settings/body | 4 | 29 |
 | Catalog and legacy template/log/plan | 8 | 70 |
 | Starter and user programs | 6 | 63 |
-| Scheduled execution/history/workflow | 6 | 64 |
+| Scheduled execution/history/workflow | 6 | 66 |
 | Sport activity | 1 | 9 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **30** | **277** |
+| **Total** | **30** | **279** |
 
 The count is derived from the final state after migration 019, not the sum of every historical
 `CREATE`/`ALTER` statement.

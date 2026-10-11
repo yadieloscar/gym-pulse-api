@@ -50,7 +50,9 @@ All decisions trace to [spec.md](spec.md). Code references were mapped on 2026-1
   `program_workout_id` and `sequence_position`, `date <= copy.date`, and
   `finalized_at <= record.created_at`, which is exactly the row the old selection returned. Mark it
   `recovered` with `resolved_at` = the earliest such record's `created_at`.
-- **Risk**: Recoveries whose record no longer exists stay unresolved and remain skippable.
+- **Risk**: Recoveries whose record or copy no longer exists (a planned copy deleted by regenerate or a
+  plan transition) cannot be traced; those misses stay unresolved and remain skippable. Null
+  `program_workout_id` values (deleted program workouts) are matched null-safely.
 - **Alternatives considered**: No backfill (users skip old misses by hand); rejected by the product
   owner.
 

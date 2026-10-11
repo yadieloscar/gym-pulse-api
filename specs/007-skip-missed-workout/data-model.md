@@ -48,7 +48,7 @@ Recovery selection: earliest by `sequence_position NULLS LAST, date` among
 
 For each `idempotency_records` row `r` with `scope = 'schedule/recover'` and `resource_id` = copy `c`,
 the source `m` is the earliest missed row (by `sequence_position NULLS LAST, date`) with the same
-`user_id`, `program_workout_id = c.program_workout_id`, `sequence_position IS NOT DISTINCT FROM
+`user_id`, `program_workout_id IS NOT DISTINCT FROM c.program_workout_id`, `sequence_position IS NOT DISTINCT FROM
 c.sequence_position`, `m.date <= c.date`, and `m.finalized_at <= r.created_at`. Mark `m` recovered with
 `resolved_at` = the earliest matching `r.created_at`. Later-cycle occurrences of the same program
 workout are never matched. Down migration drops both columns.

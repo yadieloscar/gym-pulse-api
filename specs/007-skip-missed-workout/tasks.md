@@ -22,18 +22,18 @@ description: "Task list for skipping and resolving missed workouts"
 
 | Requirement / acceptance | Tasks | Verification | Result / limitation |
 | --- | --- | --- | --- |
-| FR-001, FR-003, US1-1 | T011, T015–T020 | service + handler tests; quickstart #1 | Planned |
-| FR-002, SC-002 | T012, T014 | integration comparison test; quickstart #10 | Planned |
-| FR-004, US1-2, US1-5, SC-001 | T008, T009, T013 | recover service + integration tests; quickstart #2, #5 | Planned |
-| FR-006, US1-4 | T011, T016, T019 | service + handler tests; quickstart #4 | Planned |
-| FR-007, US1-3, US2-3, SC-003 | T011, T017, T024 | idempotency replay tests; quickstart #3 | Planned |
-| FR-008 | T012 | integration ownership test; quickstart #8 | Planned |
-| FR-005, US2-1, US2-2 | T022–T027 | service + handler + integration tests; quickstart #6, #7 | Planned |
-| FR-009 | T014 | integration test across regenerate and transition apply; quickstart #9 | Planned |
-| FR-010 | T001, T002, T021, T027 | contract drift gate; swagger diff | Planned |
-| FR-011, SC-004 | T007, T030 | existing suites unchanged; smoke | Planned |
-| FR-012 | T004, T006 | migration integration test; quickstart #11, #12 | Planned |
-| FR-013 | T010 | integration correction test; quickstart #13 | Planned |
+| FR-001, FR-003, US1-1 | T011, T015–T020 | service + handler tests; quickstart #1 | Passed 2026-10-11: service, handler, integration skip tests; smoke 21/21 |
+| FR-002, SC-002 | T012, T014 | integration comparison test; quickstart #10 | Passed: history and stats DAO outputs identical before skip, after skip, after unskip (TestReleaseSkipAndUnskipResolveWithoutChangingHistory) |
+| FR-004, US1-2, US1-5, SC-001 | T008, T009, T013 | recover service + integration tests; quickstart #2, #5 | Passed: TestReleaseRecoverResolvesSourceOnce (second recover 404); fallback unit tests |
+| FR-006, US1-4 | T011, T016, T019 | service + handler tests; quickstart #4 | Passed: planned and recovered skips return ResolutionConflictError; smoke 409 RESOLUTION_CONFLICT on incomplete |
+| FR-007, US1-3, US2-3, SC-003 | T011, T017, T024 | idempotency replay tests; quickstart #3 | Passed: replay returns stored body without revision change |
+| FR-008 | T012 | integration ownership test; quickstart #8 | Passed: foreign user skip returns NotFoundError; smoke 404 |
+| FR-005, US2-1, US2-2 | T022–T027 | service + handler + integration tests; quickstart #6, #7 | Passed: unskip restores and recover selects it; recovered unskip conflicts |
+| FR-009 | T014 | integration test across regenerate and transition apply; quickstart #9 | Passed: TestReleaseResolutionSurvivesScheduleReplacement |
+| FR-010 | T001, T002, T021, T027 | contract drift gate; swagger diff | Passed: CONTRACTS.md updated; swagger regenerated (routes, fields, apiError only) |
+| FR-011, SC-004 | T007, T030 | existing suites unchanged; smoke | Passed: go test ./... green; existing integration suite green; smoke 21/21 |
+| FR-012 | T004, T006 | migration integration test; quickstart #11, #12 | Passed: TestReleaseMigration020BackfillsOnlyRecoveredSources incl. later-cycle and same-day cases, down/up |
+| FR-013 | T010 | integration correction test; quickstart #13 | Passed: TestReleaseCorrectionClearsResolution |
 
 ## Path Conventions
 
@@ -45,8 +45,8 @@ Go service at repository root: `migrations/`, `internal/{model,dao,service,handl
 
 **Purpose**: Publish the client-facing contract before code, as the constitution requires
 
-- [ ] T001 Document `resolution` and `resolved_at` on `ScheduledWorkout`, the clarified recover behavior, the skip and unskip routes, and `409 RESOLUTION_CONFLICT` in docs/CONTRACTS.md per contracts/scheduled-workout-resolution.md
-- [ ] T002 [P] Document the two new columns, their check constraint, and the backfill rule in docs/DATABASE_DESIGN.md (scheduled_workouts section, around lines 700–725) and confirm ./scripts/validate-database-design.sh passes
+- [x] T001 Document `resolution` and `resolved_at` on `ScheduledWorkout`, the clarified recover behavior, the skip and unskip routes, and `409 RESOLUTION_CONFLICT` in docs/CONTRACTS.md per contracts/scheduled-workout-resolution.md
+- [x] T002 [P] Document the two new columns, their check constraint, and the backfill rule in docs/DATABASE_DESIGN.md (scheduled_workouts section, around lines 700–725) and confirm ./scripts/validate-database-design.sh passes
 
 ---
 
@@ -56,15 +56,15 @@ Go service at repository root: `migrations/`, `internal/{model,dao,service,handl
 
 **⚠️ CRITICAL**: No user story work can begin until this phase is complete
 
-- [ ] T003 Create migrations/020_add_scheduled_workout_resolution.up.sql adding `resolution TEXT NULL CHECK (resolution IN ('skipped','recovered'))`, `resolved_at TIMESTAMPTZ NULL`, and `CHECK ((resolution IS NULL) = (resolved_at IS NULL))`
-- [ ] T004 Add the provenance backfill to migrations/020_add_scheduled_workout_resolution.up.sql: for each idempotency_records row with scope 'schedule/recover', mark the source missed row that recovery copied (data-model.md "Backfill") as recovered with resolved_at = the earliest matching record time
-- [ ] T005 [P] Create migrations/020_add_scheduled_workout_resolution.down.sql dropping the constraint and both columns
-- [ ] T006 Add a golang-migrate helper to internal/dao/release_safety_integration_test.go that can apply 020 down and up, and tests: a recovery record marks exactly its source; a later-cycle occurrence of the same program workout stays unresolved; a same-day recovery is matched; misses without a record stay unresolved; down/up round-trips
-- [ ] T007 Add `Resolution *string` (`json:"resolution,omitempty"`), `ResolvedAt *time.Time` (`json:"resolved_at,omitempty"`), resolution constants, and a typed `ResolutionConflictError` to internal/model/training.go; add the new columns to every scheduled_workouts select and scan in internal/dao/schedule_dao.go (lines ~61, ~167, ~449) and loadScheduledWorkout in internal/dao/training_mutation_dao.go (~486)
-- [ ] T008 Make the service test fake in internal/service/release_coverage_test.go implement RecoverIdempotent and add a failing test that a second recover with a new operation key does not copy the same missed workout again; add a fallback-path test that resolved misses are ignored
-- [ ] T009 Change RecoverIdempotent in internal/dao/schedule_dao.go to select `status='missed' AND resolution IS NULL` and, in the same transaction, set the source's `resolution='recovered'`, `resolved_at=now()`, `revision=revision+1`; add only the unresolved filter to the legacy fallback in RecoverToday in internal/service/schedule_svc.go (~306–318) and comment it as legacy
-- [ ] T010 Clear `resolution` and `resolved_at` in updateScheduledStatus in internal/dao/training_mutation_dao.go (~781–807) when the re-derived status is not missed, with an integration test where a correction completes a skipped workout (FR-013)
-- [ ] T011 Map `ResolutionConflictError` to 409 `RESOLUTION_CONFLICT` with `details` and the authoritative `resource` in handleServiceError in internal/handler/response.go, with a handler test
+- [x] T003 Create migrations/020_add_scheduled_workout_resolution.up.sql adding `resolution TEXT NULL CHECK (resolution IN ('skipped','recovered'))`, `resolved_at TIMESTAMPTZ NULL`, and `CHECK ((resolution IS NULL) = (resolved_at IS NULL))`
+- [x] T004 Add the provenance backfill to migrations/020_add_scheduled_workout_resolution.up.sql: for each idempotency_records row with scope 'schedule/recover', mark the source missed row that recovery copied (data-model.md "Backfill") as recovered with resolved_at = the earliest matching record time
+- [x] T005 [P] Create migrations/020_add_scheduled_workout_resolution.down.sql dropping the constraint and both columns
+- [x] T006 Add a golang-migrate helper to internal/dao/release_safety_integration_test.go that can apply 020 down and up, and tests: a recovery record marks exactly its source; a later-cycle occurrence of the same program workout stays unresolved; a same-day recovery is matched; misses without a record stay unresolved; down/up round-trips
+- [x] T007 Add `Resolution *string` (`json:"resolution,omitempty"`), `ResolvedAt *time.Time` (`json:"resolved_at,omitempty"`), resolution constants, and a typed `ResolutionConflictError` to internal/model/training.go; add the new columns to every scheduled_workouts select and scan in internal/dao/schedule_dao.go (lines ~61, ~167, ~449) and loadScheduledWorkout in internal/dao/training_mutation_dao.go (~486)
+- [x] T008 Make the service test fake in internal/service/release_coverage_test.go implement RecoverIdempotent and add a failing test that a second recover with a new operation key does not copy the same missed workout again; add a fallback-path test that resolved misses are ignored
+- [x] T009 Change RecoverIdempotent in internal/dao/schedule_dao.go to select `status='missed' AND resolution IS NULL` and, in the same transaction, set the source's `resolution='recovered'`, `resolved_at=now()`, `revision=revision+1`; add only the unresolved filter to the legacy fallback in RecoverToday in internal/service/schedule_svc.go (~306–318) and comment it as legacy
+- [x] T010 Clear `resolution` and `resolved_at` in updateScheduledStatus in internal/dao/training_mutation_dao.go (~781–807) when the re-derived status is not missed, with an integration test where a correction completes a skipped workout (FR-013)
+- [x] T011 Map `ResolutionConflictError` to 409 `RESOLUTION_CONFLICT` with `details` and the authoritative `resource` in handleServiceError in internal/handler/response.go, with a handler test
 
 **Checkpoint**: Schema migrated, fields serialized, recovery no longer double-copies
 
@@ -78,19 +78,19 @@ Go service at repository root: `migrations/`, `internal/{model,dao,service,handl
 
 ### Tests for User Story 1 (REQUIRED) ⚠️
 
-- [ ] T012 [P] [US1] Integration tests in internal/dao/release_safety_integration_test.go: skip sets resolution and bumps revision; another user's id returns not found; /stats (including streaks and volume), participation, and records are identical before skip, after skip, and after unskip
-- [ ] T013 [P] [US1] Integration test in internal/dao/release_safety_integration_test.go: recover marks its source recovered and a second recover returns 404; skipping a recovered workout conflicts; recover then skip with the old revision returns REVISION_CONFLICT and with the new revision returns RESOLUTION_CONFLICT
-- [ ] T014 [P] [US1] Integration test in internal/dao/release_safety_integration_test.go: a skipped miss keeps its resolution after schedule regenerate and plan-transition apply
-- [ ] T015 [P] [US1] Service tests in internal/service/guided_training_services_test.go for Skip: missed → skipped, already skipped → unchanged without revision bump, not missed → ResolutionConflictError, idempotent replay, stale revision conflict
-- [ ] T016 [P] [US1] Handler tests in internal/handler/guided_training_handlers_test.go for POST /scheduled-workouts/{id}/skip: 200 body, Idempotency-Key mismatch 422, 404, 409 RESOLUTION_CONFLICT; extend the guidedScheduleService stub for the new interface methods
+- [x] T012 [P] [US1] Integration tests in internal/dao/release_safety_integration_test.go: skip sets resolution and bumps revision; another user's id returns not found; /stats (including streaks and volume), participation, and records are identical before skip, after skip, and after unskip
+- [x] T013 [P] [US1] Integration test in internal/dao/release_safety_integration_test.go: recover marks its source recovered and a second recover returns 404; skipping a recovered workout conflicts; recover then skip with the old revision returns REVISION_CONFLICT and with the new revision returns RESOLUTION_CONFLICT
+- [x] T014 [P] [US1] Integration test in internal/dao/release_safety_integration_test.go: a skipped miss keeps its resolution after schedule regenerate and plan-transition apply
+- [x] T015 [P] [US1] Service tests in internal/service/guided_training_services_test.go for Skip: missed → skipped, already skipped → unchanged without revision bump, not missed → ResolutionConflictError, idempotent replay, stale revision conflict
+- [x] T016 [P] [US1] Handler tests in internal/handler/guided_training_handlers_test.go for POST /scheduled-workouts/{id}/skip: 200 body, Idempotency-Key mismatch 422, 404, 409 RESOLUTION_CONFLICT; extend the guidedScheduleService stub for the new interface methods
 
 ### Implementation for User Story 1
 
-- [ ] T017 [US1] Add SkipScheduledWorkout to the TrainingMutationDAO interface and implement it in internal/dao/training_mutation_dao.go following FinalizeScheduledWorkout: advisory lock, findIdempotency (scope `scheduled-workouts/skip`), owned row FOR UPDATE, revision check, status and resolution guards, UPDATE with revision+1, loadScheduledWorkout, insertIdempotency
-- [ ] T018 [US1] Add Skip to the schedule service in internal/service/schedule_svc.go hashing `{WorkoutID, Request}` like Complete (~425–448) and to the ScheduleService interface
-- [ ] T019 [US1] Add the Skip handler with swag annotations in internal/handler/training.go using decodeMutation and matchIdempotencyKey
-- [ ] T020 [US1] Register `POST /api/v1/scheduled-workouts/{id}/skip` in internal/router/router.go with a route test in internal/router/training_routes_test.go
-- [ ] T021 [US1] Regenerate docs/docs.go, docs/swagger.json, and docs/swagger.yaml with `swag init -g cmd/server/main.go --output docs`
+- [x] T017 [US1] Add SkipScheduledWorkout to the TrainingMutationDAO interface and implement it in internal/dao/training_mutation_dao.go following FinalizeScheduledWorkout: advisory lock, findIdempotency (scope `scheduled-workouts/skip`), owned row FOR UPDATE, revision check, status and resolution guards, UPDATE with revision+1, loadScheduledWorkout, insertIdempotency
+- [x] T018 [US1] Add Skip to the schedule service in internal/service/schedule_svc.go hashing `{WorkoutID, Request}` like Complete (~425–448) and to the ScheduleService interface
+- [x] T019 [US1] Add the Skip handler with swag annotations in internal/handler/training.go using decodeMutation and matchIdempotencyKey
+- [x] T020 [US1] Register `POST /api/v1/scheduled-workouts/{id}/skip` in internal/router/router.go with a route test in internal/router/training_routes_test.go
+- [x] T021 [US1] Regenerate docs/docs.go, docs/swagger.json, and docs/swagger.yaml with `swag init -g cmd/server/main.go --output docs`
 
 **Checkpoint**: Skip works end to end; recovery fix verified
 
@@ -104,15 +104,15 @@ Go service at repository root: `migrations/`, `internal/{model,dao,service,handl
 
 ### Tests for User Story 2 (REQUIRED) ⚠️
 
-- [ ] T022 [P] [US2] Service tests in internal/service/guided_training_services_test.go for Unskip: skipped → unresolved with revision bump, unresolved → unchanged, recovered → ResolutionConflictError, idempotent replay
-- [ ] T023 [P] [US2] Handler tests in internal/handler/guided_training_handlers_test.go for POST /scheduled-workouts/{id}/unskip
-- [ ] T024 [P] [US2] Integration test in internal/dao/release_safety_integration_test.go: skip then unskip, recover selects the workout; replaying the same unskip key returns the stored result
+- [x] T022 [P] [US2] Service tests in internal/service/guided_training_services_test.go for Unskip: skipped → unresolved with revision bump, unresolved → unchanged, recovered → ResolutionConflictError, idempotent replay
+- [x] T023 [P] [US2] Handler tests in internal/handler/guided_training_handlers_test.go for POST /scheduled-workouts/{id}/unskip
+- [x] T024 [P] [US2] Integration test in internal/dao/release_safety_integration_test.go: skip then unskip, recover selects the workout; replaying the same unskip key returns the stored result
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Implement UnskipScheduledWorkout in internal/dao/training_mutation_dao.go (scope `scheduled-workouts/unskip`) clearing resolution and resolved_at only when resolution is skipped
-- [ ] T026 [US2] Add Unskip to internal/service/schedule_svc.go and the Unskip handler with swag annotations in internal/handler/training.go
-- [ ] T027 [US2] Register `POST /api/v1/scheduled-workouts/{id}/unskip` in internal/router/router.go with a route test, and regenerate swagger docs
+- [x] T025 [US2] Implement UnskipScheduledWorkout in internal/dao/training_mutation_dao.go (scope `scheduled-workouts/unskip`) clearing resolution and resolved_at only when resolution is skipped
+- [x] T026 [US2] Add Unskip to internal/service/schedule_svc.go and the Unskip handler with swag annotations in internal/handler/training.go
+- [x] T027 [US2] Register `POST /api/v1/scheduled-workouts/{id}/unskip` in internal/router/router.go with a route test, and regenerate swagger docs
 
 **Checkpoint**: Both stories work independently
 
@@ -120,10 +120,10 @@ Go service at repository root: `migrations/`, `internal/{model,dao,service,handl
 
 ## Phase 5: Polish & Cross-Cutting Concerns
 
-- [ ] T028 [P] Add skip and unskip wire checks to scripts/smoke.sh and run ./scripts/smoke-toggle.sh
-- [ ] T029 Run `go test ./...` with coverage and confirm ≥ 90% for service, handler, router, and middleware packages
-- [ ] T030 Run `go test -race -tags=integration ./internal/dao -run '^TestRelease'` against a disposable database and record results in this file's evidence table
-- [ ] T031 Review the final diff against docs/CONTRACTS.md and the app sibling contract, confirm `git diff --check`, and record the deploy-before-app rollout note in the PR description
+- [x] T028 [P] Add skip and unskip wire checks to scripts/smoke.sh and run ./scripts/smoke-toggle.sh
+- [x] T029 Run `go test ./...` with coverage and confirm ≥ 90% for service, handler, router, and middleware packages
+- [x] T030 Run `go test -race -tags=integration ./internal/dao -run '^TestRelease'` against a disposable database and record results in this file's evidence table
+- [x] T031 Review the final diff against docs/CONTRACTS.md and the app sibling contract, confirm `git diff --check`, and record the deploy-before-app rollout note in the PR description
 
 ---
 

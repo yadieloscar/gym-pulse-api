@@ -31,6 +31,8 @@ type IdempotentScheduleDAO interface {
 func (r *scheduleDAO) UpdateOutcome(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout, expectedRevision int64) error {
 	err := r.pool.QueryRow(ctx, `
 		UPDATE scheduled_workouts SET status=$3, finalized_at=$4,
+		       resolution=CASE WHEN $3='missed' THEN resolution END,
+		       resolved_at=CASE WHEN $3='missed' THEN resolved_at END,
 		       revision=revision+1, updated_at=now()
 		WHERE id=$1 AND user_id=$2 AND revision=$5
 		RETURNING revision, updated_at`, w.ID, userID, w.Status, w.FinalizedAt,
@@ -59,7 +61,7 @@ func NewScheduleDAO(pool *pgxpool.Pool) ScheduleDAO {
 func (r *scheduleDAO) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.ScheduledWorkout, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, revision, created_at, updated_at
+		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
 		FROM scheduled_workouts
 		WHERE user_id=$1 AND date BETWEEN $2 AND $3
 		ORDER BY date, created_at`, userID, from, to)
@@ -72,7 +74,7 @@ func (r *scheduleDAO) List(ctx context.Context, userID uuid.UUID, from, to strin
 	for rows.Next() {
 		var w model.ScheduledWorkout
 		if err := rows.Scan(&w.ID, &w.ProgramID, &w.ProgramWorkoutID, &w.Date,
-			&w.Name, &w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Revision,
+			&w.Name, &w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Resolution, &w.ResolvedAt, &w.Revision,
 			&w.CreatedAt, &w.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scanning scheduled workout: %w", err)
 		}
@@ -165,10 +167,10 @@ func (r *scheduleDAO) Get(ctx context.Context, userID, workoutID uuid.UUID) (*mo
 	w := &model.ScheduledWorkout{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, revision, created_at, updated_at
+		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
 		FROM scheduled_workouts WHERE id=$1 AND user_id=$2`, workoutID, userID).Scan(
 		&w.ID, &w.ProgramID, &w.ProgramWorkoutID, &w.Date, &w.Name,
-		&w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Revision,
+		&w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Resolution, &w.ResolvedAt, &w.Revision,
 		&w.CreatedAt, &w.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
@@ -446,7 +448,7 @@ func (r *scheduleDAO) RecoverIdempotent(ctx context.Context, userID uuid.UUID, d
 		return &replay, true, nil
 	}
 	var source model.ScheduledWorkout
-	err = tx.QueryRow(ctx, `SELECT id, program_id, program_workout_id, to_char(date,'YYYY-MM-DD'), name, sequence_position, status, finalized_at, revision, created_at, updated_at FROM scheduled_workouts WHERE user_id=$1 AND date <= $2 AND status='missed' ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE`, userID, date).Scan(&source.ID, &source.ProgramID, &source.ProgramWorkoutID, &source.Date, &source.Name, &source.SequencePosition, &source.Status, &source.FinalizedAt, &source.Revision, &source.CreatedAt, &source.UpdatedAt)
+	err = tx.QueryRow(ctx, `SELECT id, program_id, program_workout_id, to_char(date,'YYYY-MM-DD'), name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at FROM scheduled_workouts WHERE user_id=$1 AND date <= $2 AND status='missed' AND resolution IS NULL ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE`, userID, date).Scan(&source.ID, &source.ProgramID, &source.ProgramWorkoutID, &source.Date, &source.Name, &source.SequencePosition, &source.Status, &source.FinalizedAt, &source.Resolution, &source.ResolvedAt, &source.Revision, &source.CreatedAt, &source.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, &model.NotFoundError{Message: "no missed workout to recover"}
 	}
@@ -477,6 +479,8 @@ func (r *scheduleDAO) RecoverIdempotent(ctx context.Context, userID uuid.UUID, d
 	recovered.Date = date
 	recovered.Status = model.WorkoutStatusPlanned
 	recovered.FinalizedAt = nil
+	recovered.Resolution = nil
+	recovered.ResolvedAt = nil
 	recovered.Revision = 0
 	// insertScheduledWorkouts mutates its slice, so insert through a named slice.
 	created := []model.ScheduledWorkout{recovered}
@@ -484,6 +488,13 @@ func (r *scheduleDAO) RecoverIdempotent(ctx context.Context, userID uuid.UUID, d
 		return nil, false, err
 	}
 	recovered = created[0]
+	// Resolve the source in the same transaction so it is never copied again.
+	if _, err := tx.Exec(ctx, `
+		UPDATE scheduled_workouts
+		SET resolution=$3, resolved_at=now(), revision=revision+1, updated_at=now()
+		WHERE id=$1 AND user_id=$2`, source.ID, userID, model.ResolutionRecovered); err != nil {
+		return nil, false, fmt.Errorf("resolving recovered workout: %w", err)
+	}
 	record.ResourceID = &recovered.ID
 	record.ResourceRevision = &recovered.Revision
 	if err := insertIdempotency(ctx, tx, userID, record, &recovered); err != nil {
@@ -503,6 +514,8 @@ func (r *scheduleDAO) ReplaceSnapshot(ctx context.Context, userID uuid.UUID, w *
 	defer tx.Rollback(ctx)
 	err = tx.QueryRow(ctx, `
 		UPDATE scheduled_workouts SET name=$3, status=$4, finalized_at=$5,
+		       resolution=CASE WHEN $4='missed' THEN resolution END,
+		       resolved_at=CASE WHEN $4='missed' THEN resolved_at END,
 		       revision=revision+1, updated_at=now()
 		WHERE id=$1 AND user_id=$2 AND revision=$6
 		RETURNING revision, updated_at`, w.ID, userID, w.Name, w.Status,

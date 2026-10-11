@@ -24,6 +24,11 @@ const (
 	WorkoutStatusCompleted  = "completed"
 	WorkoutStatusIncomplete = "incomplete"
 	WorkoutStatusMissed     = "missed"
+
+	// ResolutionSkipped and ResolutionRecovered record how an athlete resolved a
+	// missed workout. A nil resolution means the missed workout is unresolved.
+	ResolutionSkipped   = "skipped"
+	ResolutionRecovered = "recovered"
 )
 
 var (
@@ -345,6 +350,8 @@ type ScheduledWorkout struct {
 	SequencePosition *int           `json:"sequence_position,omitempty"`
 	Status           string         `json:"status"`
 	FinalizedAt      *time.Time     `json:"finalized_at,omitempty"`
+	Resolution       *string        `json:"resolution,omitempty" enums:"skipped,recovered"`
+	ResolvedAt       *time.Time     `json:"resolved_at,omitempty"`
 	Revision         int64          `json:"revision"`
 	RequiredSets     []ScheduledSet `json:"required_sets"`
 	ExtraSets        []PerformedSet `json:"extra_sets"`
