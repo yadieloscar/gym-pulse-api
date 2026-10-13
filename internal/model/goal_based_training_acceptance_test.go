@@ -178,7 +178,7 @@ func TestNextFutureWeekUsesAthleteTimezone(t *testing.T) {
 }
 
 func TestPushPullLegsStarterSeed(t *testing.T) {
-	seed := readMigration(t, "020_seed_push_pull_legs_starter.up.sql")
+	seed := readMigration(t, "021_seed_push_pull_legs_starter.up.sql")
 	catalog := readMigration(t, "008_create_exercise_catalog.up.sql")
 	for _, marker := range []string{"'push-pull-legs', 1", "'hypertrophy', 3, 6", "('Push', 1, 1)", "('Pull', 3, 2)", "('Legs', 5, 3)", "ON CONFLICT (slug, version) DO NOTHING"} {
 		if !strings.Contains(seed, marker) {
@@ -196,7 +196,7 @@ func TestPushPullLegsStarterSeed(t *testing.T) {
 			t.Errorf("exercise %q is not in the exercise catalog seed", match[1])
 		}
 	}
-	down := readMigration(t, "020_seed_push_pull_legs_starter.down.sql")
+	down := readMigration(t, "021_seed_push_pull_legs_starter.down.sql")
 	if !strings.Contains(down, "slug='push-pull-legs' AND version=1") {
 		t.Error("down migration must remove exactly the seeded starter version")
 	}

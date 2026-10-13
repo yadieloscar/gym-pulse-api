@@ -553,7 +553,7 @@ goal-based workout session.
 versions remain addressable for copy provenance.
 
 **Migration sources**: `012_create_training_domain`, seeded by
-`013_seed_starter_programs` and `020_seed_push_pull_legs_starter`.
+`013_seed_starter_programs` and `021_seed_push_pull_legs_starter`.
 
 ### Table: `public.starter_workouts`
 

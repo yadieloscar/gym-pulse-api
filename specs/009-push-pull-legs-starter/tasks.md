@@ -2,8 +2,8 @@
 
 Design is a single additive seed migration; no plan.md is needed beyond the notes in spec.md.
 
-- [X] T001 Add `migrations/020_seed_push_pull_legs_starter.up.sql` (FR-001..FR-004)
-- [X] T002 Add `migrations/020_seed_push_pull_legs_starter.down.sql` (FR-004)
+- [X] T001 Add `migrations/021_seed_push_pull_legs_starter.up.sql` (FR-001..FR-004)
+- [X] T002 Add `migrations/021_seed_push_pull_legs_starter.down.sql` (FR-004)
 - [X] T003 Add `TestPushPullLegsStarterSeed` in `internal/model/goal_based_training_acceptance_test.go` covering markers, 15 catalog-resolvable exercises, and the down migration (SC-002)
 - [X] T004 Update `docs/DATABASE_DESIGN.md` migration sources for `starter_programs` (FR-005)
 - [X] T005 Run `go test ./...`, `golangci-lint run`, `./scripts/validate-database-design.sh`; apply migrations to a local database and verify SC-001/SC-002 (evidence below)
