@@ -1049,6 +1049,10 @@ definitions:
         enum:
         - obsidianEmber
         - abyssCerulean
+        - mossChartreuse
+        - voltLime
+        - oliveCitrine
+        - slateMint
         type: string
       weekly_goal:
         maximum: 7
@@ -1079,6 +1083,10 @@ definitions:
         enum:
         - obsidianEmber
         - abyssCerulean
+        - mossChartreuse
+        - voltLime
+        - oliveCitrine
+        - slateMint
         type: string
       weekly_goal:
         maximum: 7

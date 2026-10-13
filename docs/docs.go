@@ -4205,7 +4205,11 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "obsidianEmber",
-                        "abyssCerulean"
+                        "abyssCerulean",
+                        "mossChartreuse",
+                        "voltLime",
+                        "oliveCitrine",
+                        "slateMint"
                     ]
                 },
                 "weekly_goal": {
@@ -4254,7 +4258,11 @@ const docTemplate = `{
                     "type": "string",
                     "enum": [
                         "obsidianEmber",
-                        "abyssCerulean"
+                        "abyssCerulean",
+                        "mossChartreuse",
+                        "voltLime",
+                        "oliveCitrine",
+                        "slateMint"
                     ]
                 },
                 "weekly_goal": {
