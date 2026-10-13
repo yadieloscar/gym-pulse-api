@@ -49,6 +49,13 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	var resolution *model.ResolutionConflictError
+	if errors.As(err, &resolution) {
+		details := map[string]any{"status": resolution.Status, "resolution": resolution.Resolution}
+		writeJSON(w, http.StatusConflict, apiError{Error: resolution.Message, Code: "RESOLUTION_CONFLICT", Details: details, Resource: resolution.Authoritative})
+		return
+	}
+
 	var conflict *model.ConflictError
 	if errors.As(err, &conflict) {
 		code := "CONFLICT"

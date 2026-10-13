@@ -26,6 +26,8 @@ type ScheduleService interface {
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.SetMutationRequest) (*model.ScheduledWorkout, error)
 	AddExtraSet(ctx context.Context, userID, workoutID uuid.UUID, req model.ExtraSetRequest) (*model.ScheduledWorkout, error)
 	Complete(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
+	Skip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
+	Unskip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 }
 
 type WorkoutSessionService interface {
@@ -303,13 +305,15 @@ func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, re
 	} else if !isNotFound(err) {
 		return nil, err
 	}
+	// Legacy path for DAOs without RecoverIdempotent; production always takes the
+	// atomic path above. It filters resolved misses but cannot mark the source.
 	missed, err := s.schedules.List(ctx, userID, "0001-01-01", req.Date)
 	if err != nil {
 		return nil, err
 	}
 	var source *model.ScheduledWorkout
 	for i := range missed {
-		if missed[i].Status == model.WorkoutStatusMissed && (source == nil || sequenceBefore(&missed[i], source)) {
+		if missed[i].Status == model.WorkoutStatusMissed && missed[i].Resolution == nil && (source == nil || sequenceBefore(&missed[i], source)) {
 			source = &missed[i]
 		}
 	}
@@ -321,6 +325,8 @@ func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, re
 	recovered.Date = req.Date
 	recovered.Status = model.WorkoutStatusPlanned
 	recovered.FinalizedAt = nil
+	recovered.Resolution = nil
+	recovered.ResolvedAt = nil
 	recovered.Revision = 0
 	recovered.CreatedAt = time.Time{}
 	recovered.UpdatedAt = time.Time{}
@@ -445,6 +451,47 @@ func (s *scheduleService) Complete(ctx context.Context, userID, workoutID uuid.U
 		return nil, err
 	}
 	return s.finalizeLegacy(ctx, userID, w)
+}
+
+// ErrResolutionUnavailable reports a schedule service built without the
+// transactional mutation DAO that skip and unskip require.
+var ErrResolutionUnavailable = errors.New("scheduled workout resolution requires transactional mutations")
+
+// Skip marks an owned missed workout as skipped so it is no longer offered as
+// next. Its outcome, participation, and history are unchanged.
+func (s *scheduleService) Skip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	return s.resolve(ctx, userID, workoutID, req, "scheduled-workouts/skip", "invalid skip request", true)
+}
+
+// Unskip clears a skip so the missed workout is unresolved again.
+func (s *scheduleService) Unskip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	return s.resolve(ctx, userID, workoutID, req, "scheduled-workouts/unskip", "invalid unskip request", false)
+}
+
+func (s *scheduleService) resolve(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest, scope, invalid string, skip bool) (*model.ScheduledWorkout, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: invalid, Field: "body"}
+	}
+	if s.mutations == nil {
+		return nil, ErrResolutionUnavailable
+	}
+	hash, err := hashPayload(struct {
+		WorkoutID uuid.UUID
+		Request   model.RevisionRequest
+	}{workoutID, req})
+	if err != nil {
+		return nil, err
+	}
+	record := model.IdempotencyRecord{
+		Scope: scope, OperationKey: req.OperationKey, RequestHash: hash,
+		ResponseStatus: 200, ResourceType: "scheduled_workout",
+	}
+	if skip {
+		result, _, err := s.mutations.SkipScheduledWorkout(ctx, userID, workoutID, req.ExpectedRevision, record)
+		return result, err
+	}
+	result, _, err := s.mutations.UnskipScheduledWorkout(ctx, userID, workoutID, req.ExpectedRevision, record)
+	return result, err
 }
 
 func (s *scheduleService) checkedWorkout(ctx context.Context, userID, workoutID uuid.UUID, revision int64) (*model.ScheduledWorkout, error) {

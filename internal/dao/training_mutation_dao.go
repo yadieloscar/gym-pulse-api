@@ -26,6 +26,8 @@ type TrainingMutationDAO interface {
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, request model.SetMutationRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	AddExtraSet(ctx context.Context, userID, workoutID uuid.UUID, request model.ExtraSetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	FinalizeScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
+	SkipScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
+	UnskipScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	CreateWorkoutSession(ctx context.Context, userID uuid.UUID, session *model.WorkoutSession, record model.IdempotencyRecord) (*model.WorkoutSession, bool, error)
 	ReplaceWorkoutSession(ctx context.Context, userID uuid.UUID, session *model.WorkoutSession, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.WorkoutSession, bool, error)
 }
@@ -484,11 +486,11 @@ func loadScheduledWorkout(ctx context.Context, tx pgx.Tx, userID, workoutID uuid
 	workout := &model.ScheduledWorkout{}
 	err := tx.QueryRow(ctx, `
 		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, revision, created_at, updated_at
+		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
 		FROM scheduled_workouts WHERE id=$1 AND user_id=$2`, workoutID, userID).Scan(
 		&workout.ID, &workout.ProgramID, &workout.ProgramWorkoutID, &workout.Date,
 		&workout.Name, &workout.SequencePosition, &workout.Status, &workout.FinalizedAt,
-		&workout.Revision, &workout.CreatedAt, &workout.UpdatedAt,
+		&workout.Resolution, &workout.ResolvedAt, &workout.Revision, &workout.CreatedAt, &workout.UpdatedAt,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "scheduled workout not found"}
@@ -788,17 +790,25 @@ func updateScheduledStatus(ctx context.Context, tx pgx.Tx, userID, workoutID uui
 				   WHERE sl.scheduled_set_id=ss.id AND sl.completed=true
 				     AND ws.scheduled_workout_id=$1)) AS completed
 			FROM scheduled_sets ss WHERE ss.scheduled_workout_id=$1
+		), next_status AS (
+			SELECT CASE
+				WHEN sw.finalized_at IS NOT NULL THEN CASE
+					WHEN required_counts.total > 0 AND required_counts.completed=required_counts.total THEN 'completed'
+					WHEN required_counts.completed > 0 THEN 'incomplete'
+					ELSE 'missed' END
+				WHEN required_counts.completed > 0 THEN 'in_progress'
+				ELSE 'planned' END AS status
+			FROM scheduled_workouts sw, required_counts
+			WHERE sw.id=$1 AND sw.user_id=$2
 		)
 		UPDATE scheduled_workouts sw
-		SET status=CASE
-			WHEN sw.finalized_at IS NOT NULL THEN CASE
-				WHEN required_counts.total > 0 AND required_counts.completed=required_counts.total THEN 'completed'
-				WHEN required_counts.completed > 0 THEN 'incomplete'
-				ELSE 'missed' END
-			WHEN required_counts.completed > 0 THEN 'in_progress'
-			ELSE 'planned' END,
-		revision=revision+1, updated_at=now()
-		FROM required_counts
+		SET status=next_status.status,
+		    -- A resolution describes a missed workout; a correction that changes
+		    -- the outcome clears it.
+		    resolution=CASE WHEN next_status.status='missed' THEN sw.resolution END,
+		    resolved_at=CASE WHEN next_status.status='missed' THEN sw.resolved_at END,
+		    revision=revision+1, updated_at=now()
+		FROM next_status
 		WHERE sw.id=$1 AND sw.user_id=$2`, workoutID, userID)
 	if err != nil {
 		return fmt.Errorf("refreshing scheduled workout outcome: %w", err)
@@ -1195,4 +1205,91 @@ func (r *trainingMutationDAO) ReplaceWorkoutSession(ctx context.Context, userID 
 		return nil, false, fmt.Errorf("committing workout session update: %w", err)
 	}
 	return result, false, nil
+}
+
+// SkipScheduledWorkout marks an owned missed workout as skipped. Skipping an
+// already skipped workout succeeds without change.
+func (r *trainingMutationDAO) SkipScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return r.setScheduledResolution(ctx, userID, workoutID, expectedRevision, true, record)
+}
+
+// UnskipScheduledWorkout clears a skip so the missed workout is unresolved
+// again. Unskipping an unresolved workout succeeds without change.
+func (r *trainingMutationDAO) UnskipScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return r.setScheduledResolution(ctx, userID, workoutID, expectedRevision, false, record)
+}
+
+func (r *trainingMutationDAO) setScheduledResolution(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, skip bool, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	tx, err := r.beginScheduleMutation(ctx, userID)
+	if err != nil {
+		return nil, false, err
+	}
+	defer tx.Rollback(ctx)
+	var replay model.ScheduledWorkout
+	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
+		return nil, false, err
+	} else if found {
+		return &replay, true, nil
+	}
+	var revision int64
+	var status string
+	var resolution *string
+	err = tx.QueryRow(ctx, `SELECT revision, status, resolution FROM scheduled_workouts WHERE id=$1 AND user_id=$2 FOR UPDATE`, workoutID, userID).Scan(&revision, &status, &resolution)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, &model.NotFoundError{Message: "scheduled workout not found"}
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("locking scheduled workout: %w", err)
+	}
+	if revision != expectedRevision {
+		current, getErr := loadScheduledWorkout(ctx, tx, userID, workoutID)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		return nil, false, mutationRevisionConflict("scheduled workout revision conflict", expectedRevision, current, revision)
+	}
+
+	recovered := resolution != nil && *resolution == model.ResolutionRecovered
+	skipped := resolution != nil && *resolution == model.ResolutionSkipped
+	if recovered || (skip && status != model.WorkoutStatusMissed) {
+		current, getErr := loadScheduledWorkout(ctx, tx, userID, workoutID)
+		if getErr != nil {
+			return nil, false, getErr
+		}
+		message := "workout cannot be skipped"
+		if !skip {
+			message = "workout cannot be unskipped"
+		}
+		return nil, false, &model.ResolutionConflictError{Message: message, Status: status, Resolution: resolution, Authoritative: current}
+	}
+
+	switch {
+	case skip && !skipped:
+		_, err = tx.Exec(ctx, `
+			UPDATE scheduled_workouts
+			SET resolution=$3, resolved_at=now(), revision=revision+1, updated_at=now()
+			WHERE id=$1 AND user_id=$2`, workoutID, userID, model.ResolutionSkipped)
+	case !skip && skipped:
+		_, err = tx.Exec(ctx, `
+			UPDATE scheduled_workouts
+			SET resolution=NULL, resolved_at=NULL, revision=revision+1, updated_at=now()
+			WHERE id=$1 AND user_id=$2`, workoutID, userID)
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("updating scheduled workout resolution: %w", err)
+	}
+
+	workout, err := loadScheduledWorkout(ctx, tx, userID, workoutID)
+	if err != nil {
+		return nil, false, err
+	}
+	record.ResourceID = &workout.ID
+	record.ResourceRevision = &workout.Revision
+	if err := insertIdempotency(ctx, tx, userID, record, workout); err != nil {
+		return nil, false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, false, fmt.Errorf("committing scheduled workout resolution: %w", err)
+	}
+	return workout, false, nil
 }

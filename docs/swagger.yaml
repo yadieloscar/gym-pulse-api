@@ -1,5 +1,14 @@
 basePath: /
 definitions:
+  handler.apiError:
+    properties:
+      code:
+        type: string
+      details: {}
+      error:
+        type: string
+      resource: {}
+    type: object
   model.AdoptLegacyProgramRequest:
     properties:
       expected_revision:
@@ -765,6 +774,13 @@ definitions:
         items:
           $ref: '#/definitions/model.ScheduledSet'
         type: array
+      resolution:
+        enum:
+        - skipped
+        - recovered
+        type: string
+      resolved_at:
+        type: string
       revision:
         type: integer
       sequence_position:
@@ -2248,6 +2264,101 @@ paths:
       security:
       - BearerAuth: []
       summary: Edit scheduled set target
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/skip:
+    post:
+      consumes:
+      - application/json
+      description: Marks a missed workout resolution as skipped so it is no longer
+        offered as next. The outcome, participation, and history are unchanged. Skipping
+        an already skipped workout returns it unchanged.
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Skip operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      summary: Skip missed scheduled workout
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/unskip:
+    post:
+      consumes:
+      - application/json
+      description: Clears a skipped resolution. An unresolved workout is returned
+        unchanged; a recovered workout returns RESOLUTION_CONFLICT.
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Unskip operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      summary: Undo skipping a missed scheduled workout
       tags:
       - goal-training
   /api/v1/settings:

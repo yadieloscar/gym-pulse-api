@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -409,6 +410,57 @@ func (h *ScheduleHandler) Complete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	resource, err := h.svc.Complete(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
+	respond(w, resource, err, http.StatusOK)
+}
+
+// Skip marks an owned missed scheduled workout as skipped.
+// @Summary Skip missed scheduled workout
+// @Description Marks a missed workout resolution as skipped so it is no longer offered as next. The outcome, participation, and history are unchanged. Skipping an already skipped workout returns it unchanged.
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param id path string true "Scheduled workout ID"
+// @Param body body model.RevisionRequest true "Skip operation"
+// @Success 200 {object} model.ScheduledWorkout
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError "RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT"
+// @Failure 422 {object} apiError
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id}/skip [post]
+func (h *ScheduleHandler) Skip(w http.ResponseWriter, r *http.Request) {
+	h.resolve(w, r, h.svc.Skip)
+}
+
+// Unskip clears a skip so the missed workout is unresolved again.
+// @Summary Undo skipping a missed scheduled workout
+// @Description Clears a skipped resolution. An unresolved workout is returned unchanged; a recovered workout returns RESOLUTION_CONFLICT.
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param id path string true "Scheduled workout ID"
+// @Param body body model.RevisionRequest true "Unskip operation"
+// @Success 200 {object} model.ScheduledWorkout
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError "RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT"
+// @Failure 422 {object} apiError
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id}/unskip [post]
+func (h *ScheduleHandler) Unskip(w http.ResponseWriter, r *http.Request) {
+	h.resolve(w, r, h.svc.Unskip)
+}
+
+func (h *ScheduleHandler) resolve(w http.ResponseWriter, r *http.Request, apply func(context.Context, uuid.UUID, uuid.UUID, model.RevisionRequest) (*model.ScheduledWorkout, error)) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req model.RevisionRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := apply(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
 	respond(w, resource, err, http.StatusOK)
 }
 

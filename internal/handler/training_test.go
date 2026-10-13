@@ -43,3 +43,21 @@ func TestTrainingRevisionConflictIncludesAuthoritativeResource(t *testing.T) {
 		}
 	}
 }
+
+func TestTrainingResolutionConflictIncludesStatusAndResource(t *testing.T) {
+	recovered := model.ResolutionRecovered
+	rec := httptest.NewRecorder()
+	handleServiceError(rec, &model.ResolutionConflictError{
+		Message: "workout cannot be skipped", Status: model.WorkoutStatusMissed, Resolution: &recovered,
+		Authoritative: &model.ScheduledWorkout{Revision: 4, Resolution: &recovered},
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status=%d want 409", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"code":"RESOLUTION_CONFLICT"`, `"status":"missed"`, `"resolution":"recovered"`, `"resource"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("response missing %s: %s", want, body)
+		}
+	}
+}
