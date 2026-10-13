@@ -2,6 +2,7 @@ package model
 
 import (
 	"os"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -173,5 +174,30 @@ func TestNextFutureWeekUsesAthleteTimezone(t *testing.T) {
 	}
 	if from != "2026-08-17" || to != "2026-08-23" {
 		t.Fatalf("monday week = %s..%s", from, to)
+	}
+}
+
+func TestPushPullLegsStarterSeed(t *testing.T) {
+	seed := readMigration(t, "021_seed_push_pull_legs_starter.up.sql")
+	catalog := readMigration(t, "008_create_exercise_catalog.up.sql")
+	for _, marker := range []string{"'push-pull-legs', 1", "'hypertrophy', 3, 6", "('Push', 1, 1)", "('Pull', 3, 2)", "('Legs', 5, 3)", "ON CONFLICT (slug, version) DO NOTHING"} {
+		if !strings.Contains(seed, marker) {
+			t.Errorf("push/pull/legs seed missing %q", marker)
+		}
+	}
+	// Every prescribed exercise must resolve to a catalog row, otherwise catalog_id
+	// silently becomes NULL and the app loses exercise provenance.
+	exercises := regexp.MustCompile(`\(\d, '([^']+)',\s*'(push|pull|legs)'`).FindAllStringSubmatch(seed, -1)
+	if len(exercises) != 15 {
+		t.Fatalf("exercise count=%d want 15", len(exercises))
+	}
+	for _, match := range exercises {
+		if !strings.Contains(catalog, "('"+match[1]+"',") {
+			t.Errorf("exercise %q is not in the exercise catalog seed", match[1])
+		}
+	}
+	down := readMigration(t, "021_seed_push_pull_legs_starter.down.sql")
+	if !strings.Contains(down, "slug='push-pull-legs' AND version=1") {
+		t.Error("down migration must remove exactly the seeded starter version")
 	}
 }
