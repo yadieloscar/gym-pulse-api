@@ -48,6 +48,17 @@ type ConflictError struct {
 
 func (e *ConflictError) Error() string { return e.Message }
 
+// ResolutionConflictError indicates a skip or unskip that does not apply to the
+// workout's current outcome or resolution.
+type ResolutionConflictError struct {
+	Message       string
+	Status        string
+	Resolution    *string
+	Authoritative any
+}
+
+func (e *ResolutionConflictError) Error() string { return e.Message }
+
 // UserSettings holds per-user preferences.
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`

@@ -150,7 +150,16 @@ creating a singleton training profile, otherwise ≥1). A stale revision returns
   "resource": { "id": "<uuid>", "revision": 4 }
 }
 ```
-Both conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
+A skip or unskip that does not apply to the workout's current outcome returns:
+```json
+{
+  "error": "workout cannot be skipped",
+  "code": "RESOLUTION_CONFLICT",
+  "details": { "status": "completed", "resolution": null },
+  "resource": { "id": "<uuid>", "revision": 5 }
+}
+```
+All three conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
 `404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
 `{"error":"string","code":"CODE","details":{}}` shape.
 
@@ -329,7 +338,9 @@ Response 200:
   "program_workout_id": "<uuid|null>", "date": "2026-07-20",
   "name": "Full Body A", "sequence_position": 1,
   "status": "planned|in_progress|completed|incomplete|missed",
-  "finalized_at": "<RFC3339|null>", "revision": 3,
+  "finalized_at": "<RFC3339|null>",
+  "resolution": "skipped|recovered (omitted when unresolved)",
+  "resolved_at": "<RFC3339> (omitted when unresolved)", "revision": 3,
   "required_sets": [{
     "id": "<uuid>", "program_exercise_id": "<uuid|null>",
     "catalog_id": "<uuid|null>", "exercise_name": "Back Squat",
@@ -346,6 +357,12 @@ Response 200:
 ```
 Exercise name/category/modality and targets are immutable snapshots. Nullable
 program/catalog IDs are provenance only and deletion never erases history.
+`resolution` records how the athlete resolved a missed workout: `skipped`
+(undoable) or `recovered` (a copy was planned through recover). It is
+meaningful only when `status` is `missed`; clients treat a missed workout as
+unresolved when the field is absent. It never changes `status`, participation,
+streaks, records, volume, or history. If a correction changes the outcome to
+`completed` or `incomplete`, `resolution` and `resolved_at` are cleared.
 
 #### `POST /api/v1/schedule/materialize`
 
@@ -420,9 +437,12 @@ revision returns 409. A matching replay returns the authoritative target plan.
 The workout copy and its idempotency record are committed atomically. A matching
 replay returns the exact originally stored recovered workout.
 Explicitly creates a new planned occurrence on the requested date from the
-earliest unresolved missed sequence item. The missed historical occurrence is
-not moved or rewritten. Response 201 is the new `ScheduledWorkout`; no missed
-workout returns 404.
+earliest unresolved missed workout (no `resolution`), ordered by
+`sequence_position` then `date`, on or before the requested date. In the same
+transaction the source is marked `resolution: "recovered"` and its revision
+increments, so it is never selected again. The missed historical occurrence is
+not moved and its outcome is not rewritten. Response 201 is the new
+`ScheduledWorkout`; no unresolved missed workout returns 404.
 
 #### `PATCH /api/v1/scheduled-workouts/{id}`
 
@@ -480,6 +500,27 @@ reject extra sets with 409. `exercise_id` may reference an owned legacy
 exercise. For migration compatibility, a recognized global catalog UUID in
 that field is accepted but detached to `null`; immutable exercise snapshots
 remain authoritative, and new clients send `null` for catalog-derived sets.
+
+#### `POST /api/v1/scheduled-workouts/{id}/skip`
+
+```json
+{ "operation_key": "skip-<id>-<revision>", "expected_revision": 3 }
+```
+Marks the athlete's own missed workout `resolution: "skipped"`. Response 200:
+full `ScheduledWorkout` with the revision incremented. Skipping an already
+skipped workout returns 200 unchanged. A workout whose outcome is not `missed`,
+or that is `recovered`, returns `409 RESOLUTION_CONFLICT` with the
+authoritative workout as `resource`. Another athlete's workout returns 404.
+
+#### `POST /api/v1/scheduled-workouts/{id}/unskip`
+
+Same body. Clears a skip so the workout is unresolved again. Response 200: full
+`ScheduledWorkout` without `resolution`, revision incremented. Any workout that
+is not skipped and not recovered returns 200 unchanged; a `recovered` workout
+returns `409 RESOLUTION_CONFLICT`. For both skip and unskip, `expected_revision`
+is checked first, so a stale revision returns `REVISION_CONFLICT` even when the
+operation would be a no-op. A source stays `recovered` even if its planned copy
+is later removed by regenerate or a plan transition; the sequence moves on.
 
 #### `POST /api/v1/scheduled-workouts/{id}/complete`
 

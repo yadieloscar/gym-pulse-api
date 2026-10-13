@@ -355,6 +355,33 @@ EOF
         else
           bad "goal training lifecycle failed (set=$required_status/$required_replay_status/$required_conflict_status extra=$resp_extra/$finalized_extra_status complete=$resp_complete/$complete_replay_status correction=$correction_status/$target_status status=$status participation=$resp_part)" "$(echo "$participation_body" | head -c 280)"
         fi
+        # Missed-workout resolution routes: an incomplete workout cannot be
+        # skipped, unskipping an unresolved workout is a no-op, and the
+        # Idempotency-Key contract applies.
+        resolved_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$correction_body" 2>/dev/null || true)
+        target_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$target_body" 2>/dev/null || echo "$resolved_revision")
+        skip_op="smoke-skip-incomplete-v1"
+        skip_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/skip" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $skip_op" \
+          -d "{\"operation_key\":\"$skip_op\",\"expected_revision\":$target_revision}")
+        skip_body=$(cat /tmp/smoke.body)
+        unskip_op="smoke-unskip-unresolved-v1"
+        unskip_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/unskip" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $unskip_op" \
+          -d "{\"operation_key\":\"$unskip_op\",\"expected_revision\":$target_revision}")
+        unskip_body=$(cat /tmp/smoke.body)
+        mismatch_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$workout_id/skip" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: other-key" \
+          -d "{\"operation_key\":\"$skip_op\",\"expected_revision\":$target_revision}")
+        missing_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$(python3 -c 'import uuid; print(uuid.uuid4())')/skip" \
+          "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-skip-missing-v1" \
+          -d "{\"operation_key\":\"smoke-skip-missing-v1\",\"expected_revision\":1}")
+        if [ "$skip_status" = "409" ] && [ "$unskip_status" = "200" ] && [ "$mismatch_status" = "422" ] && [ "$missing_status" = "404" ] && \
+          python3 -c "import json,sys; skip,unskip=map(json.loads,sys.argv[1:]); assert skip['code']=='RESOLUTION_CONFLICT' and skip['resource']['status']=='incomplete' and 'resolution' not in unskip" "$skip_body" "$unskip_body" 2>/dev/null; then
+          ok "missed-workout resolution routes enforce outcome, idempotency key, and ownership"
+        else
+          bad "resolution routes failed (skip=$skip_status unskip=$unskip_status mismatch=$mismatch_status missing=$missing_status)" "$(echo "$skip_body" | head -c 240)"
+        fi
       fi
     fi
   fi

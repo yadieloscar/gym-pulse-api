@@ -1698,6 +1698,148 @@
                 }
             }
         },
+        "/api/v1/scheduled-workouts/{id}/skip": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks a missed workout resolution as skipped so it is no longer offered as next. The outcome, participation, and history are unchanged. Skipping an already skipped workout returns it unchanged.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Skip missed scheduled workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Skip operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/unskip": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Clears a skipped resolution. An unresolved workout is returned unchanged; a recovered workout returns RESOLUTION_CONFLICT.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Undo skipping a missed scheduled workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Unskip operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "RESOLUTION_CONFLICT, REVISION_CONFLICT, or IDEMPOTENCY_CONFLICT",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings": {
             "get": {
                 "security": [
@@ -2500,6 +2642,19 @@
         }
     },
     "definitions": {
+        "handler.apiError": {
+            "type": "object",
+            "properties": {
+                "code": {
+                    "type": "string"
+                },
+                "details": {},
+                "error": {
+                    "type": "string"
+                },
+                "resource": {}
+            }
+        },
         "model.AdoptLegacyProgramRequest": {
             "type": "object",
             "required": [
@@ -3636,6 +3791,16 @@
                     "items": {
                         "$ref": "#/definitions/model.ScheduledSet"
                     }
+                },
+                "resolution": {
+                    "type": "string",
+                    "enum": [
+                        "skipped",
+                        "recovered"
+                    ]
+                },
+                "resolved_at": {
+                    "type": "string"
                 },
                 "revision": {
                     "type": "integer"

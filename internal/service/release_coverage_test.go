@@ -54,6 +54,17 @@ func (s *scheduleMutationCapture) FinalizeScheduledWorkout(_ context.Context, _,
 	return s.captureWorkout(record)
 }
 
+func (s *scheduleMutationCapture) SkipScheduledWorkout(_ context.Context, _, workoutID uuid.UUID, _ int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	skipped := model.ResolutionSkipped
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 2, Status: model.WorkoutStatusMissed, Resolution: &skipped}
+	return s.captureWorkout(record)
+}
+
+func (s *scheduleMutationCapture) UnskipScheduledWorkout(_ context.Context, _, workoutID uuid.UUID, _ int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	s.workout = &model.ScheduledWorkout{ID: workoutID, Revision: 3, Status: model.WorkoutStatusMissed}
+	return s.captureWorkout(record)
+}
+
 func (s *scheduleMutationCapture) CreateWorkoutSession(_ context.Context, _ uuid.UUID, session *model.WorkoutSession, record model.IdempotencyRecord) (*model.WorkoutSession, bool, error) {
 	s.records = append(s.records, record)
 	session.ID = uuid.New()

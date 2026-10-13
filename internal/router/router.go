@@ -88,6 +88,8 @@ func New(
 					r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 					r.Post("/extra-sets", scheduleHandler.AddExtra)
 					r.Post("/complete", scheduleHandler.Complete)
+					r.Post("/skip", scheduleHandler.Skip)
+					r.Post("/unskip", scheduleHandler.Unskip)
 				})
 				r.Route("/workout-sessions", func(r chi.Router) {
 					r.Get("/", workoutSessionHandler.List)

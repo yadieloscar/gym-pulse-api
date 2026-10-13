@@ -157,6 +157,14 @@ func (*adoptionMutationStub) FinalizeScheduledWorkout(context.Context, uuid.UUID
 	return nil, false, nil
 }
 
+func (*adoptionMutationStub) SkipScheduledWorkout(context.Context, uuid.UUID, uuid.UUID, int64, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return nil, false, nil
+}
+
+func (*adoptionMutationStub) UnskipScheduledWorkout(context.Context, uuid.UUID, uuid.UUID, int64, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return nil, false, nil
+}
+
 func (*adoptionMutationStub) CreateWorkoutSession(context.Context, uuid.UUID, *model.WorkoutSession, model.IdempotencyRecord) (*model.WorkoutSession, bool, error) {
 	return nil, false, nil
 }
