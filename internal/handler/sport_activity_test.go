@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -16,6 +17,7 @@ type sportHandlerService struct {
 	activities []model.SportActivity
 	err        error
 	created    model.CreateSportActivityRequest
+	outcome    model.SportActivityCreateOutcome
 }
 
 func (s *sportHandlerService) List(context.Context, uuid.UUID, string, string) ([]model.SportActivity, error) {
@@ -27,12 +29,12 @@ func (s *sportHandlerService) Get(context.Context, uuid.UUID, uuid.UUID) (*model
 	}
 	return &s.activities[0], nil
 }
-func (s *sportHandlerService) Create(_ context.Context, _ uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, error) {
+func (s *sportHandlerService) Create(_ context.Context, _ uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, model.SportActivityCreateOutcome, error) {
 	s.created = req
 	if s.err != nil {
-		return nil, s.err
+		return nil, model.SportActivityCreated, s.err
 	}
-	return &s.activities[0], nil
+	return &s.activities[0], s.outcome, nil
 }
 
 func TestSportActivityHandlerSuccess(t *testing.T) {
@@ -96,5 +98,68 @@ func TestSportActivityHandlerErrors(t *testing.T) {
 	handler.Create(badBody, r)
 	if badBody.Code != http.StatusBadRequest {
 		t.Fatalf("bad body status=%d body=%s", badBody.Code, badBody.Body.String())
+	}
+}
+
+func TestSportActivityHandlerCreateStatusFollowsOutcome(t *testing.T) {
+	external := "9B3C2E1A-6F0D-4A51-9C7E-2B1F0D8E4A77"
+	meters := 8120
+	activity := model.SportActivity{ID: uuid.New(), Date: "2026-10-11", SportID: "running", SportName: "Running", DurationMinutes: 42,
+		Source: model.ActivitySourceAppleHealth, ExternalID: &external, DistanceMeters: &meters}
+	req := model.CreateSportActivityRequest{SportID: "running", SportName: "Running", DurationMinutes: 42, OperationKey: "hk:9B3C",
+		Source: model.ActivitySourceAppleHealth, ExternalID: &external, DistanceMeters: &meters}
+	userID := uuid.New()
+
+	for _, test := range []struct {
+		name    string
+		outcome model.SportActivityCreateOutcome
+		status  int
+	}{
+		{"created", model.SportActivityCreated, http.StatusCreated},
+		{"replayed", model.SportActivityReplayed, http.StatusCreated},
+		{"existing import", model.SportActivityExisting, http.StatusOK},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			svc := &sportHandlerService{activities: []model.SportActivity{activity}, outcome: test.outcome}
+			rec := httptest.NewRecorder()
+			NewSportActivityHandler(svc).Create(rec, guidedHandlerRequest(t, http.MethodPost, "/", req, userID, "hk:9B3C", nil))
+			if rec.Code != test.status {
+				t.Fatalf("status=%d want %d body=%s", rec.Code, test.status, rec.Body.String())
+			}
+			var body model.SportActivity
+			if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+				t.Fatal(err)
+			}
+			if body.ID != activity.ID || body.Source != model.ActivitySourceAppleHealth || body.ExternalID == nil || body.DistanceMeters == nil {
+				t.Fatalf("body lost import fields: %s", rec.Body.String())
+			}
+			if svc.created.Source != model.ActivitySourceAppleHealth || svc.created.ExternalID == nil {
+				t.Fatalf("request fields not decoded: %+v", svc.created)
+			}
+		})
+	}
+}
+
+func TestSportActivityHandlerListOmitsImportFieldsForManualRows(t *testing.T) {
+	manual := model.SportActivity{ID: uuid.New(), Date: "2026-08-02", SportID: "basketball", SportName: "Basketball", DurationMinutes: 60, Source: model.ActivitySourceManual}
+	svc := &sportHandlerService{activities: []model.SportActivity{manual}}
+	rec := httptest.NewRecorder()
+	NewSportActivityHandler(svc).List(rec, guidedHandlerRequest(t, http.MethodGet, "/?from=2026-08-01&to=2026-08-02", nil, uuid.New(), "", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d", rec.Code)
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"source":"manual"`) || strings.Contains(body, "external_id") || strings.Contains(body, "distance_meters") {
+		t.Fatalf("manual row shape wrong: %s", body)
+	}
+}
+
+func TestSportActivityHandlerValidationFieldSurfaces(t *testing.T) {
+	svc := &sportHandlerService{err: &model.ValidationError{Message: "external_id is required for imported activities", Field: "external_id"}}
+	rec := httptest.NewRecorder()
+	req := model.CreateSportActivityRequest{SportID: "running", SportName: "Running", DurationMinutes: 42, OperationKey: "op", Source: model.ActivitySourceAppleHealth}
+	NewSportActivityHandler(svc).Create(rec, guidedHandlerRequest(t, http.MethodPost, "/", req, uuid.New(), "op", nil))
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), `"field":"external_id"`) || !strings.Contains(rec.Body.String(), "VALIDATION_ERROR") {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }

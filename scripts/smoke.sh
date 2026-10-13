@@ -13,6 +13,7 @@
 #      extra sets → incomplete outcome → participation remains separate
 #   7. notes-only and overrides-only day-log edits preserve performed sets
 #   8. sport creation is idempotent and records participation for the date
+#   9. an imported health workout is created once; re-import answers 200
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -484,6 +485,28 @@ if [ "$sport_status" = "201" ] && [ "$sport_replay_status" = "201" ] && [ "$spor
   ok "sport replay returned one activity and participation=true for its date"
 else
   bad "sport activity acceptance failed (create=$sport_status replay=$sport_replay_status list=$sport_list_status participation=$sport_part_status)" "$(echo "$sport_list_body" | head -c 280)"
+fi
+
+# ---------- 13b. imported health workout ----------
+step "13b. POST /api/v1/sport-activities imports a health workout once (201 then 200)"
+hk_uuid="SMOKE-HK-9B3C2E1A"
+hk_payload_a="{\"date\":\"$session_date\",\"sport_id\":\"running\",\"sport_name\":\"Running\",\"duration_minutes\":42,\"source\":\"apple_health\",\"external_id\":\"$hk_uuid\",\"distance_meters\":8120,\"energy_kcal\":512,\"operation_key\":\"smoke-hk-a\"}"
+hk_payload_b="{\"date\":\"$session_date\",\"sport_id\":\"running\",\"sport_name\":\"Running\",\"duration_minutes\":42,\"source\":\"apple_health\",\"external_id\":\"$hk_uuid\",\"distance_meters\":8120,\"energy_kcal\":512,\"operation_key\":\"smoke-hk-b\"}"
+hk_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hk-a" -d "$hk_payload_a")
+hk_body=$(cat /tmp/smoke.body)
+hk_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hk-b" -d "$hk_payload_b")
+hk_again_body=$(cat /tmp/smoke.body)
+hk_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hk-c" \
+  -d "{\"date\":\"$session_date\",\"sport_id\":\"tennis\",\"sport_name\":\"Tennis\",\"duration_minutes\":30,\"external_id\":\"$hk_uuid\",\"operation_key\":\"smoke-hk-c\"}")
+hk_bad_body=$(cat /tmp/smoke.body)
+if [ "$hk_status" = "201" ] && [ "$hk_again_status" = "200" ] && [ "$hk_bad_status" = "422" ] && \
+  python3 -c "import json,sys; a,b,bad,manual=[json.loads(x) for x in sys.argv[1:]]; assert a['id']==b['id'] and a['source']=='apple_health' and a['external_id']=='$hk_uuid' and a['distance_meters']==8120 and a['energy_kcal']==512 and 'avg_heart_rate_bpm' not in a; assert bad['code']=='VALIDATION_ERROR' and bad['details']['field']=='external_id'; assert manual['source']=='manual' and 'external_id' not in manual" "$hk_body" "$hk_again_body" "$hk_bad_body" "$sport_body" 2>/dev/null; then
+  ok "imported workout created once, re-import returned 200 with the same id, manual rows report source=manual"
+else
+  bad "imported workout acceptance failed (create=$hk_status again=$hk_again_status manual_with_external_id=$hk_bad_status)" "$(echo "$hk_again_body" | head -c 280)"
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------

@@ -32,11 +32,17 @@ func (h *SportActivityHandler) Get(w http.ResponseWriter, r *http.Request) {
 }
 
 // Create records a completed sport and preserves participation atomically.
+// A new activity or an identical idempotent replay answers 201; a re-imported
+// health workout answers 200 with the activity it already produced.
 func (h *SportActivityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	var req model.CreateSportActivityRequest
 	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
 		return
 	}
-	activity, err := h.svc.Create(r.Context(), middleware.MustGetUserID(r.Context()), req)
-	respond(w, activity, err, http.StatusCreated)
+	activity, outcome, err := h.svc.Create(r.Context(), middleware.MustGetUserID(r.Context()), req)
+	status := http.StatusCreated
+	if outcome == model.SportActivityExisting {
+		status = http.StatusOK
+	}
+	respond(w, activity, err, status)
 }

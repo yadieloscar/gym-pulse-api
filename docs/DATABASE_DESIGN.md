@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **30 tables and 277 supported columns**. For the Supabase-managed
+The current inventory contains **30 tables and 282 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -884,6 +884,11 @@ active program when necessary, changes the revision, and replaces all child work
 | `sport_name` | `text` | not null | Stored sport display name | Health |
 | `duration_minutes` | `integer` | not null | Performed duration | Health |
 | `notes` | `text` | nullable | Optional athlete notes | Health |
+| `source` | `text` | not null; `'manual'` | Origin: `manual` or `apple_health` | Health |
+| `external_id` | `text` | nullable | Health store identity of an imported workout | Health |
+| `distance_meters` | `integer` | nullable | Imported distance | Health |
+| `energy_kcal` | `integer` | nullable | Imported active energy | Health |
+| `avg_heart_rate_bpm` | `smallint` | nullable | Imported average heart rate | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Creation instant | Health |
 | `updated_at` | `timestamptz` | not null; `now()` | Latest aggregate mutation instant | Health |
 
@@ -892,14 +897,16 @@ active program when necessary, changes the revision, and replaces all child work
 - PK `id`; UUID is application-generated (no database default).
 - FK `user_id → auth.users(id) ON DELETE CASCADE`.
 - Checks: sport ID 1–64 characters and lowercase hyphenated slug; sport name 1–80; duration 1–1440 minutes; non-null notes 1–2000.
+- Checks: `source IN ('manual', 'apple_health')`; non-null `external_id` 1–128; `distance_meters` 1–1,000,000; `energy_kcal` 1–20,000; `avg_heart_rate_bpm` 30–250; `sport_activities_source_identity_check` requires `external_id` exactly when `source <> 'manual'`.
 - Index `idx_sport_activities_user_date(user_id, date DESC, created_at DESC, id DESC)` supports deterministic bounded date-history reads.
-- Creation atomically writes participation and an idempotency response; the sport row has no operation-key or revision column.
+- Partial unique `ux_sport_activities_user_source_external(user_id, source, external_id) WHERE external_id IS NOT NULL` makes a re-imported health workout map to one activity per athlete.
+- Creation atomically writes participation and an idempotency response; the sport row has no operation-key or revision column. An import whose `(user_id, source, external_id)` already exists returns the existing row and writes nothing.
 
 **Ownership/lifecycle**: Private to the authenticated owner, directly or through its block.
 Account deletion removes the owned record and any composition children; RLS is enabled without direct-client
 policies and existing Data API roles have table privileges revoked.
 
-**Migration source**: 018.
+**Migration source**: 018, 021 (origin, identity, and measurements).
 
 ### Table: `public.criteria_training_blocks`
 
@@ -1034,11 +1041,11 @@ columns:
 | Catalog and legacy template/log/plan | 8 | 70 |
 | Starter and user programs | 6 | 63 |
 | Scheduled execution/history/workflow | 6 | 64 |
-| Sport activity | 1 | 9 |
+| Sport activity | 1 | 14 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **30** | **277** |
+| **Total** | **30** | **282** |
 
-The count is derived from the final state after migration 019, not the sum of every historical
+The count is derived from the final state after migration 021, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1161,6 +1168,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | `workout_sessions` | `idx_workout_sessions_user_date(user_id, date)` | Date-range session list |
 | `day_participation` | `idx_day_participation_user_date(user_id, date)` | Date-range participation/streak |
 | `sport_activities` | `idx_sport_activities_user_date` | Owner/date/creation/ID history order |
+| `sport_activities` | `ux_sport_activities_user_source_external(user_id, source, external_id)` partial unique | One activity per imported health workout |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_program` | Nullable program association/set-null |
 | `criteria_training_exposures` | `idx_criteria_training_exposures_block_created` | Latest exposure history |
@@ -1743,7 +1751,7 @@ Report one of:
 
 ### Definition of complete
 
-- All 30 current tables and 277 supported columns are cataloged.
+- All 30 current tables and 282 supported columns are cataloged.
 - All current named indexes, keys, checks, and delete actions are described.
 - Every API persistence surface is traceable.
 - Every user-owned root has a current and target ownership/deletion outcome.
