@@ -18,7 +18,9 @@ var sportIDPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 type SportActivityService interface {
 	List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.SportActivity, error)
 	Get(ctx context.Context, userID, activityID uuid.UUID) (*model.SportActivity, error)
-	Create(ctx context.Context, userID uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, error)
+	// Create records a sport and reports whether it was created, replayed, or
+	// already existed as an imported activity.
+	Create(ctx context.Context, userID uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, model.SportActivityCreateOutcome, error)
 }
 
 type sportActivityService struct {
@@ -42,38 +44,35 @@ func (s *sportActivityService) Get(ctx context.Context, userID, activityID uuid.
 	return s.activities.Get(ctx, userID, activityID)
 }
 
-func (s *sportActivityService) Create(ctx context.Context, userID uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, error) {
+func (s *sportActivityService) Create(ctx context.Context, userID uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, model.SportActivityCreateOutcome, error) {
 	profile, err := s.profiles.Get(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, model.SportActivityCreated, err
 	}
 	location, err := time.LoadLocation(profile.Timezone)
 	if err != nil {
-		return nil, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
+		return nil, model.SportActivityCreated, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
 	}
 
 	req.SportID = strings.TrimSpace(req.SportID)
 	req.SportName = strings.TrimSpace(req.SportName)
 	req.OperationKey = strings.TrimSpace(req.OperationKey)
-	if req.Notes != nil {
-		trimmed := strings.TrimSpace(*req.Notes)
-		if trimmed == "" {
-			req.Notes = nil
-		} else {
-			req.Notes = &trimmed
-		}
+	req.Notes = trimOptional(req.Notes)
+	req.ExternalID = trimOptional(req.ExternalID)
+	if req.Source == "" {
+		req.Source = model.ActivitySourceManual
 	}
 	localNow := s.now().In(location)
 	if req.Date == "" {
 		req.Date = localNow.Format("2006-01-02")
 	}
 	if err := validateSportRequest(req, localNow); err != nil {
-		return nil, err
+		return nil, model.SportActivityCreated, err
 	}
 
 	hash, err := hashPayload(req)
 	if err != nil {
-		return nil, err
+		return nil, model.SportActivityCreated, err
 	}
 	activity := &model.SportActivity{
 		Date:            req.Date,
@@ -81,9 +80,13 @@ func (s *sportActivityService) Create(ctx context.Context, userID uuid.UUID, req
 		SportName:       req.SportName,
 		DurationMinutes: req.DurationMinutes,
 		Notes:           req.Notes,
+		Source:          req.Source,
+		ExternalID:      req.ExternalID,
+		DistanceMeters:  req.DistanceMeters,
+		EnergyKcal:      req.EnergyKcal,
+		AvgHeartRateBPM: req.AvgHeartRateBPM,
 	}
-	result, _, err := s.activities.Create(ctx, userID, activity, profile.Timezone, req.OperationKey, hash)
-	return result, err
+	return s.activities.Create(ctx, userID, activity, profile.Timezone, req.OperationKey, hash)
 }
 
 func validateSportRange(from, to string) error {
@@ -122,6 +125,38 @@ func validateSportRequest(req model.CreateSportActivityRequest, localNow time.Ti
 	}
 	if req.OperationKey == "" || len(req.OperationKey) > 128 {
 		return &model.ValidationError{Message: "operation_key must be between 1 and 128 characters", Field: "operation_key"}
+	}
+	return validateSportOrigin(req)
+}
+
+func validateSportOrigin(req model.CreateSportActivityRequest) error {
+	switch req.Source {
+	case model.ActivitySourceManual:
+		if req.ExternalID != nil {
+			return &model.ValidationError{Message: "external_id is only allowed for imported activities", Field: "external_id"}
+		}
+	case model.ActivitySourceAppleHealth:
+		if req.ExternalID == nil {
+			return &model.ValidationError{Message: "external_id is required for imported activities", Field: "external_id"}
+		}
+		if utf8.RuneCountInString(*req.ExternalID) > 128 {
+			return &model.ValidationError{Message: "external_id must be between 1 and 128 characters", Field: "external_id"}
+		}
+	default:
+		return &model.ValidationError{Message: "source must be manual or apple_health", Field: "source"}
+	}
+	for _, bound := range []struct {
+		value    *int
+		min, max int
+		field    string
+	}{
+		{req.DistanceMeters, 1, 1000000, "distance_meters"},
+		{req.EnergyKcal, 1, 20000, "energy_kcal"},
+		{req.AvgHeartRateBPM, 30, 250, "avg_heart_rate_bpm"},
+	} {
+		if bound.value != nil && (*bound.value < bound.min || *bound.value > bound.max) {
+			return &model.ValidationError{Message: bound.field + " is out of range", Field: bound.field}
+		}
 	}
 	return nil
 }

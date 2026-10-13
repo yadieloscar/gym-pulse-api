@@ -15,10 +15,17 @@ import (
 
 const sportActivityLockNamespace = "sport-activity:"
 
+const sportActivityColumns = `id, to_char(date, 'YYYY-MM-DD'), sport_id, sport_name,
+		       duration_minutes, notes, source, external_id, distance_meters,
+		       energy_kcal, avg_heart_rate_bpm, created_at, updated_at`
+
 type SportActivityDAO interface {
 	List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.SportActivity, error)
 	Get(ctx context.Context, userID, activityID uuid.UUID) (*model.SportActivity, error)
-	Create(ctx context.Context, userID uuid.UUID, activity *model.SportActivity, timezone, operationKey, requestHash string) (*model.SportActivity, bool, error)
+	// Create records the activity atomically with participation and the
+	// idempotency ledger and reports whether it created, replayed, or found an
+	// already imported activity.
+	Create(ctx context.Context, userID uuid.UUID, activity *model.SportActivity, timezone, operationKey, requestHash string) (*model.SportActivity, model.SportActivityCreateOutcome, error)
 }
 
 type sportActivityDAO struct{ pool *pgxpool.Pool }
@@ -29,8 +36,7 @@ func NewSportActivityDAO(pool *pgxpool.Pool) SportActivityDAO {
 
 func (r *sportActivityDAO) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.SportActivity, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, to_char(date, 'YYYY-MM-DD'), sport_id, sport_name,
-		       duration_minutes, notes, created_at, updated_at
+		SELECT `+sportActivityColumns+`
 		FROM sport_activities
 		WHERE user_id=$1 AND date BETWEEN $2 AND $3
 		ORDER BY date DESC, created_at DESC, id DESC`, userID, from, to)
@@ -56,8 +62,7 @@ func (r *sportActivityDAO) List(ctx context.Context, userID uuid.UUID, from, to 
 func (r *sportActivityDAO) Get(ctx context.Context, userID, activityID uuid.UUID) (*model.SportActivity, error) {
 	activity := &model.SportActivity{}
 	err := scanSportActivity(r.pool.QueryRow(ctx, `
-		SELECT id, to_char(date, 'YYYY-MM-DD'), sport_id, sport_name,
-		       duration_minutes, notes, created_at, updated_at
+		SELECT `+sportActivityColumns+`
 		FROM sport_activities WHERE id=$1 AND user_id=$2`, activityID, userID), activity)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "sport activity not found"}
@@ -68,21 +73,37 @@ func (r *sportActivityDAO) Get(ctx context.Context, userID, activityID uuid.UUID
 	return activity, nil
 }
 
-func (r *sportActivityDAO) Create(ctx context.Context, userID uuid.UUID, activity *model.SportActivity, timezone, operationKey, requestHash string) (*model.SportActivity, bool, error) {
+func (r *sportActivityDAO) Create(ctx context.Context, userID uuid.UUID, activity *model.SportActivity, timezone, operationKey, requestHash string) (*model.SportActivity, model.SportActivityCreateOutcome, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
-		return nil, false, fmt.Errorf("beginning sport activity create: %w", err)
+		return nil, model.SportActivityCreated, fmt.Errorf("beginning sport activity create: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
 	if err := lockUserDomain(ctx, tx, sportActivityLockNamespace, userID); err != nil {
-		return nil, false, err
+		return nil, model.SportActivityCreated, err
 	}
 	var replay model.SportActivity
 	if found, err := findIdempotency(ctx, tx, userID, "sport-activities/create", operationKey, requestHash, &replay); err != nil {
-		return nil, false, err
+		return nil, model.SportActivityCreated, err
 	} else if found {
-		return &replay, true, nil
+		return &replay, model.SportActivityReplayed, nil
+	}
+
+	// A re-imported health workout returns the activity it already produced
+	// and writes nothing, so participation is never credited twice.
+	if activity.ExternalID != nil {
+		existing := &model.SportActivity{}
+		err := scanSportActivity(tx.QueryRow(ctx, `
+			SELECT `+sportActivityColumns+`
+			FROM sport_activities
+			WHERE user_id=$1 AND source=$2 AND external_id=$3`, userID, activity.Source, *activity.ExternalID), existing)
+		if err == nil {
+			return existing, model.SportActivityExisting, nil
+		}
+		if !errors.Is(err, pgx.ErrNoRows) {
+			return nil, model.SportActivityCreated, fmt.Errorf("querying imported sport activity: %w", err)
+		}
 	}
 
 	if activity.ID == uuid.Nil {
@@ -90,13 +111,15 @@ func (r *sportActivityDAO) Create(ctx context.Context, userID uuid.UUID, activit
 	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO sport_activities (
-			id, user_id, date, sport_id, sport_name, duration_minutes, notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7)
+			id, user_id, date, sport_id, sport_name, duration_minutes, notes,
+			source, external_id, distance_meters, energy_kcal, avg_heart_rate_bpm)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 		RETURNING created_at, updated_at`, activity.ID, userID, activity.Date,
 		activity.SportID, activity.SportName, activity.DurationMinutes, activity.Notes,
+		activity.Source, activity.ExternalID, activity.DistanceMeters, activity.EnergyKcal, activity.AvgHeartRateBPM,
 	).Scan(&activity.CreatedAt, &activity.UpdatedAt)
 	if err != nil {
-		return nil, false, fmt.Errorf("inserting sport activity: %w", err)
+		return nil, model.SportActivityCreated, fmt.Errorf("inserting sport activity: %w", err)
 	}
 
 	now := time.Now().UTC()
@@ -108,7 +131,7 @@ func (r *sportActivityDAO) Create(ctx context.Context, userID uuid.UUID, activit
 			participated=true,
 			scheduled_opportunity=day_participation.scheduled_opportunity OR EXCLUDED.scheduled_opportunity,
 			revision=day_participation.revision+1`, userID, activity.Date, now, timezone); err != nil {
-		return nil, false, fmt.Errorf("preserving sport participation: %w", err)
+		return nil, model.SportActivityCreated, fmt.Errorf("preserving sport participation: %w", err)
 	}
 
 	record := model.IdempotencyRecord{
@@ -120,15 +143,17 @@ func (r *sportActivityDAO) Create(ctx context.Context, userID uuid.UUID, activit
 		ResourceID:     &activity.ID,
 	}
 	if err := insertIdempotency(ctx, tx, userID, record, activity); err != nil {
-		return nil, false, err
+		return nil, model.SportActivityCreated, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, false, fmt.Errorf("committing sport activity create: %w", err)
+		return nil, model.SportActivityCreated, fmt.Errorf("committing sport activity create: %w", err)
 	}
-	return activity, false, nil
+	return activity, model.SportActivityCreated, nil
 }
 
 func scanSportActivity(row rowScanner, activity *model.SportActivity) error {
 	return row.Scan(&activity.ID, &activity.Date, &activity.SportID, &activity.SportName,
-		&activity.DurationMinutes, &activity.Notes, &activity.CreatedAt, &activity.UpdatedAt)
+		&activity.DurationMinutes, &activity.Notes, &activity.Source, &activity.ExternalID,
+		&activity.DistanceMeters, &activity.EnergyKcal, &activity.AvgHeartRateBPM,
+		&activity.CreatedAt, &activity.UpdatedAt)
 }

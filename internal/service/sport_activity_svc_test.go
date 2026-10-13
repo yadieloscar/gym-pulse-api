@@ -18,6 +18,7 @@ type sportActivityRepo struct {
 	timezone   string
 	key        string
 	hash       string
+	outcome    model.SportActivityCreateOutcome
 	err        error
 }
 
@@ -30,14 +31,14 @@ func (r *sportActivityRepo) Get(context.Context, uuid.UUID, uuid.UUID) (*model.S
 	}
 	return &r.activities[0], nil
 }
-func (r *sportActivityRepo) Create(_ context.Context, _ uuid.UUID, activity *model.SportActivity, timezone, key, hash string) (*model.SportActivity, bool, error) {
+func (r *sportActivityRepo) Create(_ context.Context, _ uuid.UUID, activity *model.SportActivity, timezone, key, hash string) (*model.SportActivity, model.SportActivityCreateOutcome, error) {
 	r.created, r.timezone, r.key, r.hash = activity, timezone, key, hash
 	if r.err != nil {
-		return nil, false, r.err
+		return nil, model.SportActivityCreated, r.err
 	}
 	result := *activity
 	result.ID = uuid.New()
-	return &result, false, nil
+	return &result, r.outcome, nil
 }
 
 type sportProfileRepo struct {
@@ -62,7 +63,7 @@ func TestSportActivityServiceCreateNormalizesAndUsesProfileCivilDate(t *testing.
 	repo := &sportActivityRepo{}
 	svc := newSportServiceForTest(repo, "America/Los_Angeles")
 	notes := "  Pickup game  "
-	got, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{
+	got, _, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{
 		SportID: " basketball ", SportName: " Basketball ", DurationMinutes: 60,
 		Notes: &notes, OperationKey: " sport-op ",
 	})
@@ -97,7 +98,7 @@ func TestSportActivityServiceCreateValidation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := newSportServiceForTest(&sportActivityRepo{}, "UTC").Create(context.Background(), uuid.New(), test.req)
+			_, _, err := newSportServiceForTest(&sportActivityRepo{}, "UTC").Create(context.Background(), uuid.New(), test.req)
 			var validation *model.ValidationError
 			if !errors.As(err, &validation) || validation.Field != test.field {
 				t.Fatalf("error=%v want validation field %s", err, test.field)
@@ -107,7 +108,7 @@ func TestSportActivityServiceCreateValidation(t *testing.T) {
 }
 
 func TestSportActivityServiceRejectsInvalidSavedTimezoneAndRange(t *testing.T) {
-	_, err := newSportServiceForTest(&sportActivityRepo{}, "Mars/Olympus").Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{})
+	_, _, err := newSportServiceForTest(&sportActivityRepo{}, "Mars/Olympus").Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{})
 	var validation *model.ValidationError
 	if !errors.As(err, &validation) || validation.Field != "timezone" {
 		t.Fatalf("error=%v want timezone validation", err)
@@ -141,7 +142,7 @@ func TestSportActivityServicePassesThroughRepositories(t *testing.T) {
 	if _, err := svc.Get(context.Background(), uuid.New(), want[0].ID); err == nil {
 		t.Fatal("get error not returned")
 	}
-	if _, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{Date: "2026-08-02", SportID: "tennis", SportName: "Tennis", DurationMinutes: 30, OperationKey: "op"}); err == nil {
+	if _, _, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{Date: "2026-08-02", SportID: "tennis", SportName: "Tennis", DurationMinutes: 30, OperationKey: "op"}); err == nil {
 		t.Fatal("create error not returned")
 	}
 }
@@ -149,8 +150,113 @@ func TestSportActivityServicePassesThroughRepositories(t *testing.T) {
 func TestSportActivityServiceReturnsProfileError(t *testing.T) {
 	want := errors.New("profile unavailable")
 	svc := NewSportActivityService(&sportActivityRepo{}, sportProfileRepo{err: want})
-	_, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{})
+	_, _, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{})
 	if !errors.Is(err, want) {
 		t.Fatalf("error=%v want profile error", err)
+	}
+}
+
+func TestSportActivityServiceCreateDefaultsSourceToManual(t *testing.T) {
+	repo := &sportActivityRepo{}
+	_, outcome, err := newSportServiceForTest(repo, "UTC").Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{
+		Date: "2026-08-02", SportID: "tennis", SportName: "Tennis", DurationMinutes: 30, OperationKey: "op",
+	})
+	if err != nil || outcome != model.SportActivityCreated {
+		t.Fatalf("outcome=%v error=%v", outcome, err)
+	}
+	if repo.created.Source != model.ActivitySourceManual || repo.created.ExternalID != nil {
+		t.Fatalf("manual default not applied: %+v", repo.created)
+	}
+}
+
+func TestSportActivityServiceCreateCarriesImportFields(t *testing.T) {
+	repo := &sportActivityRepo{outcome: model.SportActivityExisting}
+	external := "  9B3C2E1A-6F0D-4A51-9C7E-2B1F0D8E4A77  "
+	_, outcome, err := newSportServiceForTest(repo, "America/New_York").Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{
+		Date: "2026-07-30", SportID: "running", SportName: "Running", DurationMinutes: 42, OperationKey: "hk:9B3C",
+		Source: model.ActivitySourceAppleHealth, ExternalID: &external,
+		DistanceMeters: intPtr(8120), EnergyKcal: intPtr(512), AvgHeartRateBPM: intPtr(151),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome != model.SportActivityExisting {
+		t.Fatalf("outcome=%v want the DAO outcome passed through", outcome)
+	}
+	got := repo.created
+	if got.Source != model.ActivitySourceAppleHealth || got.ExternalID == nil || *got.ExternalID != "9B3C2E1A-6F0D-4A51-9C7E-2B1F0D8E4A77" {
+		t.Fatalf("import identity not carried or trimmed: %+v", got)
+	}
+	if got.DistanceMeters == nil || *got.DistanceMeters != 8120 || got.EnergyKcal == nil || *got.EnergyKcal != 512 || got.AvgHeartRateBPM == nil || *got.AvgHeartRateBPM != 151 {
+		t.Fatalf("measurements not carried: %+v", got)
+	}
+	if got.Date != "2026-07-30" {
+		t.Fatalf("past import date must be accepted as given: %s", got.Date)
+	}
+}
+
+func TestSportActivityServiceCreateImportValidation(t *testing.T) {
+	base := func() model.CreateSportActivityRequest {
+		return model.CreateSportActivityRequest{Date: "2026-08-02", SportID: "running", SportName: "Running", DurationMinutes: 42, OperationKey: "op"}
+	}
+	tests := []struct {
+		name  string
+		edit  func(*model.CreateSportActivityRequest)
+		field string
+	}{
+		{"manual with identity", func(r *model.CreateSportActivityRequest) { r.ExternalID = strPtr("abc") }, "external_id"},
+		{"imported without identity", func(r *model.CreateSportActivityRequest) { r.Source = model.ActivitySourceAppleHealth }, "external_id"},
+		{"imported blank identity", func(r *model.CreateSportActivityRequest) {
+			r.Source = model.ActivitySourceAppleHealth
+			r.ExternalID = strPtr("   ")
+		}, "external_id"},
+		{"identity too long", func(r *model.CreateSportActivityRequest) {
+			r.Source = model.ActivitySourceAppleHealth
+			r.ExternalID = strPtr(strings.Repeat("x", 129))
+		}, "external_id"},
+		{"unknown source", func(r *model.CreateSportActivityRequest) { r.Source = "garmin"; r.ExternalID = strPtr("abc") }, "source"},
+		{"distance zero", func(r *model.CreateSportActivityRequest) { r.DistanceMeters = intPtr(0) }, "distance_meters"},
+		{"distance too far", func(r *model.CreateSportActivityRequest) { r.DistanceMeters = intPtr(1000001) }, "distance_meters"},
+		{"energy zero", func(r *model.CreateSportActivityRequest) { r.EnergyKcal = intPtr(0) }, "energy_kcal"},
+		{"energy too high", func(r *model.CreateSportActivityRequest) { r.EnergyKcal = intPtr(20001) }, "energy_kcal"},
+		{"heart rate low", func(r *model.CreateSportActivityRequest) { r.AvgHeartRateBPM = intPtr(29) }, "avg_heart_rate_bpm"},
+		{"heart rate high", func(r *model.CreateSportActivityRequest) { r.AvgHeartRateBPM = intPtr(251) }, "avg_heart_rate_bpm"},
+		{"future import date", func(r *model.CreateSportActivityRequest) {
+			r.Date = "2026-08-04"
+			r.Source = model.ActivitySourceAppleHealth
+			r.ExternalID = strPtr("abc")
+		}, "date"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			req := base()
+			test.edit(&req)
+			repo := &sportActivityRepo{}
+			_, _, err := newSportServiceForTest(repo, "UTC").Create(context.Background(), uuid.New(), req)
+			var validation *model.ValidationError
+			if !errors.As(err, &validation) || validation.Field != test.field {
+				t.Fatalf("error=%v want validation field %s", err, test.field)
+			}
+			if repo.created != nil {
+				t.Fatal("invalid request must not reach the repository")
+			}
+		})
+	}
+
+	// Boundary values are accepted and absent measurements stay absent.
+	repo := &sportActivityRepo{}
+	req := base()
+	req.Source = model.ActivitySourceAppleHealth
+	req.ExternalID = strPtr(strings.Repeat("x", 128))
+	req.DistanceMeters, req.EnergyKcal, req.AvgHeartRateBPM = intPtr(1000000), intPtr(20000), intPtr(250)
+	if _, _, err := newSportServiceForTest(repo, "UTC").Create(context.Background(), uuid.New(), req); err != nil {
+		t.Fatalf("upper bounds rejected: %v", err)
+	}
+	repo = &sportActivityRepo{}
+	if _, _, err := newSportServiceForTest(repo, "UTC").Create(context.Background(), uuid.New(), base()); err != nil {
+		t.Fatal(err)
+	}
+	if repo.created.DistanceMeters != nil || repo.created.EnergyKcal != nil || repo.created.AvgHeartRateBPM != nil {
+		t.Fatalf("absent measurements must stay nil: %+v", repo.created)
 	}
 }

@@ -640,23 +640,51 @@ slug of at most 64 characters. `sport_name` is trimmed and 1–80 characters;
 the `other` identifier requires a custom name. Duration is a whole number from
 1 through 1,440 minutes. Notes are optional, trimmed, and at most 2,000 characters.
 
-Response 201 is the authoritative activity:
+Imported health workouts (contract 1.1.0) add optional fields:
+
+```json
+{
+  "date": "2026-10-11",
+  "sport_id": "running",
+  "sport_name": "Running",
+  "duration_minutes": 42,
+  "operation_key": "hk:9B3C2E1A-6F0D-4A51-9C7E-2B1F0D8E4A77",
+  "source": "apple_health",
+  "external_id": "9B3C2E1A-6F0D-4A51-9C7E-2B1F0D8E4A77",
+  "distance_meters": 8120,
+  "energy_kcal": 512
+}
+```
+
+`source` is `manual` (default when omitted) or `apple_health`. `external_id` is
+the health store's identity for the workout, trimmed and 1–128 characters; it is
+required when `source` is not `manual` and rejected when it is. `distance_meters`
+is 1–1,000,000, `energy_kcal` is 1–20,000, and `avg_heart_rate_bpm` is 30–250;
+each is optional and stored only when supplied. Zero is rejected. Measurements
+are display facts and never feed records, volume, or distribution.
+
+Response 201 is the authoritative activity. `source` is always present;
+`external_id` and measurements appear only when set:
 
 ```json
 {
   "id": "<uuid>", "date": "2026-08-02",
   "sport_id": "basketball", "sport_name": "Basketball",
   "duration_minutes": 60, "notes": "Pickup game",
+  "source": "manual",
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
 
 Creation and date participation commit atomically. An identical idempotent retry
 returns the original activity with 201; a changed payload returns 409
-`IDEMPOTENCY_CONFLICT`. Multiple activities may share a date, but weekly progress
-counts the date once. A sport preserves participation on a missed planned date
-without changing the planned-workout result. It does not increase
-`total_workouts`, workout distribution, or lifted volume.
+`IDEMPOTENCY_CONFLICT`. When an imported workout's `source` and `external_id`
+already exist for the athlete, the existing activity is returned with 200 and
+nothing is written or re-credited, whatever the `operation_key`. Multiple
+activities may share a date, but weekly progress counts the date once. A sport
+preserves participation on a missed planned date without changing the
+planned-workout result. It does not increase `total_workouts`, workout
+distribution, or lifted volume.
 
 #### `GET /api/v1/sport-activities/{id}`
 
