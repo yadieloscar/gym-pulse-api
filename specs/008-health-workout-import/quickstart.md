@@ -2,7 +2,7 @@
 
 ## Implementation order
 
-1. Write migration 021 (up and down), update `docs/DATABASE_DESIGN.md`, and run
+1. Write migration 022 (up and down), update `docs/DATABASE_DESIGN.md`, and run
    `./scripts/validate-database-design.sh`.
 2. Extend the model and acceptance test with `source`, `external_id`, and measurements.
 3. Add service validation with table-driven tests: default source, forbidden identity on manual,

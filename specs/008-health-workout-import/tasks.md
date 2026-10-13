@@ -34,7 +34,7 @@ description: "Implementation tasks for imported health workouts API"
 
 ## Phase 1: Setup
 
-- [x] T001 Record `git status --short` and confirm `migrations/` has no `021_*` file; keep `021` per research.md (020 is taken by the open 007 branch)
+- [x] T001 Record `git status --short` and confirm the next free migration number; `022` after 020 (feature 007) and 021 (feature 009) merged to main, see research.md
 - [x] T002 [P] Draft the additive "Sport activities" contract changes in `docs/CONTRACTS.md`: `source`, `external_id`, measurements, the `200` existing-activity response, and field-level 422 rules
 - [x] T003 [P] Add the five new columns and `ux_sport_activities_user_source_external` to the `sport_activities` section of `docs/DATABASE_DESIGN.md`, then run `./scripts/validate-database-design.sh` (expected to fail until T006)
 
@@ -42,7 +42,7 @@ description: "Implementation tasks for imported health workouts API"
 
 - [x] T004 [P] Extend `internal/model/sport_activity_acceptance_test.go`: legacy payload decodes; response JSON includes `source`; `external_id` and measurements omitted when nil
 - [x] T005 Add `Source`, `ExternalID`, `DistanceMeters`, `EnergyKcal`, `AvgHeartRateBPM` to `SportActivity` and `CreateSportActivityRequest` in `internal/model/sport_activity.go` with `omitempty` pointers; add `ActivitySource` constants `manual` and `apple_health`
-- [x] T006 Add `migrations/021_add_sport_activity_source.up.sql` and `.down.sql` per data-model.md (columns, `CHECK`s, source/identity pairing check, partial unique index); re-run `./scripts/validate-database-design.sh`
+- [x] T006 Add `migrations/022_add_sport_activity_source.up.sql` and `.down.sql` per data-model.md (columns, `CHECK`s, source/identity pairing check, partial unique index); re-run `./scripts/validate-database-design.sh`
 
 **Checkpoint**: model and schema agree; existing tests still pass.
 
@@ -88,9 +88,9 @@ description: "Implementation tasks for imported health workouts API"
 - [x] T021 Finalize `docs/CONTRACTS.md` wording against the implemented behavior; bump the sport-activities contract note to 1.1.0
 - [x] T022 Run `go test ./...` and `golangci-lint run`
 - [x] T023 Run `./scripts/smoke-toggle.sh`; add a wire assertion for `source` in `scripts/smoke.sh` if the smoke suite exercises sport routes
-- [x] T024 Apply migration 021 to a local database and run `./scripts/validate-supabase-security.sh`; record the outcome or the reason it could not run
+- [x] T024 Apply migration 022 to a local database and run `./scripts/validate-supabase-security.sh`; record the outcome or the reason it could not run
 - [x] T025 Walk the quickstart manual acceptance against the local API and record results in the evidence table above
-- [x] T026 Update the sibling app plan's dependency note if any contract detail changed during implementation — no contract detail changed; migration number 021 and status mapping match the plan
+- [x] T026 Update the sibling app plan's dependency note if any contract detail changed during implementation — no contract detail changed; the migration number moved to 022 (recorded in both plans) and the status mapping matches the plan
 
 ## Dependencies & Execution Order
 

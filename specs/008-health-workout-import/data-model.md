@@ -1,6 +1,6 @@
 # Data Model: Imported health workouts API
 
-## `sport_activities` (altered by migration 021)
+## `sport_activities` (altered by migration 022)
 
 | Field | Type | Rules |
 |---|---|---|

@@ -48,10 +48,10 @@
 
 ### Migration numbering
 
-- **Decision**: Use `021`, not `020`.
-- **Rationale**: The open `spec/007-skip-missed-workout` branch already carries
-  `020_add_scheduled_workout_resolution`. Skipping 020 avoids a collision when both merge. If 007 is
-  abandoned, renumbering to 020 before merge is a one-line rename.
+- **Decision**: Use `022`, not `020` or `021`.
+- **Rationale**: `020_add_scheduled_workout_resolution` (feature 007) and
+  `021_seed_push_pull_legs_starter` (feature 009) merged to main while this feature was in flight.
+  The migration was renumbered from 021 to 022 on 2026-10-12 to keep ordering strict.
 
 ### Validation placement
 

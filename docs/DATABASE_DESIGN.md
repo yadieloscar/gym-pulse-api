@@ -911,7 +911,7 @@ active program when necessary, changes the revision, and replaces all child work
 Account deletion removes the owned record and any composition children; RLS is enabled without direct-client
 policies and existing Data API roles have table privileges revoked.
 
-**Migration source**: 018, 021 (origin, identity, and measurements).
+**Migration source**: 018, 022 (origin, identity, and measurements).
 
 ### Table: `public.criteria_training_blocks`
 
@@ -1050,7 +1050,7 @@ columns:
 | Criteria-based training blocks | 4 | 41 |
 | **Total** | **30** | **284** |
 
-The count is derived from the final state after migration 021, not the sum of every historical
+The count is derived from the final state after migration 022, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy

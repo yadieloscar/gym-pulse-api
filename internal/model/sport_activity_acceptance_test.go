@@ -42,7 +42,7 @@ func TestSportActivityMigrationRollbackIsScoped(t *testing.T) {
 }
 
 func TestSportActivitySourceMigrationContract(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/021_add_sport_activity_source.up.sql")
+	body, err := os.ReadFile("../../migrations/022_add_sport_activity_source.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestSportActivitySourceMigrationContract(t *testing.T) {
 }
 
 func TestSportActivitySourceMigrationRollbackIsScoped(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/021_add_sport_activity_source.down.sql")
+	body, err := os.ReadFile("../../migrations/022_add_sport_activity_source.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

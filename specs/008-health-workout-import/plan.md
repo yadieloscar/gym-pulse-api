@@ -53,7 +53,7 @@ fields; older clients ignore them.
 - [x] Contract changes are identified in `contracts/sport-activities-import.openapi.yaml` and will land in `docs/CONTRACTS.md` with the code.
 - [x] Authentication, ownership, idempotency, and error behavior are preserved; the new duplicate path is specified (`200`, no side effect) and stays owner-scoped.
 - [x] Tests are identified before implementation in `quickstart.md`, including contract smoke and schema-document validation.
-- [x] Migration 021 is additive with a column default, needs no backfill, and has a documented down migration.
+- [x] Migration 022 is additive with a column default, needs no backfill, and has a documented down migration.
 - [x] No new dependency, layer, or concurrency. The DAO gains one query in the existing transaction.
 
 ## Project Structure
@@ -75,7 +75,7 @@ specs/008-health-workout-import/
 ```text
 docs/CONTRACTS.md
 docs/DATABASE_DESIGN.md
-migrations/021_add_sport_activity_source.{up,down}.sql
+migrations/022_add_sport_activity_source.{up,down}.sql
 internal/
 ├── dao/{sport_activity_dao.go,sport_activity_dao_test.go}
 ├── handler/{sport_activity.go,sport_activity_test.go}
