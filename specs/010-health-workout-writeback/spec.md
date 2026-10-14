@@ -18,6 +18,7 @@
 
 - Q: Does the service talk to Apple Health? → A: No. The device writes the workout to the health store and tells the service the identity it received. The service only remembers that identity so the export never happens twice.
 - Q: Which workouts are exported? → A: Finished workout sessions only, planned and off-plan alike. Discarded, in-progress, and legacy day logs are not exported. Sport activities are never exported because they are either typed in or already came from Health.
+- Q: What is a "finished workout session" in GymPulse's data? → A: A finalized planned workout with a completed or incomplete outcome, or an off-plan log. A missed outcome and a rest log never export. Exports are read for a date range rather than embedded in session reads, because the device addresses planned workouts and off-plan logs by their own ids. (Recorded during planning, 2026-10-14.)
 - Q: Is the export reversible? → A: The record of the export can be cleared by the athlete deleting the workout in Health and GymPulse detecting it later; that is a follow-up. In this release the identity is written once and only read.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -76,14 +77,14 @@ The device asks for the athlete's recent finished sessions and can tell which on
 - **FR-002**: The athlete's device MUST be able to record the export identity for an owned, finished session exactly once; the same identity replays unchanged, a different identity is a stable conflict.
 - **FR-003**: Recording an export for a session that is not finished, is missing, or belongs to another athlete MUST fail with the documented not-found or validation behavior and store nothing.
 - **FR-004**: The identity MUST be trimmed and bounded (1–128 characters).
-- **FR-005**: Session reads MUST include the export identity and time when present; the additions MUST be additive for older clients.
+- **FR-005**: The athlete's device MUST be able to read its export identities for a date range, each with its workout's date; the additions MUST be additive for older clients.
 - **FR-006**: Recording an export MUST NOT change performance data, participation, records, volume, or planned-workout outcomes.
 - **FR-007**: Account deletion MUST remove export identities with the rest of the athlete's data.
 
 ### Key Entities
 
-- **Workout session**: Extended with an optional health export identity and recorded time.
-- **Health export identity**: The health store's identifier for the exported workout; write-once per session.
+- **Finished workout**: A finalized planned workout (completed or incomplete) or an off-plan log; the thing an export refers to.
+- **Health export**: The health store's identifier for one exported finished workout, with the time it was recorded; write-once per workout and origin.
 
 ## Success Criteria *(mandatory)*
 
