@@ -4199,7 +4199,11 @@
                     "type": "string",
                     "enum": [
                         "obsidianEmber",
-                        "abyssCerulean"
+                        "abyssCerulean",
+                        "mossChartreuse",
+                        "voltLime",
+                        "oliveCitrine",
+                        "slateMint"
                     ]
                 },
                 "weekly_goal": {
@@ -4248,7 +4252,11 @@
                     "type": "string",
                     "enum": [
                         "obsidianEmber",
-                        "abyssCerulean"
+                        "abyssCerulean",
+                        "mossChartreuse",
+                        "voltLime",
+                        "oliveCitrine",
+                        "slateMint"
                     ]
                 },
                 "weekly_goal": {
