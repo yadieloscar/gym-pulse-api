@@ -55,6 +55,6 @@
 
 - `workout_kind`: `scheduled_workout` or `day_log`; anything else is `422` on `workout_kind`.
 - `external_id`: trimmed, 1–128. `exported_at`: optional RFC3339, defaults to now; future values are clamped to now.
-- Migration number: `023` (main is at `022`).
+- Migration number: `025`; main gained `023` and `024` (settings palettes) while this branch was open.
 - Account deletion: cascade through `user_id` plus an explicit delete in `account_dao.go` for parity with other tables.
 - No change to stats, participation, records, or volume.

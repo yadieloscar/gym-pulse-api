@@ -1,6 +1,6 @@
 # Data Model: Remember a workout's health export
 
-## `health_exports` (migration 023)
+## `health_exports` (migration 025)
 
 | Field | Type | Rules |
 |---|---|---|

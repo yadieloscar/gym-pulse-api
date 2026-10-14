@@ -50,7 +50,7 @@ stats behavior moves.
 - [x] Contract changes are identified in `contracts/health-exports.openapi.yaml` and land in `docs/CONTRACTS.md` with the code.
 - [x] Authentication, ownership, idempotency, and error behavior are specified: owner-scoped lookups, shared 404 for missing or foreign workouts, verbatim replay through the ledger, `HEALTH_EXPORT_CONFLICT` for a different identity.
 - [x] Tests are identified before implementation in `quickstart.md`, including contract smoke and schema-document validation.
-- [x] Migration 023 creates one new table with RLS enabled and Data API grants revoked; the down migration drops it.
+- [x] Migration 025 creates one new table with RLS enabled and Data API grants revoked; the down migration drops it.
 - [x] No new dependency, layer, or concurrency.
 
 ## Project Structure
@@ -73,7 +73,7 @@ specs/010-health-workout-writeback/
 cmd/server/main.go
 docs/CONTRACTS.md
 docs/DATABASE_DESIGN.md
-migrations/023_create_health_exports.{up,down}.sql
+migrations/025_create_health_exports.{up,down}.sql
 internal/
 ├── dao/{health_export_dao.go,health_export_dao_test.go,account_dao.go}
 ├── handler/{health_export.go,health_export_test.go,response.go}

@@ -24,18 +24,18 @@ description: "Implementation tasks for remembering a workout's health export"
 | FR-007 | T013 | account cleanup test | Passed (`TestAccountCleanupIncludesHealthExports`; smoke step 14) |
 | Contract | T002, T014, T015 | `docs/CONTRACTS.md`; smoke step | Passed: section added; smoke 23/23 on the isolated stack |
 | Schema document | T003, T014 | `./scripts/validate-database-design.sh` | Passed: 31 tables, 292 columns, 27 indexes |
-| Supabase security | T016 | security SQL on a migrated database | Passed on the isolated stack at migration 23 |
+| Supabase security | T016 | security SQL on a migrated database | Passed on the isolated stack at migration 25 |
 
 ## Phase 1: Setup
 
-- [x] T001 Record `git status --short`; confirm `023` is the next migration number
+- [x] T001 Record `git status --short`; confirm `025` is the next migration number
 - [x] T002 [P] Draft the "Health exports" section in `docs/CONTRACTS.md` from the OpenAPI contract
 - [x] T003 [P] Add the `health_exports` table, checks, and both indexes to `docs/DATABASE_DESIGN.md` (catalog, index inventory, counts)
 
 ## Phase 2: Foundational
 
 - [x] T004 [P] Add `internal/model/health_export.go` (`HealthExport`, `RecordHealthExportRequest`, kinds, source, `HealthExportOutcome`) and `health_export_acceptance_test.go` for migration invariants and JSON shape
-- [x] T005 Add `migrations/023_create_health_exports.{up,down}.sql` per data-model.md; run `./scripts/validate-database-design.sh`
+- [x] T005 Add `migrations/025_create_health_exports.{up,down}.sql` per data-model.md; run `./scripts/validate-database-design.sh`
 
 ## Phase 3: User Story 1 - Remember the export once (P1) 🎯 MVP
 

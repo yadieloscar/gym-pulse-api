@@ -8,7 +8,7 @@ import (
 )
 
 func TestHealthExportMigrationContract(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/023_create_health_exports.up.sql")
+	body, err := os.ReadFile("../../migrations/025_create_health_exports.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestHealthExportMigrationContract(t *testing.T) {
 }
 
 func TestHealthExportMigrationRollbackIsScoped(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/023_create_health_exports.down.sql")
+	body, err := os.ReadFile("../../migrations/025_create_health_exports.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

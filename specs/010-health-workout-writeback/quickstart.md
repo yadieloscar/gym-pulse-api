@@ -2,7 +2,7 @@
 
 ## Implementation order
 
-1. Migration 023 (up and down), `docs/DATABASE_DESIGN.md` table and index rows, `./scripts/validate-database-design.sh`.
+1. Migration 025 (up and down), `docs/DATABASE_DESIGN.md` table and index rows, `./scripts/validate-database-design.sh`.
 2. Model and migration acceptance test.
 3. Service validation with table-driven tests (kind, source, identity bounds, exported_at clamp, range).
 4. DAO transaction with source-order tests: replay → resolve workout → existing lookup → insert → ledger → commit.
