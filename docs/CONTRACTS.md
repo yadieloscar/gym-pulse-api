@@ -692,6 +692,59 @@ Response 200 is the owned activity. A missing or foreign UUID returns the same
 404 `NOT_FOUND` response. Sport activities have no edit or delete route in v1;
 account deletion removes them.
 
+### Health exports
+
+Health exports remember the health-store identity the device received when it
+wrote a finished GymPulse workout to Apple Health, so the same workout is never
+written twice across retries, reinstalls, or devices. The service never talks
+to a health store; the device writes and then records.
+
+A finished workout is a planned workout finalized with a `completed` or
+`incomplete` outcome (`workout_kind: scheduled_workout`, the scheduled workout
+id) or an off-plan log (`workout_kind: day_log`, the log id). A missed planned
+workout and a rest log never export and answer the shared 404.
+
+#### `PUT /api/v1/health-exports/{workout_kind}/{workout_id}`
+
+Requires `Idempotency-Key` equal to `operation_key`.
+
+```json
+{
+  "source": "apple_health",
+  "external_id": "B5D7E9C2-3F44-4B1A-9E0D-7C6A2F1B8D10",
+  "exported_at": "2026-10-13T18:42:00Z",
+  "operation_key": "hk-export-<workout_id>"
+}
+```
+
+`source` is `apple_health`. `external_id` is trimmed and 1–128 characters.
+`exported_at` is optional RFC3339 and defaults to now; a future value is
+clamped to now.
+
+Response 201 is the record, including the workout's local `date`:
+
+```json
+{
+  "id": "<uuid>", "workout_kind": "scheduled_workout", "workout_id": "<uuid>",
+  "date": "2026-10-13", "source": "apple_health",
+  "external_id": "B5D7E9C2-3F44-4B1A-9E0D-7C6A2F1B8D10",
+  "exported_at": "<RFC3339>", "created_at": "<RFC3339>"
+}
+```
+
+A verbatim idempotent retry replays 201. The same identity under any
+`operation_key` returns the stored record with 200 and writes nothing. A
+different identity for a workout that already has one returns 409
+`HEALTH_EXPORT_CONFLICT` with the stored record under `resource`. A missing,
+foreign, or not-finished workout returns the shared 404 `NOT_FOUND`. Recording
+never changes the workout, participation, records, or volume.
+
+#### `GET /api/v1/health-exports?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response 200: `{ "health_exports": [HealthExport] }` for owned exports whose
+workout date falls in the inclusive range (at most 366 days), newest workout
+date first, then `exported_at`. An athlete with no exports receives `[]`.
+
 ### Criteria-based training blocks
 
 Training blocks are private records of criteria the athlete chooses. They do

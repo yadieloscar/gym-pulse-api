@@ -144,6 +144,7 @@ func main() {
 	performedSetRepo := dao.NewPerformedSetDAO(pool)
 	participationRepo := dao.NewParticipationDAO(pool)
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
+	healthExportRepo := dao.NewHealthExportDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
 	trainingMutationRepo := dao.NewTrainingMutationDAO(pool)
@@ -172,6 +173,7 @@ func main() {
 	workoutSessionSvc := service.NewWorkoutSessionService(workoutSessionRepo, scheduleRepo, participationRepo, trainingProfileRepo, trainingMutationRepo, idempotencyRepo, v)
 	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
+	healthExportSvc := service.NewHealthExportService(healthExportRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
 
@@ -198,11 +200,12 @@ func main() {
 	workoutSessionHandler := handler.NewWorkoutSessionHandler(workoutSessionSvc)
 	participationHandler := handler.NewParticipationHandler(participationSvc)
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
+	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, trainingBlockHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, trainingBlockHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{
