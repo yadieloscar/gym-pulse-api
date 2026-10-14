@@ -227,11 +227,11 @@ account deletion leaves this row to the Supabase Admin API, after application an
 **Current constraints and indexes**
 
 - Primary key: `user_id`.
-- Check: `palette IN ('obsidianEmber', 'abyssCerulean')`.
+- Check: `palette IN ('obsidianEmber', 'abyssCerulean', 'mossChartreuse', 'voltLime', 'oliveCitrine', 'slateMint')`.
 - **Gap**: `weight_unit` and `weekly_goal` are service-validated but not database-checked.
 - Validated FK `user_settings_user_auth_fk`: `user_id → auth.users(id) ON DELETE CASCADE` (017).
 
-**Migration sources**: `005_create_user_settings`, `015_add_settings_palette`.
+**Migration sources**: `005_create_user_settings`, `015_add_settings_palette`, `023_add_settings_palette_moss`, `024_add_settings_palette_directions`.
 
 ### Table: `public.training_profiles`
 
@@ -1817,6 +1817,8 @@ Report one of:
 | 017 | Six validated legacy ownership FKs to `auth.users(id)` |
 | 018 | Independent sports, indexed owner/date history, RLS and role revocation |
 | 019 | Criteria blocks, stages, exposures, transitions, constraints/indexes, RLS and role revocation |
+| 023 | Settings palette gains `mossChartreuse` |
+| 024 | Settings palette gains `voltLime`, `oliveCitrine`, `slateMint` |
 
 ## 19. Decision summary
 

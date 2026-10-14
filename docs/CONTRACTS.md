@@ -55,13 +55,13 @@ responds within the bounded readiness timeout. Otherwise returns
 ### `GET /api/v1/settings`
 Response 200:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" }
 ```
 
 ### `PUT /api/v1/settings`
 Body is partial; omitted fields preserve their current values:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" }
 ```
 Old two-field clients remain compatible and preserve the server palette.
 Palette-only updates preserve weight unit and weekly goal. Response 200 is the

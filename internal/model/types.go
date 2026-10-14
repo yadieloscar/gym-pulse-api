@@ -63,13 +63,13 @@ func (e *ResolutionConflictError) Error() string { return e.Message }
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`
 	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=1,max=7"`
-	Palette    string `json:"palette" validate:"required,oneof=obsidianEmber abyssCerulean"`
+	Palette    string `json:"palette" validate:"required,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint"`
 }
 
 type UpdateUserSettingsRequest struct {
 	WeightUnit *string `json:"weight_unit,omitempty" validate:"omitempty,oneof=lb kg"`
 	WeeklyGoal *int    `json:"weekly_goal,omitempty" validate:"omitempty,min=1,max=7"`
-	Palette    *string `json:"palette,omitempty" validate:"omitempty,oneof=obsidianEmber abyssCerulean"`
+	Palette    *string `json:"palette,omitempty" validate:"omitempty,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint"`
 }
 
 // DefaultUserSettings returns the default settings for new users.

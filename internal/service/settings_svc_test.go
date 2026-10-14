@@ -60,6 +60,11 @@ func TestSettingsService_Update(t *testing.T) {
 	}{
 		{"empty preserves all", model.UpdateUserSettingsRequest{}, false, false},
 		{"valid palette only", model.UpdateUserSettingsRequest{Palette: stringPtr("abyssCerulean")}, false, false},
+		{"valid moss palette", model.UpdateUserSettingsRequest{Palette: stringPtr("mossChartreuse")}, false, false},
+		{"valid volt palette", model.UpdateUserSettingsRequest{Palette: stringPtr("voltLime")}, false, false},
+		{"valid olive palette", model.UpdateUserSettingsRequest{Palette: stringPtr("oliveCitrine")}, false, false},
+		{"valid slate palette", model.UpdateUserSettingsRequest{Palette: stringPtr("slateMint")}, false, false},
+		{"unknown palette", model.UpdateUserSettingsRequest{Palette: stringPtr("neonGrape")}, true, true},
 		{"valid kg 1", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("kg"), WeeklyGoal: settingsIntPtr(1)}, false, false},
 		{"invalid unit", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("stone")}, true, true},
 		{"goal too high", model.UpdateUserSettingsRequest{WeeklyGoal: settingsIntPtr(8)}, true, true},
