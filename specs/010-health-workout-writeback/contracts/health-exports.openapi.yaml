@@ -1,0 +1,71 @@
+openapi: 3.0.3
+info: {title: GymPulse Health Exports Contract, version: 1.0.0}
+paths:
+  /api/v1/health-exports:
+    get:
+      summary: List owned health exports whose workout date falls in an inclusive range
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: Newest first by workout date then exported_at; empty is []
+          content: {application/json: {schema: {type: object, required: [health_exports], properties: {health_exports: {type: array, items: {$ref: '#/components/schemas/HealthExport'}}}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/health-exports/{workout_kind}/{workout_id}:
+    put:
+      summary: Record the health-store identity of an exported finished workout, once
+      description: >
+        Requires Idempotency-Key equal to operation_key. A verbatim retry replays 201. The same
+        identity under any key returns the existing record with 200. A different identity for a
+        workout that already has one returns 409 HEALTH_EXPORT_CONFLICT with the stored record as
+        resource. A missing, foreign, or not-finished workout returns the shared 404.
+      parameters:
+        - {name: workout_kind, in: path, required: true, schema: {type: string, enum: [scheduled_workout, day_log]}}
+        - {name: workout_id, in: path, required: true, schema: {type: string, format: uuid}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/RecordHealthExportRequest'}}}
+      responses:
+        '201': {description: Recorded, or verbatim replay, content: {application/json: {schema: {$ref: '#/components/schemas/HealthExport'}}}}
+        '200': {description: Same identity already recorded; nothing written, content: {application/json: {schema: {$ref: '#/components/schemas/HealthExport'}}}}
+        '404': {description: Missing, foreign, or not-finished workout}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+components:
+  schemas:
+    RecordHealthExportRequest:
+      type: object
+      required: [source, external_id, operation_key]
+      properties:
+        source: {type: string, enum: [apple_health]}
+        external_id: {type: string, minLength: 1, maxLength: 128}
+        exported_at: {type: string, format: date-time, description: Defaults to now; future values are clamped to now}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    HealthExport:
+      type: object
+      required: [id, workout_kind, workout_id, date, source, external_id, exported_at, created_at]
+      properties:
+        id: {type: string, format: uuid}
+        workout_kind: {type: string, enum: [scheduled_workout, day_log]}
+        workout_id: {type: string, format: uuid}
+        date: {type: string, format: date, description: The workout's local date}
+        source: {type: string, enum: [apple_health]}
+        external_id: {type: string}
+        exported_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+    Error:
+      type: object
+      required: [error, code, details]
+      properties:
+        error: {type: string}
+        code: {type: string, enum: [VALIDATION_ERROR, NOT_FOUND, IDEMPOTENCY_CONFLICT, HEALTH_EXPORT_CONFLICT]}
+        details: {type: object, nullable: true}
+        resource: {description: The stored export on HEALTH_EXPORT_CONFLICT}
+  responses:
+    ValidationError:
+      description: details.field names the offending field (workout_kind, workout_id, source, external_id, exported_at, operation_key, from, to)
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ConflictError:
+      description: Reused operation_key with a different payload, or a different identity for an exported workout
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}

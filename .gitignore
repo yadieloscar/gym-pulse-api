@@ -27,3 +27,6 @@ vendor/
 
 # Local agent configuration (skill links)
 .claude/
+
+# Sibling git worktrees created by agents or scripts
+.worktrees/

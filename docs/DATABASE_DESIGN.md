@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **30 tables and 284 supported columns**. For the Supabase-managed
+The current inventory contains **31 tables and 292 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -913,6 +913,34 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 018, 022 (origin, identity, and measurements).
 
+### Table: `public.health_exports`
+
+**Purpose**: Write-once record of the health-store identity a device received when it wrote a finished workout to Apple Health, so the same workout is never written twice.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Export identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `workout_kind` | `text` | not null | `scheduled_workout` or `day_log` | Health |
+| `workout_id` | `uuid` | not null | The finished workout in that table | Health |
+| `source` | `text` | not null | Health store written to (`apple_health`) | Health |
+| `external_id` | `text` | not null | Health store identity of the exported workout | Health |
+| `exported_at` | `timestamptz` | not null | When the device wrote it | Health |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; UUID is application-generated.
+- FK `user_id → auth.users(id) ON DELETE CASCADE`. No FK to the workout tables: the kind spans two tables; ownership and finished state are checked in the recording transaction.
+- Checks: `workout_kind IN ('scheduled_workout', 'day_log')`; `source IN ('apple_health')`; `external_id` 1–128.
+- Unique `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` makes the identity write-once per workout and origin.
+- Index `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` supports owner history reads.
+- Recording checks that the workout is owned and finished (planned: finalized with a `completed` or `incomplete` outcome; log: not `rest`), replays the same identity, and conflicts on a different one; it never mutates workouts, participation, or stats.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies and existing Data API roles have table privileges revoked.
+
+**Migration source**: 025.
+
 ### Table: `public.criteria_training_blocks`
 
 **Purpose**: Owner-scoped athlete-authored block, optionally associated with an owned program without changing its schedule.
@@ -1047,10 +1075,11 @@ columns:
 | Starter and user programs | 6 | 63 |
 | Scheduled execution/history/workflow | 6 | 66 |
 | Sport activity | 1 | 14 |
+| Health exports | 1 | 8 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **30** | **284** |
+| **Total** | **31** | **292** |
 
-The count is derived from the final state after migration 022, not the sum of every historical
+The count is derived from the final state after migration 025, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1174,6 +1203,8 @@ snapshot; `set_logs` is the preferred per-set history.
 | `day_participation` | `idx_day_participation_user_date(user_id, date)` | Date-range participation/streak |
 | `sport_activities` | `idx_sport_activities_user_date` | Owner/date/creation/ID history order |
 | `sport_activities` | `ux_sport_activities_user_source_external(user_id, source, external_id)` partial unique | One activity per imported health workout |
+| `health_exports` | `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` unique | One Health export per finished workout and origin |
+| `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_program` | Nullable program association/set-null |
 | `criteria_training_exposures` | `idx_criteria_training_exposures_block_created` | Latest exposure history |
@@ -1756,7 +1787,7 @@ Report one of:
 
 ### Definition of complete
 
-- All 30 current tables and 284 supported columns are cataloged.
+- All 31 current tables and 292 supported columns are cataloged.
 - All current named indexes, keys, checks, and delete actions are described.
 - Every API persistence surface is traceable.
 - Every user-owned root has a current and target ownership/deletion outcome.

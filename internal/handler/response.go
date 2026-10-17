@@ -68,6 +68,8 @@ func handleServiceError(w http.ResponseWriter, err error) {
 			code = "IDEMPOTENCY_CONFLICT"
 		case strings.Contains(conflict.Message, "active session"):
 			code = "ACTIVE_SESSION_CONFLICT"
+		case strings.Contains(conflict.Message, "health export"):
+			code = "HEALTH_EXPORT_CONFLICT"
 		}
 		writeJSON(w, http.StatusConflict, apiError{Error: conflict.Message, Code: code, Details: details, Resource: conflict.Authoritative})
 		return
