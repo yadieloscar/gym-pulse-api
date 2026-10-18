@@ -41,13 +41,15 @@ cp .env.example .env
 go run ./cmd/server
 ```
 
-Server starts on `http://localhost:8080`. Migrations run automatically on startup.
+Server starts on `http://localhost:8080`. In `development` and `test`, migrations run automatically
+on startup. Staging and production never migrate on boot: `./migrate` runs as a release step, and the
+server refuses to start against a schema that is behind or dirty.
 
 ### Verify
 
 ```bash
 curl http://localhost:8080/health
-# → {"status":"ok"}
+# → {"status":"ok","version":"dev"}
 ```
 
 ## API Surface
@@ -64,12 +66,24 @@ manually maintained endpoint inventory here.
 All application endpoints require `Authorization: Bearer <supabase_jwt>`. `/health`, `/ready`, and
 generated documentation are operational surfaces outside the authenticated application API.
 
+## Deployment
+
+Railway runs staging and production from one GHCR image per accepted `main` commit:
+
+- `.github/workflows/deploy.yml` builds and scans the image after CI passes on `main`, deploys its
+  digest to staging, and deploys the same digest to production after approval.
+- `.railway/railway.ts` declares the Railway service: the image tag, the `./migrate` pre-deploy
+  step, the `/ready` healthcheck, restarts, and draining.
+
+One-time setup, the release order, and rollback are in
+[`docs/RELEASE_RUNBOOK.md`](docs/RELEASE_RUNBOOK.md).
+
 ## Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `DATABASE_LOCK_URL` | Staging/production | `DATABASE_URL` in development/test | Direct or session-mode PostgreSQL connection for session advisory locks; Supavisor transaction mode (`:6543`) is rejected |
+| `DATABASE_LOCK_URL` | Staging/production | `DATABASE_URL` in development/test | Direct or session-mode PostgreSQL connection for session advisory locks and the `./migrate` release step; Supavisor transaction mode (`:6543`) is rejected |
 | `SUPABASE_URL` | Staging/production | — | Canonical Supabase project URL used to derive the production JWT issuer and JWKS endpoint |
 | `SUPABASE_SERVICE_ROLE_KEY` | Staging/production | — | Server-only credential for avatar and auth-user deletion |
 | `SUPABASE_JWT_SECRET` | Development/test | — | Legacy local HMAC token validation; production uses JWKS derived from `SUPABASE_URL` |

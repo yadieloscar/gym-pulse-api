@@ -3,7 +3,12 @@ WORKDIR /app
 COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux go build -o server ./cmd/server
+# VERSION is the source commit; the deploy workflow passes it so /health can
+# report which build is serving.
+ARG VERSION=dev
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath \
+      -ldflags "-X github.com/gym-pulse/gym-pulse-api/internal/buildinfo.Version=${VERSION}" \
+      -o /out/ ./cmd/server ./cmd/migrate
 
 FROM alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 ENV ENVIRONMENT=production
@@ -12,7 +17,7 @@ RUN apk --no-cache upgrade \
     && addgroup -S gympulse \
     && adduser -S -G gympulse gympulse
 WORKDIR /app
-COPY --from=builder --chown=gympulse:gympulse /app/server .
+COPY --from=builder --chown=gympulse:gympulse /out/server /out/migrate ./
 COPY --chown=gympulse:gympulse migrations/ ./migrations/
 USER gympulse
 EXPOSE 8080

@@ -46,6 +46,10 @@ type Config struct {
 	DatabaseMaxConnLifetime   time.Duration
 	DatabaseMaxConnIdleTime   time.Duration
 	DatabaseHealthCheckPeriod time.Duration
+	// MigrateOnStart lets development and test servers apply migrations at
+	// boot. Staging and production run them as a separate release step over
+	// DatabaseLockURL and only verify the schema at startup.
+	MigrateOnStart bool
 }
 
 // Load reads configuration from environment variables.
@@ -187,6 +191,7 @@ func Load() (*Config, error) {
 		DatabaseMaxConnLifetime:   maxConnLifetime,
 		DatabaseMaxConnIdleTime:   maxConnIdleTime,
 		DatabaseHealthCheckPeriod: healthCheckPeriod,
+		MigrateOnStart:            !isReleaseEnvironment,
 	}, nil
 }
 

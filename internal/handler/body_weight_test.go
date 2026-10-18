@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/buildinfo"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
@@ -129,5 +131,12 @@ func TestHealthCheck(t *testing.T) {
 	HealthCheck(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Errorf("expected 200, got %d", rec.Code)
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["status"] != "ok" || body["version"] != buildinfo.Version {
+		t.Errorf("body = %v, want status ok and version %q", body, buildinfo.Version)
 	}
 }

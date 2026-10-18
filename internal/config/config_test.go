@@ -106,6 +106,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.DatabaseLockMaxConns != 4 {
 		t.Errorf("unexpected database lock pool default: max=%d", cfg.DatabaseLockMaxConns)
 	}
+	if !cfg.MigrateOnStart {
+		t.Error("development MigrateOnStart = false, want true")
+	}
 	if cfg.DatabaseMaxConnLifetime != 30*time.Minute || cfg.DatabaseMaxConnIdleTime != 5*time.Minute || cfg.DatabaseHealthCheckPeriod != time.Minute {
 		t.Errorf("unexpected database duration defaults: lifetime=%s idle=%s health=%s", cfg.DatabaseMaxConnLifetime, cfg.DatabaseMaxConnIdleTime, cfg.DatabaseHealthCheckPeriod)
 	}
@@ -157,6 +160,9 @@ func TestLoad_Overrides(t *testing.T) {
 	}
 	if cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres" {
 		t.Errorf("lock URL: %q", cfg.DatabaseLockURL)
+	}
+	if cfg.MigrateOnStart {
+		t.Error("production MigrateOnStart = true, want migrations as a release step")
 	}
 	if len(cfg.AllowedOrigins) != 3 {
 		t.Fatalf("expected 3 origins, got %v", cfg.AllowedOrigins)
@@ -258,6 +264,19 @@ func TestLoad_NormalizesKnownEnvironmentAndRejectsTypos(t *testing.T) {
 	setEnv(t, "ENVIRONMENT", "prodution")
 	if _, err := Load(); !errors.Is(err, ErrInvalidEnvironment) {
 		t.Fatalf("expected ErrInvalidEnvironment, got %v", err)
+	}
+}
+
+func TestLoad_StagingMigratesAsReleaseStep(t *testing.T) {
+	clearAll(t)
+	setValidReleaseEnv(t, "staging")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.MigrateOnStart {
+		t.Error("staging MigrateOnStart = true, want migrations as a release step")
 	}
 }
 

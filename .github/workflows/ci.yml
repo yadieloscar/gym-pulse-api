@@ -64,6 +64,14 @@ jobs:
             exit 1
           fi
 
+      - name: Railway config typecheck
+        working-directory: .railway
+        run: |
+          # .railway/railway.ts is only evaluated by `railway config plan`, so
+          # typecheck it against the pinned SDK to catch drift before a deploy.
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run typecheck
+
       - name: Lint
         uses: golangci/golangci-lint-action@9fae48acfc02a90574d7c304a1758ef9895495fa # v7
         with:
@@ -200,7 +208,7 @@ jobs:
       - name: PostgreSQL rollback and concurrency acceptance
         env:
           GYMPULSE_TEST_DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
-        run: go test -race -tags=integration ./internal/dao -run '^TestRelease' -count=1 -timeout=5m
+        run: go test -race -tags=integration ./internal/dao ./internal/migration -run '^TestRelease' -count=1 -timeout=5m
 
       - name: Tear down
         if: always()

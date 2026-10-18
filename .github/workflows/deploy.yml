@@ -1,0 +1,120 @@
+name: Deploy
+
+# Builds one image per accepted main commit and promotes that exact digest:
+# staging first, then production after an approval on the `production`
+# environment. Setup lives in docs/RELEASE_RUNBOOK.md.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+
+jobs:
+  release:
+    # Only green CI on a push to main, or a manual run from main.
+    if: >-
+      (github.event_name == 'workflow_run' &&
+       github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push') ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      current: ${{ steps.version.outputs.current }}
+    steps:
+      # CI runs can finish out of order. Only the commit at the tip of main
+      # deploys, so an older commit never replaces a newer one.
+      - name: Resolve the release commit
+        id: version
+        env:
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          REPO_URL: ${{ github.server_url }}/${{ github.repository }}
+        run: |
+          tip=$(git ls-remote "$REPO_URL" refs/heads/main | cut -f1)
+          echo "version=$SHA" >> "$GITHUB_OUTPUT"
+          if [[ "$SHA" == "$tip" ]]; then
+            echo "current=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "current=false" >> "$GITHUB_OUTPUT"
+            echo "Skipping $SHA: main is now at $tip, which deploys on its own run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  build:
+    needs: release
+    if: needs.release.outputs.current == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.push.outputs.digest }}
+      version: ${{ needs.release.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.release.outputs.version }}
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      - name: Build and push the release image
+        id: push
+        env:
+          VERSION: ${{ needs.release.outputs.version }}
+        run: |
+          docker buildx build \
+            --build-arg "VERSION=$VERSION" \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$VERSION" \
+            --provenance=false \
+            --tag "$IMAGE:sha-$VERSION" \
+            --metadata-file "$RUNNER_TEMP/build-metadata.json" \
+            --push .
+          digest=$(jq -r '."containerimage.digest"' "$RUNNER_TEMP/build-metadata.json")
+          [[ "$digest" == sha256:* ]] || { echo "::error::could not resolve pushed digest"; exit 1; }
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE@$digest" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Scan the pushed image
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.push.outputs.digest }}
+          format: table
+          exit-code: '1'
+          ignore-unfixed: false
+          severity: HIGH,CRITICAL
+
+  staging:
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: staging
+      digest: ${{ needs.build.outputs.digest }}
+      version: ${{ needs.build.outputs.version }}
+    secrets: inherit
+
+  production:
+    # The `production` environment's required reviewers approve this job after
+    # checking staging (docs/RELEASE_RUNBOOK.md, steps 5–6).
+    needs: [build, staging]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/deploy-environment.yml
+    with:
+      environment: production
+      digest: ${{ needs.build.outputs.digest }}
+      version: ${{ needs.build.outputs.version }}
+    secrets: inherit
