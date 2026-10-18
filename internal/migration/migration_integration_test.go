@@ -62,7 +62,7 @@ func TestReleaseSchemaGate(t *testing.T) {
 		t.Fatal(err)
 	}
 	for attempt := range 2 {
-		got, err := Up(target, shippedDir)
+		got, err := Up(ctx, target, shippedDir)
 		if err != nil {
 			t.Fatalf("Up() attempt %d error = %v", attempt+1, err)
 		}

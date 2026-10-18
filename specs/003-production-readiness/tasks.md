@@ -47,8 +47,8 @@
 - [x] Add `.github/workflows/deploy.yml` (build once, staging, approved production).
 - [x] Update `docs/RELEASE_RUNBOOK.md` and `README.md` with setup and the release step.
 - [x] Run API gates, actionlint, container build, and an independent review.
-- [ ] Owner: provision Railway (Pro), GHCR read token, GitHub `staging`/`production` environments,
-  and run the first deploy. Unverified until then.
+- [ ] Owner: provision Railway, GitHub `staging`/`production` environments, and GHCR pull access
+  (public package, or a read token with Railway Pro), then run the first deploy. Unverified until then.
 
 Evidence (2026-10-18, local):
 - `golangci-lint run` 0 issues; `go test ./...` passes; coverage service 90.5%, middleware 90.4%,
@@ -57,8 +57,12 @@ Evidence (2026-10-18, local):
 - Container, `ENVIRONMENT=staging`: server exits on an unmigrated schema ("behind … want 25");
   `./migrate` reaches 25 and repeats as a no-op; server then serves `/health` with the build
   version and `/ready` 200. `scripts/wait-for-deploy.sh` passes on a match and fails on a stale build.
-- `scripts/smoke.sh` 23/23 against the new image in `ENVIRONMENT=test` (boot migration path).
-  `smoke-toggle.sh` not run: it recreates the shared workspace API container; CI's smoke job covers it.
+- `scripts/smoke.sh` 23/23 against the new image in `ENVIRONMENT=test` (boot migration path),
+  reproducing `smoke-toggle.sh`'s steps (JWKS off, seeded `auth.users` row, `smoke.sh`) on an
+  isolated container. `smoke-toggle.sh` itself was not run: it recreates the shared workspace
+  container from the main checkout's image (`--no-build`), so it cannot exercise this branch and
+  would disturb other sessions. CI's `smoke` job runs the same steps on the PR image.
+- `go test -race ./...` passes (no concurrency changes; run because the plan lists it).
 - `.railway/railway.ts` typechecks against `railway@3.12.0` and evaluates for staging/production;
   other environments throw. `railway config plan`, GHCR push, and Railway redeploy are unverified
   until the owner setup in `docs/RELEASE_RUNBOOK.md` exists.
@@ -69,3 +73,8 @@ Evidence (2026-10-18, local):
 - Found while verifying: `docker buildx imagetools create` re-wraps a single manifest in a new
   index (digest changed in a local registry test), so retagging uses
   `skopeo copy --preserve-digests` and asserts the tag's digest; verified against a local registry.
+
+## Phase 1: Convergence
+
+- [x] T001 CRITICAL: take `context.Context` first in `migration.Up` (connection via `postgres.WithConnection`, graceful stop between migrations on cancel) and cancel `cmd/migrate` on SIGINT/SIGTERM per Constitution V (contradicts)
+- [x] T002 Justify the Dockerfile's `-trimpath` build flag in the plan per plan: Phase 5 (unrequested)

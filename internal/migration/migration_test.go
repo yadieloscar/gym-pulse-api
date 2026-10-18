@@ -119,3 +119,14 @@ func TestRequireCurrentWithoutMigrations(t *testing.T) {
 		t.Errorf("RequireCurrent(empty dir) error = %v, want ErrNoMigrations", err)
 	}
 }
+
+func TestUpHonorsCancellation(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	// sql.Open is lazy, so a cancelled context fails before any network call.
+	_, err := Up(ctx, "postgres://unused.invalid:5432/db", migrationsDir(t, "001_x.up.sql"))
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Up(cancelled) error = %v, want context.Canceled", err)
+	}
+}

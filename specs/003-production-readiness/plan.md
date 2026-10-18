@@ -39,21 +39,38 @@ container gates, enforce accurate statement coverage, and run CI on the protecte
 ## Phase 5 — Deployment pipeline (amended 2026-10-18)
 
 - Move migration execution into `internal/migration` with `Up` (golang-migrate over a session-mode
-  URL) and `RequireCurrent` (reads `schema_migrations` through the query pool without advisory locks,
-  so it is safe over the transaction pooler). Add `cmd/migrate`, which loads the full config and
+  URL) and `RequireCurrent` (reads `public.schema_migrations` through the query pool without advisory
+  locks, so it is safe over the transaction pooler). Both pin the version table to
+  `public.schema_migrations`, so differing search paths on the two URLs cannot split them. Add `cmd/migrate`, which loads the full config and
   migrates over `DATABASE_LOCK_URL`; the config already rejects port 6543 for that URL in release
   environments, and golang-migrate needs the same session semantics for its advisory lock.
 - `cmd/server` migrates on boot only in development/test; staging/production call `RequireCurrent`
-  and exit if the schema is behind or dirty. Accepting a newer schema keeps rollback images usable.
+  and exit if the schema is behind or dirty at or below the image's newest migration. Accepting a
+  newer schema keeps rollback images usable; a dirty newer version (`ErrSchemaDirtyAhead`) only
+  warns, because the serving build needs none of the failed migration and must survive restarts.
 - Inject the commit into `internal/buildinfo.Version` with `-ldflags -X` (Docker build arg
-  `VERSION`, default `dev`) and add it additively to `/health`. Build both binaries in the image.
+  `VERSION`, default `dev`) and add it additively to `/health`. Build both binaries in the image
+  with `-trimpath`, so release binaries and panic traces carry module paths instead of the
+  builder's filesystem layout and identical sources build identically on any runner.
 - `.railway/railway.ts` declares the `api` service: image `ghcr.io/<owner>/gym-pulse-api:<env>` with
   auto-updates off, pre-deploy `./migrate`, `/ready` healthcheck, on-failure restarts, and draining
   longer than the server's 10s shutdown. Secrets stay `preserve()`. CI typechecks the file.
-- `.github/workflows/deploy.yml` runs after a successful `CI` run on `main` (or manual dispatch):
-  build and push once, scan the pushed digest, retag `:staging`, `railway redeploy`, wait for
-  `/health` to report the commit and `/ready` to pass, then repeat for `:production` behind the
-  `production` GitHub environment approval. Deploys are serialized with a concurrency group.
+- `.github/workflows/deploy.yml` runs after a successful `CI` run on `main` (or manual dispatch).
+  A `release` job skips any commit that is no longer the tip of `main`. `build` pushes once with
+  `buildx --metadata-file` (the digest comes from the push itself) and scans the pushed digest.
+  `deploy-environment.yml` then moves `:staging` to that digest with
+  `skopeo copy --preserve-digests` and asserts the tag's digest (`buildx imagetools create`
+  re-wraps a single manifest under a new digest), runs `railway redeploy`, and waits for `/health`
+  to report the commit and `/ready` to pass. It repeats for `:production` behind the
+  `production` GitHub environment approval. Job-level concurrency groups per environment
+  serialize deploys without cancelling one in flight.
+- Tooling justification (Constitution V): no new Go module dependency. `.railway/` pins
+  `railway@3.12.0` (Railway's IaC SDK, the only supported config format after 2026-12-01) and
+  `typescript@5.9.3` as dev-only typecheck tools; they never enter the image. The deploy job uses
+  the pinned Railway CLI `@railway/cli@5.63.4` for `redeploy`, and runner-provided `skopeo` (apt
+  fallback) for the digest-preserving retag, the only step that needs it.
+  Rejected: hand-rolled registry API calls (more code, same result) and third-party Docker actions
+  (larger supply-chain surface than the runner's Docker CLI).
 - Rejected: Railway building from the repo per environment (production would not be the accepted
   image); `railway.json` (Railway stops reading Config as Code on 2026-12-01); applying a digest
   through `railway config apply` from CI (undocumented for image sources).

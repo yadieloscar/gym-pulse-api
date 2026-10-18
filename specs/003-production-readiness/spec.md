@@ -57,12 +57,16 @@ container vulnerabilities. Contract documentation matches executable behavior.
    critical finding.
 9. Service and middleware statement coverage are at least 90 percent under the same calculation CI
    enforces.
-10. A successful `main` CI run produces one pushed image; staging and production deploy that image's
-    digest, and production waits for an approval on the `production` environment.
+10. A successful `main` CI run for the commit still at the tip of `main` produces one pushed image;
+    staging and production deploy that image's digest, and production waits for an approval on the
+    `production` environment. An older commit whose CI finishes late never deploys.
+    Deploys are serialized per environment, so a pending production approval never blocks staging.
 11. Staging and production servers never run migrations on boot. The release step `./migrate`
     applies pending migrations over `DATABASE_LOCK_URL` (direct or session mode) before deployment.
 12. A staging or production server exits at startup when the recorded schema version is lower than
-    the newest migration in its image or is dirty; a newer schema (rollback image) is accepted.
+    the newest migration in its image, or is dirty at or below that version. A newer schema
+    (rollback image) is accepted. A schema left dirty by a newer release's failed migration is
+    served with a repair warning, so the previous build keeps restarting.
 13. Development and test servers keep migrating on boot so local compose and CI smoke are unchanged.
 14. `GET /health` reports the build version, and a deploy is complete only when the target
     environment's `/health` reports the deployed commit and `/ready` succeeds.

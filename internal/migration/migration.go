@@ -51,25 +51,50 @@ const undefinedTable = "42P01"
 // Up applies every pending migration in dir and returns the resulting schema
 // version. databaseURL must be a direct or session-mode connection, because
 // golang-migrate holds a session-level advisory lock while it runs.
-func Up(databaseURL, dir string) (uint, error) {
+//
+// Cancelling ctx stops Up between migrations, never inside one, and returns
+// the context's error; the schema is then left at the last completed version.
+func Up(ctx context.Context, databaseURL, dir string) (uint, error) {
 	db, err := sql.Open("pgx", databaseURL)
 	if err != nil {
 		return 0, fmt.Errorf("opening migration db: %w", err)
 	}
 	defer db.Close()
 
-	driver, err := postgres.WithInstance(db, &postgres.Config{SchemaName: versionSchema, MigrationsTable: versionTable})
+	conn, err := db.Conn(ctx)
 	if err != nil {
+		return 0, fmt.Errorf("connecting migration db: %w", err)
+	}
+	driver, err := postgres.WithConnection(ctx, conn, &postgres.Config{SchemaName: versionSchema, MigrationsTable: versionTable})
+	if err != nil {
+		conn.Close()
 		return 0, fmt.Errorf("creating migration driver: %w", err)
 	}
 
 	m, err := migrate.NewWithDatabaseInstance("file://"+dir, "postgres", driver)
 	if err != nil {
+		driver.Close()
 		return 0, fmt.Errorf("creating migrator: %w", err)
 	}
+	defer m.Close()
+
+	// golang-migrate takes no context; translate cancellation into its
+	// graceful stop. The goroutine ends when Up returns or ctx is done.
+	finished := make(chan struct{})
+	defer close(finished)
+	go func() {
+		select {
+		case <-ctx.Done():
+			m.GracefulStop <- true
+		case <-finished:
+		}
+	}()
 
 	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
 		return 0, fmt.Errorf("running migrations: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return 0, fmt.Errorf("migrations stopped: %w", err)
 	}
 
 	version, _, err := m.Version()

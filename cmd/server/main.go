@@ -89,7 +89,7 @@ func main() {
 	// Release environments migrate in a separate step (cmd/migrate) before
 	// deployment, so a server only confirms it is not ahead of the schema.
 	if cfg.MigrateOnStart {
-		version, err := migration.Up(cfg.DatabaseURL, migration.Dir)
+		version, err := migration.Up(context.Background(), cfg.DatabaseURL, migration.Dir)
 		if err != nil {
 			logger.Error("failed to run migrations", "error", err)
 			os.Exit(1)
