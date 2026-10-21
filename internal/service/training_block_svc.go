@@ -94,7 +94,13 @@ func (s *trainingBlockService) AddExposure(ctx context.Context, userID, blockID 
 	if err := validateTrainingExposure(req, s.now().In(location)); err != nil {
 		return nil, err
 	}
-	hash, err := hashPayload(req)
+	// The idempotency scope is per user, so the target block must be part of
+	// the request identity or one operation key could be replayed against a
+	// different owned block and return the first block's cached result.
+	hash, err := hashPayload(struct {
+		BlockID uuid.UUID
+		Request model.CreateTrainingExposureRequest
+	}{blockID, req})
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +117,11 @@ func (s *trainingBlockService) RecordNextMorning(ctx context.Context, userID, bl
 	if err := validateRevisionOperation(req.ExpectedRevision, req.OperationKey); err != nil {
 		return nil, err
 	}
-	hash, err := hashPayload(req)
+	hash, err := hashPayload(struct {
+		BlockID    uuid.UUID
+		ExposureID uuid.UUID
+		Request    model.RecordNextMorningRequest
+	}{blockID, exposureID, req})
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +150,10 @@ func (s *trainingBlockService) Transition(ctx context.Context, userID, blockID u
 	if err := validateRevisionOperation(req.ExpectedRevision, req.OperationKey); err != nil {
 		return nil, err
 	}
-	hash, err := hashPayload(req)
+	hash, err := hashPayload(struct {
+		BlockID uuid.UUID
+		Request model.CreateTrainingTransitionRequest
+	}{blockID, req})
 	if err != nil {
 		return nil, err
 	}

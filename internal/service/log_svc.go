@@ -225,6 +225,11 @@ func (s *logService) ExerciseRecords(ctx context.Context, userID uuid.UUID, idsP
 	return reduceRecords(perfs, ids), nil
 }
 
+// MaxExerciseIDsPerRequest bounds the window queries behind exercise history
+// and records. One workout never has more exercises than this; an unbounded
+// list would let a single request fan out into thousands of per-id scans.
+const MaxExerciseIDsPerRequest = 100
+
 func parseExerciseIDs(idsParam string) ([]uuid.UUID, error) {
 	ids := []uuid.UUID{}
 	for raw := range strings.SplitSeq(idsParam, ",") {
@@ -237,6 +242,9 @@ func parseExerciseIDs(idsParam string) ([]uuid.UUID, error) {
 			return nil, &model.ValidationError{Message: "invalid exercise id: " + raw, Field: "ids"}
 		}
 		ids = append(ids, id)
+		if len(ids) > MaxExerciseIDsPerRequest {
+			return nil, &model.ValidationError{Message: "ids must not exceed 100 exercise ids", Field: "ids"}
+		}
 	}
 	return ids, nil
 }

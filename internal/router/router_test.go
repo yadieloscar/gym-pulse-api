@@ -161,6 +161,17 @@ var (
 	_ dao.PlanDAO            = fakePlanDAO{}
 )
 
+func TestRouter_HidesSwaggerInProduction(t *testing.T) {
+	cfg := &config.Config{Environment: "production", AllowedOrigins: []string{"https://app.example.com"}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for swagger in production, got %d", rec.Code)
+	}
+}
+
 func TestRouter_RoutesAndAuth(t *testing.T) {
 	// Build the full router with real handlers + service wiring on fake DAOs.
 	v := validator.New()
@@ -373,6 +384,39 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
 			t.Errorf("expected 200, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("security headers on API responses", func(t *testing.T) {
+		resp := authed("GET", "/api/v1/settings", "")
+		defer resp.Body.Close()
+		if got := resp.Header.Get("Cache-Control"); got != "no-store" {
+			t.Errorf("Cache-Control = %q, want no-store", got)
+		}
+		if got := resp.Header.Get("X-Content-Type-Options"); got != "nosniff" {
+			t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+		}
+	})
+
+	t.Run("swagger served outside production", func(t *testing.T) {
+		resp := do(httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Errorf("expected 200 for docs in non-production, got %d", resp.StatusCode)
+		}
+	})
+
+	t.Run("account deletion is rate limited per user", func(t *testing.T) {
+		limitedUser := mintToken(uuid.New().String())
+		var last *http.Response
+		for range 11 {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/account", nil)
+			req.Header.Set("Authorization", "Bearer "+limitedUser)
+			last = do(req)
+			last.Body.Close()
+		}
+		if last.StatusCode != http.StatusTooManyRequests {
+			t.Errorf("expected 429 after the per-user limit, got %d", last.StatusCode)
 		}
 	})
 

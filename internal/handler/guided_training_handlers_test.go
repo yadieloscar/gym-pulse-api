@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -156,8 +157,23 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 
 	program := NewProgramHandler(guidedProgramService{})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
-		program.ListStarters(w, guidedHandlerRequest(t, http.MethodGet, "/?primary_goal=strength&experience=beginner&available_days=3&available_weekdays=1,bad,3&usual_activity=light&session_duration_minutes=45&equipment=dumbbell,bench", nil, userID, "", nil))
+		program.ListStarters(w, guidedHandlerRequest(t, http.MethodGet, "/?primary_goal=strength&experience=beginner&available_days=3&available_weekdays=1,3&usual_activity=light&session_duration_minutes=45&equipment=dumbbell,bench", nil, userID, "", nil))
 	})
+	// Malformed filters are rejected instead of being silently coerced to
+	// "no filter"; each case must map to 422 VALIDATION_ERROR.
+	for _, query := range []string{
+		"/?available_weekdays=1,bad,3",
+		"/?available_weekdays=0",
+		"/?available_weekdays=1,2,3,4,5,6,7,1",
+		"/?available_days=abc",
+		"/?available_days=-1",
+		"/?session_duration_minutes=0",
+		"/?equipment=" + strings.Repeat("x,", 33),
+	} {
+		assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+			program.ListStarters(w, guidedHandlerRequest(t, http.MethodGet, query, nil, userID, "", nil))
+		})
+	}
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
 		program.List(w, guidedHandlerRequest(t, http.MethodGet, "/", nil, userID, "", nil))
 	})

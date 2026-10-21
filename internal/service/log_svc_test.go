@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -544,4 +545,18 @@ func TestLogService_Delete(t *testing.T) {
 			t.Fatal("historical delete reached persistence")
 		}
 	})
+}
+
+func TestParseExerciseIDs_CapsRequestSize(t *testing.T) {
+	ids := make([]string, 0, MaxExerciseIDsPerRequest+1)
+	for range MaxExerciseIDsPerRequest + 1 {
+		ids = append(ids, uuid.NewString())
+	}
+	if _, err := parseExerciseIDs(strings.Join(ids, ",")); err == nil {
+		t.Fatal("expected a validation error above the id cap")
+	}
+	parsed, err := parseExerciseIDs(strings.Join(ids[:MaxExerciseIDsPerRequest], ","))
+	if err != nil || len(parsed) != MaxExerciseIDsPerRequest {
+		t.Fatalf("expected %d ids at the cap, got %d (%v)", MaxExerciseIDsPerRequest, len(parsed), err)
+	}
 }

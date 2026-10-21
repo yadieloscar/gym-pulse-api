@@ -1458,7 +1458,7 @@ subject before attaching identity to the request.
   decision.
 - If views are later exposed, use security-invoker behavior where supported and review privileges.
 
-Migrations 016, 018, and 019 enable RLS without direct-client policies on all 29 application
+Migrations 016, 018, 019, and 025 enable RLS without direct-client policies on all 30 application
 tables in `public`. Migration 016 revokes public-schema table/sequence/function privileges from
 existing `anon`, `authenticated`, and `service_role` roles, revokes PUBLIC function execution, and
 sets default revocations for eligible migration owners. Migrations 018/019 explicitly revoke the
@@ -1602,7 +1602,7 @@ still require one legacy log per user/date.
 
 ### P0 — Verify deployed Supabase Data API isolation
 
-**Current support**: migrations 016/018/019 provide RLS and privilege revocation.
+**Current support**: migrations 016/018/019/025 provide RLS and privilege revocation.
 **Remaining gap**: applied versions, hosted role inheritance/default grants, and exposed schemas
 cannot be proved from source. The mobile architecture does not use direct application-data access.
 

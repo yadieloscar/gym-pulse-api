@@ -18,6 +18,7 @@ var (
 	ErrProductionAdmin         = errors.New("staging and production require a canonical HTTPS SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
 	ErrSupabaseProjectMismatch = errors.New("supabase issuer and JWKS URLs must match SUPABASE_URL")
 	ErrProductionDatabaseLock  = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
+	ErrProductionDatabaseTLS   = errors.New("staging and production require sslmode=require, verify-ca, or verify-full on DATABASE_URL and DATABASE_LOCK_URL")
 	ErrProductionCORS          = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
 	ErrInvalidEnvironment      = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
 	ErrInvalidDatabasePool     = errors.New("invalid database pool configuration")
@@ -113,6 +114,12 @@ func Load() (*Config, error) {
 		}
 
 		if err := validateProductionLockURL(lockURL); err != nil {
+			return nil, err
+		}
+		if err := validateProductionDatabaseTLS(dbURL); err != nil {
+			return nil, err
+		}
+		if err := validateProductionDatabaseTLS(lockURL); err != nil {
 			return nil, err
 		}
 
@@ -217,6 +224,23 @@ func validateProductionLockURL(raw string) error {
 		return ErrProductionDatabaseLock
 	}
 	return nil
+}
+
+// validateProductionDatabaseTLS rejects release database URLs that would let
+// pgx negotiate down to plaintext. pgx defaults to sslmode=prefer, which
+// silently falls back to an unencrypted connection when TLS fails, so the
+// credentials and every row would cross the network in the clear.
+func validateProductionDatabaseTLS(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ErrProductionDatabaseTLS
+	}
+	switch parsed.Query().Get("sslmode") {
+	case "require", "verify-ca", "verify-full":
+		return nil
+	default:
+		return ErrProductionDatabaseTLS
+	}
 }
 
 func positiveInt32Env(name string, fallback int32) (int32, error) {
