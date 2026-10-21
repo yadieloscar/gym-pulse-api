@@ -538,13 +538,21 @@ else
 fi
 
 # ---------- 13c. health export ledger ----------
-step "13c. PUT /api/v1/health-exports records a finished workout once (201, 200, 409, list)"
+step "13c. PUT /api/v1/health-exports records a finished workout once (201, 201 replay, 200, 409, list)"
 if [ -n "${workout_id:-}" ]; then
   hx_uuid="SMOKE-HK-EXPORT-1"
   hx_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/health-exports/scheduled_workout/$workout_id" \
     "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hx-a" \
     -d "{\"source\":\"apple_health\",\"external_id\":\"$hx_uuid\",\"operation_key\":\"smoke-hx-a\"}")
   hx_body=$(cat /tmp/smoke.body)
+  # Verbatim retry: same operation key, same body, exported_at still omitted.
+  # The server defaults exported_at to now, so this only replays 201 if the
+  # idempotency hash is computed from the client-sent request.
+  sleep 1
+  hx_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/health-exports/scheduled_workout/$workout_id" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hx-a" \
+    -d "{\"source\":\"apple_health\",\"external_id\":\"$hx_uuid\",\"operation_key\":\"smoke-hx-a\"}")
+  hx_replay_body=$(cat /tmp/smoke.body)
   hx_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/health-exports/scheduled_workout/$workout_id" \
     "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-hx-b" \
     -d "{\"source\":\"apple_health\",\"external_id\":\"$hx_uuid\",\"operation_key\":\"smoke-hx-b\"}")
@@ -559,11 +567,11 @@ if [ -n "${workout_id:-}" ]; then
   hx_date=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['date'])" "$hx_body" 2>/dev/null || echo "$session_date")
   hx_list_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/health-exports?from=$hx_date&to=$hx_date" "${auth[@]}")
   hx_list_body=$(cat /tmp/smoke.body)
-  if [ "$hx_status" = "201" ] && [ "$hx_again_status" = "200" ] && [ "$hx_conflict_status" = "409" ] && [ "$hx_missing_status" = "404" ] && [ "$hx_list_status" = "200" ] && \
-    python3 -c "import json,sys; a,b,c,l=[json.loads(x) for x in sys.argv[1:]]; assert a['id']==b['id'] and a['external_id']=='$hx_uuid' and a['workout_id']=='$workout_id'; assert c['code']=='HEALTH_EXPORT_CONFLICT' and c['resource']['external_id']=='$hx_uuid'; assert any(e['id']==a['id'] for e in l['health_exports'])" "$hx_body" "$hx_again_body" "$hx_conflict_body" "$hx_list_body" 2>/dev/null; then
-    ok "export recorded once, replayed with 200, conflicted on a different identity, listed by date"
+  if [ "$hx_status" = "201" ] && [ "$hx_replay_status" = "201" ] && [ "$hx_again_status" = "200" ] && [ "$hx_conflict_status" = "409" ] && [ "$hx_missing_status" = "404" ] && [ "$hx_list_status" = "200" ] && \
+    python3 -c "import json,sys; a,r,b,c,l=[json.loads(x) for x in sys.argv[1:]]; assert a['id']==r['id']==b['id'] and a['external_id']=='$hx_uuid' and a['workout_id']=='$workout_id'; assert r['exported_at']==a['exported_at']; assert c['code']=='HEALTH_EXPORT_CONFLICT' and c['resource']['external_id']=='$hx_uuid'; assert any(e['id']==a['id'] for e in l['health_exports'])" "$hx_body" "$hx_replay_body" "$hx_again_body" "$hx_conflict_body" "$hx_list_body" 2>/dev/null; then
+    ok "export recorded once, verbatim retry replayed 201, same identity under a new key returned 200, conflicted on a different identity, listed by date"
   else
-    bad "health export acceptance failed (record=$hx_status again=$hx_again_status conflict=$hx_conflict_status missing=$hx_missing_status list=$hx_list_status)" "$(echo "$hx_conflict_body" | head -c 280)"
+    bad "health export acceptance failed (record=$hx_status replay=$hx_replay_status again=$hx_again_status conflict=$hx_conflict_status missing=$hx_missing_status list=$hx_list_status)" "$(echo "$hx_replay_body" | head -c 280)"
   fi
 else
   bad "health export acceptance skipped: no finalized scheduled workout id from step 10" ""

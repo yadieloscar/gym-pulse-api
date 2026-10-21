@@ -13,7 +13,19 @@ go test -coverprofile=coverage.out ./...
 
 # Display coverage function breakdown
 go tool cover -func=coverage.out
+
+# Run the DB-backed DAO integration suite. `go test ./...` does not run it: every
+# test that needs PostgreSQL is behind the `integration` build tag. Point the URL
+# at a disposable database with the migrations applied (the API applies them on
+# boot; see docker-compose.yml in the parent workspace).
+GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
+  go test -race -tags=integration ./internal/dao -count=1 -timeout=5m
 ```
+
+`go test ./...` covers unit, handler, router, and static DAO source-inspection tests only. The
+DAO's transactional behavior is verified by the integration suite above, which CI runs in the
+`smoke` job against the migrated smoke database. Any new DAO test that talks to PostgreSQL goes in
+a `//go:build integration` file so it runs there instead of silently skipping.
 
 ## Go Development Conventions
 
