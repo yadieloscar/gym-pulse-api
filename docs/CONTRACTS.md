@@ -29,6 +29,17 @@
 - JSON bodies are limited to 1 MiB and exactly one JSON value. Oversized bodies
   return `413 REQUEST_TOO_LARGE` with `details.max_bytes: 1048576`; malformed or
   trailing JSON returns `400 BAD_REQUEST`.
+- Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
+  and `Referrer-Policy: no-referrer`; `/api/v1/*` responses add
+  `Cache-Control: no-store`. The Swagger UI at `/docs/*` is not served in
+  production; this document is the contract.
+- The costliest endpoints are rate limited **per authenticated user** and
+  return `429 { "error": "too many requests, retry shortly", "code": "RATE_LIMITED" }`
+  when exceeded: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
+  allow 10 requests per minute; `POST /api/v1/schedule/materialize`,
+  `/schedule/regenerate`, `/schedule/recover`, `/plan-transitions/preview`,
+  and `/plan-transitions/apply` allow 30 per minute. Clients should back off
+  rather than retry immediately.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
   will 422 even if you only intend to change one field. See "gotchas" below.
@@ -112,7 +123,7 @@ Body — **all fields optional** (uses `omitempty`):
 ```json
 {
   "display_name": "string (2-50 chars)",
-  "avatar_url": "string (must be URL)",
+  "avatar_url": "string (must be an https:// URL)",
   "onboarding_completed": true
 }
 ```
@@ -217,9 +228,11 @@ Response 200 is the full training-profile shape at its authoritative revision.
 #### `GET /api/v1/starter-programs`
 
 Optional filters: `primary_goal`, `available_days` (1..7),
-`available_weekdays` (comma-separated unique ISO weekdays), `usual_activity`,
-`experience`, `equipment` (comma-separated canonical values), and
-`session_duration_minutes` (20..120). Matching goal and constraints rank first;
+`available_weekdays` (comma-separated unique ISO weekdays, at most 7), `usual_activity`,
+`experience`, `equipment` (comma-separated canonical values, at most 32), and
+`session_duration_minutes` (20..120). A non-numeric or non-positive
+`available_days` or `session_duration_minutes`, a weekday outside 1..7, or a
+list above its cap → 422 `VALIDATION_ERROR`. Matching goal and constraints rank first;
 the response remains a catalog, not medical advice. Response 200:
 ```json
 {
@@ -936,7 +949,7 @@ derived server-side so released clients keep their existing payload shape.
 For each requested exercise id, returns the completed sets from the **most
 recent day** that exercise was performed — powers "last time you did X" hints.
 One round-trip for a whole workout. Unknown ids are simply omitted; a malformed
-id → 422.
+id or more than 100 ids → 422.
 ```json
 [
   { "exercise_id": "uuid", "date": "2026-06-10",

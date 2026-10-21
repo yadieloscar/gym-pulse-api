@@ -24,8 +24,8 @@ func clearAll(t *testing.T) {
 
 func setValidReleaseEnv(t *testing.T, environment string) {
 	t.Helper()
-	setEnv(t, "DATABASE_URL", "postgres://app.example.com:6543/postgres")
-	setEnv(t, "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres")
+	setEnv(t, "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode=require")
+	setEnv(t, "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode=require")
 	setEnv(t, "ENVIRONMENT", environment)
 	setEnv(t, "ALLOWED_ORIGINS", "https://app.example.com")
 	setEnv(t, "SUPABASE_URL", "https://project.supabase.co")
@@ -155,7 +155,7 @@ func TestLoad_Overrides(t *testing.T) {
 	if cfg.SupabaseJWTIssuer != "https://project.supabase.co/auth/v1" {
 		t.Errorf("issuer: %q", cfg.SupabaseJWTIssuer)
 	}
-	if cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres" {
+	if cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres?sslmode=require" {
 		t.Errorf("lock URL: %q", cfg.DatabaseLockURL)
 	}
 	if len(cfg.AllowedOrigins) != 3 {
@@ -200,7 +200,7 @@ func TestLoad_ProductionNormalizesCriticalValues(t *testing.T) {
 	setEnv(t, "SUPABASE_JWT_ISSUER", " https://project.supabase.co/auth/v1/ ")
 	setEnv(t, "SUPABASE_JWKS_URL", " https://project.supabase.co/auth/v1/.well-known/jwks.json/ ")
 	setEnv(t, "SUPABASE_JWT_AUDIENCE", " authenticated ")
-	setEnv(t, "DATABASE_LOCK_URL", " postgres://app.example.com:5432/postgres ")
+	setEnv(t, "DATABASE_LOCK_URL", " postgres://app.example.com:5432/postgres?sslmode=require ")
 	setEnv(t, "SUPABASE_AVATAR_BUCKET", " avatars ")
 
 	cfg, err := Load()
@@ -212,7 +212,7 @@ func TestLoad_ProductionNormalizesCriticalValues(t *testing.T) {
 		cfg.SupabaseJWTIssuer != "https://project.supabase.co/auth/v1" ||
 		cfg.SupabaseJWKSURL != "https://project.supabase.co/auth/v1/.well-known/jwks.json" ||
 		cfg.SupabaseJWTAudience != "authenticated" ||
-		cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres" ||
+		cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres?sslmode=require" ||
 		cfg.SupabaseAvatarBucket != "avatars" {
 		t.Fatalf("release values were not normalized: %+v", cfg)
 	}
@@ -293,9 +293,10 @@ func TestLoad_ProductionRequiresExplicitHTTPSOrigins(t *testing.T) {
 	setEnv(t, "DATABASE_URL", "postgres://x")
 	setEnv(t, "ENVIRONMENT", "production")
 	setEnv(t, "SUPABASE_JWT_AUDIENCE", "authenticated")
+	setEnv(t, "DATABASE_URL", "postgres://project.example.com:6543/postgres?sslmode=require")
 	setEnv(t, "SUPABASE_URL", "https://project.example.com")
 	setEnv(t, "SUPABASE_SERVICE_ROLE_KEY", "server-only-key")
-	setEnv(t, "DATABASE_LOCK_URL", "postgres://project.example.com:5432/postgres")
+	setEnv(t, "DATABASE_LOCK_URL", "postgres://project.example.com:5432/postgres?sslmode=require")
 
 	if _, err := Load(); !errors.Is(err, ErrProductionCORS) {
 		t.Fatalf("expected ErrProductionCORS, got %v", err)
@@ -359,7 +360,7 @@ func TestLoad_ProductionRequiresSessionCapableLockURL(t *testing.T) {
 	t.Run("Supavisor transaction port rejected", func(t *testing.T) {
 		clearAll(t)
 		setValidReleaseEnv(t, "production")
-		setEnv(t, "DATABASE_LOCK_URL", "postgres://project.pooler.supabase.com:6543/postgres")
+		setEnv(t, "DATABASE_LOCK_URL", "postgres://project.pooler.supabase.com:6543/postgres?sslmode=require")
 
 		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseLock) {
 			t.Fatalf("expected ErrProductionDatabaseLock, got %v", err)
@@ -369,14 +370,55 @@ func TestLoad_ProductionRequiresSessionCapableLockURL(t *testing.T) {
 	t.Run("Supavisor session port accepted", func(t *testing.T) {
 		clearAll(t)
 		setValidReleaseEnv(t, "production")
-		setEnv(t, "DATABASE_LOCK_URL", "postgres://project.pooler.supabase.com:5432/postgres")
+		setEnv(t, "DATABASE_LOCK_URL", "postgres://project.pooler.supabase.com:5432/postgres?sslmode=require")
 
 		cfg, err := Load()
 		if err != nil {
 			t.Fatal(err)
 		}
-		if cfg.DatabaseLockURL != "postgres://project.pooler.supabase.com:5432/postgres" {
+		if cfg.DatabaseLockURL != "postgres://project.pooler.supabase.com:5432/postgres?sslmode=require" {
 			t.Fatalf("lock URL = %q", cfg.DatabaseLockURL)
+		}
+	})
+}
+
+func TestLoad_ProductionRequiresDatabaseTLS(t *testing.T) {
+	for _, tc := range []struct {
+		name, key, value string
+	}{
+		{"query URL without sslmode", "DATABASE_URL", "postgres://app.example.com:6543/postgres"},
+		{"query URL sslmode=prefer", "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode=prefer"},
+		{"query URL sslmode=disable", "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode=disable"},
+		{"lock URL without sslmode", "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres"},
+		{"lock URL sslmode=allow", "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode=allow"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			clearAll(t)
+			setValidReleaseEnv(t, "production")
+			setEnv(t, tc.key, tc.value)
+			if _, err := Load(); !errors.Is(err, ErrProductionDatabaseTLS) {
+				t.Fatalf("expected ErrProductionDatabaseTLS, got %v", err)
+			}
+		})
+	}
+
+	for _, mode := range []string{"require", "verify-ca", "verify-full"} {
+		t.Run("accepts sslmode="+mode, func(t *testing.T) {
+			clearAll(t)
+			setValidReleaseEnv(t, "production")
+			setEnv(t, "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode="+mode)
+			setEnv(t, "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode="+mode)
+			if _, err := Load(); err != nil {
+				t.Fatalf("sslmode=%s rejected: %v", mode, err)
+			}
+		})
+	}
+
+	t.Run("development does not require TLS", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		if _, err := Load(); err != nil {
+			t.Fatal(err)
 		}
 	})
 }
