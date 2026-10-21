@@ -147,10 +147,18 @@ jobs:
                 test: ["CMD-SHELL", "pg_isready -U gympulse -d gympulse"]
                 interval: 3s
                 retries: 10
+              volumes:
+                # Creates the gym_pulse_api login ahead of migration 026, the
+                # way production does, so smoke runs as the restricted role.
+                - ./scripts/ci/runtime-role.sql:/docker-entrypoint-initdb.d/runtime-role.sql:ro
             api:
               build: .
               environment:
-                DATABASE_URL: postgres://gympulse:gympulse@db:5432/gympulse
+                # Requests run as the least-privilege role; only migrations
+                # use the owner connection.
+                DATABASE_URL: postgres://gym_pulse_api:gym_pulse_api@db:5432/gympulse
+                DATABASE_LOCK_URL: postgres://gym_pulse_api:gym_pulse_api@db:5432/gympulse
+                DATABASE_MIGRATE_URL: postgres://gympulse:gympulse@db:5432/gympulse
                 SUPABASE_JWT_SECRET: local-dev-secret-change-me
                 SUPABASE_JWKS_URL: ""
                 ENVIRONMENT: test

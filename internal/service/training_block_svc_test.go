@@ -170,6 +170,17 @@ func TestTrainingBlockServiceGetRecordNextMorningAndListValidation(t *testing.T)
 	if repo.nextMorning.Response != model.NextMorningBaseline || repo.nextMorning.OperationKey != operationKey || repo.hash == "" {
 		t.Fatalf("next-morning request was not normalized and hashed: %+v", repo.nextMorning)
 	}
+	// The same body replayed against another exposure must not hash equal,
+	// or a reused operation key would return the first exposure's result.
+	firstHash := repo.hash
+	if _, err := svc.RecordNextMorning(context.Background(), userID, blockID, uuid.New(), model.RecordNextMorningRequest{
+		Response: model.NextMorningBaseline, ExpectedRevision: 2, OperationKey: operationKey,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.hash == firstHash {
+		t.Fatal("idempotency hash ignores the target exposure")
+	}
 
 	if _, err := svc.RecordNextMorning(context.Background(), userID, blockID, exposureID, model.RecordNextMorningRequest{Response: "improved"}); err == nil {
 		t.Fatal("expected invalid response validation")

@@ -18,6 +18,6 @@ type UserProfile struct {
 // UpdateProfileRequest is the request body for PUT /api/v1/profile.
 type UpdateProfileRequest struct {
 	DisplayName         *string `json:"display_name" validate:"omitempty,min=2,max=50"`
-	AvatarURL           *string `json:"avatar_url" validate:"omitempty,url"`
+	AvatarURL           *string `json:"avatar_url" validate:"omitempty,url,startswith=https://"`
 	OnboardingCompleted *bool   `json:"onboarding_completed,omitempty"`
 }

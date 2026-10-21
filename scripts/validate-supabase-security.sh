@@ -144,5 +144,139 @@ BEGIN
 END
 $$;
 
-SELECT 'supabase security validation passed: RLS enabled, FORCE RLS disabled, and present Data API roles have no public object privileges' AS result;
+-- Least-privilege runtime role (migration 026). The API connects as
+-- gym_pulse_api for requests, so it must hold DML plus a permissive policy on
+-- every application table and nothing that amounts to DDL or ownership.
+DO $$
+DECLARE
+    runtime_role CONSTANT TEXT := 'gym_pulse_api';
+    role_row pg_roles%ROWTYPE;
+    findings TEXT;
+BEGIN
+    SELECT * INTO role_row FROM pg_roles WHERE rolname = runtime_role;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'runtime role % does not exist; migration 026 has not been applied', runtime_role;
+    END IF;
+
+    IF role_row.rolsuper OR role_row.rolbypassrls OR role_row.rolcreaterole
+        OR role_row.rolcreatedb OR role_row.rolreplication THEN
+        RAISE EXCEPTION 'runtime role % holds a privileged attribute (super=% bypassrls=% createrole=% createdb=% replication=%)',
+            runtime_role, role_row.rolsuper, role_row.rolbypassrls, role_row.rolcreaterole,
+            role_row.rolcreatedb, role_row.rolreplication;
+    END IF;
+
+    -- Membership would inherit the owner's or a superuser's rights.
+    SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname)
+    INTO findings
+    FROM pg_roles r
+    WHERE r.rolname <> runtime_role
+      AND r.rolname NOT LIKE 'pg\_%'
+      AND pg_has_role(runtime_role, r.oid, 'MEMBER');
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'runtime role % is a member of: %', runtime_role, findings;
+    END IF;
+
+    -- Ownership of any relation, schema, or function is DDL by another name.
+    SELECT string_agg(owned, ', ' ORDER BY owned)
+    INTO findings
+    FROM (
+        SELECT format('%I.%I', n.nspname, c.relname) AS owned
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE c.relowner = role_row.oid
+        UNION ALL
+        SELECT format('schema %I', n.nspname)
+        FROM pg_namespace n
+        WHERE n.nspowner = role_row.oid
+        UNION ALL
+        SELECT format('function %I.%I', n.nspname, p.proname)
+        FROM pg_proc p
+        JOIN pg_namespace n ON n.oid = p.pronamespace
+        WHERE p.proowner = role_row.oid
+    ) owned_objects;
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'runtime role % owns: %', runtime_role, findings;
+    END IF;
+
+    IF has_schema_privilege(runtime_role, 'public', 'CREATE') THEN
+        RAISE EXCEPTION 'runtime role % can CREATE in schema public', runtime_role;
+    END IF;
+    IF NOT has_schema_privilege(runtime_role, 'public', 'USAGE') THEN
+        RAISE EXCEPTION 'runtime role % lacks USAGE on schema public', runtime_role;
+    END IF;
+
+    -- Every application table: exactly DML, nothing more, and a permissive
+    -- policy addressed to the role so it can see rows without owning them.
+    SELECT string_agg(problem, '; ' ORDER BY problem)
+    INTO findings
+    FROM (
+        SELECT format('%I.%I lacks DML', n.nspname, c.relname) AS problem
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND c.relname <> 'schema_migrations'
+          AND NOT (
+              has_table_privilege(runtime_role, c.oid, 'SELECT')
+              AND has_table_privilege(runtime_role, c.oid, 'INSERT')
+              AND has_table_privilege(runtime_role, c.oid, 'UPDATE')
+              AND has_table_privilege(runtime_role, c.oid, 'DELETE')
+          )
+        UNION ALL
+        SELECT format('%I.%I grants more than DML', n.nspname, c.relname)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND (
+              has_table_privilege(runtime_role, c.oid, 'TRUNCATE')
+              OR has_table_privilege(runtime_role, c.oid, 'REFERENCES')
+              OR has_table_privilege(runtime_role, c.oid, 'TRIGGER')
+          )
+        UNION ALL
+        SELECT format('%I.%I is reachable by the runtime role', n.nspname, c.relname)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND c.relname = 'schema_migrations'
+          AND (
+              has_table_privilege(runtime_role, c.oid, 'SELECT')
+              OR has_table_privilege(runtime_role, c.oid, 'INSERT')
+              OR has_table_privilege(runtime_role, c.oid, 'UPDATE')
+              OR has_table_privilege(runtime_role, c.oid, 'DELETE')
+          )
+        UNION ALL
+        SELECT format('%I.%I has no permissive ALL policy for the runtime role', n.nspname, c.relname)
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relkind IN ('r', 'p')
+          AND c.relname <> 'schema_migrations'
+          AND NOT EXISTS (
+              SELECT 1
+              FROM pg_policy p
+              WHERE p.polrelid = c.oid
+                AND p.polpermissive
+                AND p.polcmd = '*'
+                AND role_row.oid = ANY (p.polroles)
+          )
+    ) problems;
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'runtime role % table provisioning: %', runtime_role, findings;
+    END IF;
+
+    -- Identity verification reads auth.users and nothing else in auth.
+    IF NOT has_table_privilege(runtime_role, 'auth.users', 'SELECT') THEN
+        RAISE EXCEPTION 'runtime role % cannot read auth.users', runtime_role;
+    END IF;
+    IF has_table_privilege(runtime_role, 'auth.users', 'INSERT')
+        OR has_table_privilege(runtime_role, 'auth.users', 'UPDATE')
+        OR has_table_privilege(runtime_role, 'auth.users', 'DELETE') THEN
+        RAISE EXCEPTION 'runtime role % can write auth.users', runtime_role;
+    END IF;
+END
+$$;
+
+SELECT 'supabase security validation passed: RLS enabled, FORCE RLS disabled, present Data API roles have no public object privileges, and gym_pulse_api holds DML plus policies without DDL or ownership' AS result;
 SQL
