@@ -66,6 +66,15 @@ func main() {
 	logger := slog.New(slogHandler)
 	slog.SetDefault(logger)
 
+	// Run migrations as the schema owner before any request pool opens. The
+	// request pools below may connect as the least-privilege runtime role,
+	// which cannot run DDL.
+	if err := runMigrations(cfg.DatabaseMigrateURL); err != nil {
+		logger.Error("failed to run migrations", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("migrations complete")
+
 	// Connect to database.
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
@@ -90,13 +99,6 @@ func main() {
 		os.Exit(1) //nolint:gocritic // pool.Close defer intentionally skipped on fatal startup error
 	}
 	logger.Info("connected to database")
-
-	// Run migrations.
-	if err := runMigrations(cfg.DatabaseURL); err != nil {
-		logger.Error("failed to run migrations", "error", err)
-		os.Exit(1)
-	}
-	logger.Info("migrations complete")
 
 	// Advisory locks must never consume the main query pool. A separate,
 	// bounded pool prevents N concurrent deletion/avatar operations from

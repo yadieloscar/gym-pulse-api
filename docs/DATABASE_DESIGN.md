@@ -1,15 +1,15 @@
 # GymPulse Database Design
 
 **Owner**: GymPulse API
-**Status**: Current schema documented through migration 019; target changes are proposals
-**Last reviewed**: 2026-10-05
+**Status**: Current schema documented through migration 026; target changes are proposals
+**Last reviewed**: 2026-10-21
 **Database**: PostgreSQL, hosted by Supabase
 **Application boundary**: Expo client → Go API → PostgreSQL; Supabase is auth and avatar storage
 
 ## 1. Purpose and status vocabulary
 
 This is the authoritative persistence design for GymPulse. It covers the current schema produced by
-`migrations/001` through `migrations/019`, the SQL access patterns under `internal/dao`, the public
+`migrations/001` through `migrations/026`, the SQL access patterns under `internal/dao`, the public
 behavior in `docs/CONTRACTS.md`, and the mobile contract types in `gym-pulse-app/types/index.ts`.
 
 The document uses three labels:
@@ -1079,7 +1079,7 @@ columns:
 | Criteria-based training blocks | 4 | 41 |
 | **Total** | **31** | **292** |
 
-The count is derived from the final state after migration 025, not the sum of every historical
+The count is derived from the final state after migration 026, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1435,15 +1435,52 @@ This target needs a separate security-reviewed specification and migration.
 data travels through the Go API. The API validates JWT signature, issuer, audience, expiry, and UUID
 subject before attaching identity to the request.
 
-**Target production database roles**
+**Production database roles**
 
-| Role | Privileges |
-|---|---|
-| `gym_pulse_migrator` | DDL for release migrations; no application login |
-| `gym_pulse_api` | Connect/usage and only required DML; no superuser, `BYPASSRLS`, role creation, or DDL |
-| `gym_pulse_readonly` | Explicit read access for approved operational diagnostics; audited |
-| Supabase `anon`/`authenticated` | No application-table privileges because clients do not use the Data API |
-| Supabase service-role key | Server secret for Auth Admin/Storage only; never shipped to the app |
+| Role | Status | Privileges |
+|---|---|---|
+| Schema owner (`postgres` on Supabase, `DATABASE_MIGRATE_URL`) | Current | Owns every table; runs `cmd/server` startup migrations only. No request traffic |
+| `gym_pulse_api` (`DATABASE_URL`, `DATABASE_LOCK_URL`) | Current (026) | `USAGE` on `public` and `auth`; `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the 30 application tables; `SELECT` on `auth.users`; one permissive RLS policy per table. No superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB`, ownership, `CREATE` on `public`, or access to `schema_migrations` |
+| `gym_pulse_readonly` | Target | Explicit read access for approved operational diagnostics; audited |
+| Supabase `anon`/`authenticated` | Current (016) | No application-table privileges because clients do not use the Data API |
+| Supabase service-role key | Current | Server secret for Auth Admin/Storage only; never shipped to the app |
+
+### Runtime role and RLS strategy (026)
+
+The API connects as `gym_pulse_api`, which does not own the tables, so owner bypass no longer
+applies to request traffic. RLS stays **enabled and not forced** on every application table, and
+migration 026 creates one unconditional permissive policy per table:
+
+```sql
+CREATE POLICY gym_pulse_api_access ON public.<table>
+    AS PERMISSIVE FOR ALL TO gym_pulse_api USING (true) WITH CHECK (true);
+```
+
+Ownership is still enforced in DAO SQL (every owned query carries the authenticated UUID); the
+policy only makes rows reachable for the role that the API already authorizes. `anon`,
+`authenticated`, and `service_role` have no policy and no grants, so nothing changes for the Data
+API. Two alternatives were rejected:
+
+- **`BYPASSRLS` on the runtime role**: granting it needs a superuser, which hosted Supabase does
+  not expose to the project owner, and it would hide a table that was created without a policy.
+- **Keep requests on the owner role**: every injection or bug in request SQL would carry DDL and
+  ownership; this was the main structural gap left after the 2026-10 security sweep.
+
+Operational rules:
+
+- Every migration that creates a table adds `GRANT SELECT, INSERT, UPDATE, DELETE ... TO
+  gym_pulse_api` (default privileges cover tables the owner creates, but say it explicitly) and a
+  `gym_pulse_api_access` policy. `internal/dao/supabase_security_migration_test.go` fails when a
+  table is neither listed in 026 nor given its own policy; migration 026 itself raises when any
+  existing table is left unprovisioned.
+- Migration 026 creates the role `NOLOGIN` when absent so local and CI databases need no operator
+  step. Production creates it ahead of time with `LOGIN` and a credential; the migration never
+  alters an existing role or contains a credential.
+- `scripts/validate-supabase-security.sh` asserts the role exists, holds no privileged attribute or
+  membership, owns nothing, cannot `CREATE` in `public`, has exactly DML plus a permissive `ALL`
+  policy on every application table, cannot reach `schema_migrations`, and can only read
+  `auth.users`.
+- Rollout order and the `auth.users` grant fallback live in `docs/RELEASE_RUNBOOK.md`.
 
 ### Supabase Data API and RLS
 
@@ -1462,12 +1499,11 @@ Migrations 016, 018, 019, and 025 enable RLS without direct-client policies on a
 tables in `public`. Migration 016 revokes public-schema table/sequence/function privileges from
 existing `anon`, `authenticated`, and `service_role` roles, revokes PUBLIC function execution, and
 sets default revocations for eligible migration owners. Migrations 018/019 explicitly revoke the
-new table privileges too. RLS is enabled but not forced; the API connection must use a compatible
-owner/privileged role. A non-owner role with no policy would be denied. Separate least-privilege
-runtime-role provisioning remains a target requiring reviewed policies/ownership; do not switch
-roles based solely on the target role table above. Hosted role inheritance, exposed schemas,
-default owners, applied migration version, and direct REST/GraphQL denial still need environment
-verification. Checked-in hardening is not proof that it has been deployed.
+new table privileges too. RLS is enabled but not forced; request traffic runs as `gym_pulse_api`
+through the explicit policies described above, and migrations run as the owner. Hosted role
+inheritance, exposed schemas, default owners, applied migration version, and direct REST/GraphQL
+denial still need environment verification. Checked-in hardening is not proof that it has been
+deployed.
 
 ### Data protection
 
@@ -1602,9 +1638,10 @@ still require one legacy log per user/date.
 
 ### P0 — Verify deployed Supabase Data API isolation
 
-**Current support**: migrations 016/018/019/025 provide RLS and privilege revocation.
-**Remaining gap**: applied versions, hosted role inheritance/default grants, and exposed schemas
-cannot be proved from source. The mobile architecture does not use direct application-data access.
+**Current support**: migrations 016/018/019/025 provide RLS and privilege revocation; migration 026
+provisions the least-privilege `gym_pulse_api` runtime role and its policies.
+**Remaining gap**: applied versions, hosted role inheritance/default grants, exposed schemas, and
+whether deployments actually connect as `gym_pulse_api` cannot be proved from source. The mobile architecture does not use direct application-data access.
 
 **Rollout**
 
@@ -1819,6 +1856,8 @@ Report one of:
 | 019 | Criteria blocks, stages, exposures, transitions, constraints/indexes, RLS and role revocation |
 | 023 | Settings palette gains `mossChartreuse` |
 | 024 | Settings palette gains `voltLime`, `oliveCitrine`, `slateMint` |
+| 025 | `health_exports` write-once ledger, RLS and role revocation |
+| 026 | `gym_pulse_api` runtime role: DML grants, default DML for future tables, `gym_pulse_api_access` policies on all 30 application tables, `auth.users` read |
 
 ## 19. Decision summary
 
@@ -1834,6 +1873,7 @@ Report one of:
 | Idempotency | Durable response replay with target 30-day expiry | Permanent storage retains private payloads unnecessarily |
 | Schema rollout | Release job; expand/backfill/validate/cutover/cleanup | Startup DDL cannot safely own long migrations |
 | Authorization defense | Disable/revoke unused Data API; RLS on anything exposed | Trusting project defaults is not a security boundary |
+| Runtime database role | Non-owner `gym_pulse_api` with DML grants and unconditional permissive policies; owner connection migrates only | `BYPASSRLS` needs a superuser on Supabase and hides a missing policy; owner-as-runtime gives request SQL DDL rights |
 
 ## 20. References
 

@@ -55,7 +55,50 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 		}
 	}
 	if strings.Contains(strings.ToUpper(contents), "FORCE ROW LEVEL SECURITY") {
-		t.Fatal("application migrations must not FORCE RLS; the direct API database role relies on owner bypass")
+		t.Fatal("application migrations must not FORCE RLS; the schema owner runs migrations and gym_pulse_api relies on explicit policies")
+	}
+
+	// Migration 026 provisions the least-privilege runtime role. Every public
+	// application table must be reachable by it: either listed in 026 or given
+	// its own policy in the migration that creates it.
+	runtimeRoleMigration, err := os.ReadFile("../../migrations/026_create_runtime_role.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, table := range publicTables {
+		short := strings.TrimPrefix(table, "public.")
+		listed := strings.Contains(string(runtimeRoleMigration), "'"+short+"'")
+		ownPolicy := strings.Contains(contents, "CREATE POLICY gym_pulse_api_access ON "+table) ||
+			strings.Contains(contents, "CREATE POLICY gym_pulse_api_access ON "+short)
+		if !listed && !ownPolicy {
+			t.Errorf("%s is not provisioned for the gym_pulse_api runtime role (list it in 026 or add gym_pulse_api_access in its migration)", table)
+		}
+	}
+}
+
+func TestRuntimeRoleMigrationGrantsOnlyDML(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/026_create_runtime_role.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(body)
+
+	for _, required := range []string{
+		"NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS NOLOGIN",
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.%I TO %I",
+		"REVOKE CREATE ON SCHEMA public FROM %I",
+		"AS PERMISSIVE FOR ALL TO %I USING (true) WITH CHECK (true)",
+		"GRANT SELECT ON TABLE auth.users TO %I",
+		"RAISE EXCEPTION 'runtime role % is not fully provisioned on: %'",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Errorf("migration 026 is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"BYPASSRLS NOLOGIN LOGIN", "GRANT ALL", "TRUNCATE", "REFERENCES", "TRIGGER", "WITH GRANT OPTION", "schema_migrations TO", "FORCE ROW LEVEL SECURITY", "PASSWORD"} {
+		if strings.Contains(strings.ToUpper(contents), strings.ToUpper(forbidden)) {
+			t.Errorf("migration 026 must not contain %q", forbidden)
+		}
 	}
 }
 
