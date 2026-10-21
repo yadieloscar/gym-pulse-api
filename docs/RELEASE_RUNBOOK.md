@@ -29,6 +29,11 @@ logs, commits, or release notes.
       (any legacy explicit overrides must match it exactly).
 - [ ] `DATABASE_LOCK_URL` uses a direct PostgreSQL or Supavisor session-mode
       connection (normally port 5432), never transaction mode on port 6543.
+- [ ] `DATABASE_MIGRATE_URL` is the schema-owner connection (`postgres` on Supabase),
+      direct or session-mode, with TLS. `DATABASE_URL` and `DATABASE_LOCK_URL` connect
+      as `gym_pulse_api`, never as the owner.
+- [ ] `./scripts/validate-supabase-security.sh` passes against staging with the owner
+      connection, proving `gym_pulse_api` holds only DML plus policies.
 - [ ] Database capacity accounts for both the main query pool and the separate
       `DATABASE_LOCK_MAX_CONNS` advisory-lock pool.
 - [ ] `golangci-lint run` passes.
@@ -39,6 +44,44 @@ logs, commits, or release notes.
 - [ ] The production container scan has no unaccepted critical or high finding.
 - [ ] Direct Supabase Data API access to application tables is denied for `anon` and
       `authenticated`.
+
+## Runtime role rollout (migration 026)
+
+The API runs migrations as the schema owner and serves requests as `gym_pulse_api`, a role with
+`SELECT`, `INSERT`, `UPDATE`, `DELETE` on application tables and a permissive RLS policy on each.
+It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, in staging first:
+
+1. **Create the role** in the SQL editor as the owner, with its own credential. Never put the
+   credential in a migration, issue, or log:
+
+   ```sql
+   CREATE ROLE gym_pulse_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+   \password gym_pulse_api
+   ```
+
+   (Or set the password with `ALTER ROLE gym_pulse_api PASSWORD '...'` entered interactively.)
+   If the role already exists because migration 026 created it `NOLOGIN`, add `LOGIN` and a
+   credential with `ALTER ROLE`.
+2. **Grant** by deploying the release that contains migration 026 with the current configuration
+   (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL). The
+   migration grants schema usage, table DML, default DML for future tables, and creates the
+   `gym_pulse_api_access` policy on every application table. It also attempts
+   `GRANT SELECT ON auth.users`; if the log shows the warning that this grant failed, run
+   `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; GRANT SELECT ON auth.users TO gym_pulse_api;`
+   as a role that owns `auth.users` (`supabase_auth_admin` or the dashboard owner). If
+   `auth.users` has row-level security enabled in the hosted project, add a read policy for
+   `gym_pulse_api` or the identity check denies every request.
+3. **Verify the grants** with `./scripts/validate-supabase-security.sh` using the owner URL.
+4. **Switch the request connections**: set `DATABASE_URL` and `DATABASE_LOCK_URL` to
+   `gym_pulse_api` credentials (same hosts and `sslmode`), keep `DATABASE_MIGRATE_URL` on the
+   owner, and redeploy the same image.
+5. **Verify**: `/health`, `/ready`, an authenticated read and write, account deletion, and no
+   `permission denied` or `42501` in the logs. `SELECT usename, count(*) FROM pg_stat_activity
+   GROUP BY 1` must show request traffic as `gym_pulse_api` and no idle owner connections after
+   startup.
+
+Rollback is a configuration change: point `DATABASE_URL` and `DATABASE_LOCK_URL` back at the
+owner. Do not roll the migration down while any deployment still connects as `gym_pulse_api`.
 
 ## Deployment order
 
@@ -63,7 +106,8 @@ logs, commits, or release notes.
    receive explicit full object paths; do not rely on recursive folder
    deletion.
 7. Apply the same migrations to production.
-8. Deploy the exact staging-accepted image to production.
+8. Deploy the exact staging-accepted image to production, following the runtime role rollout
+   order above the first time migration 026 ships.
 9. Verify `/health` and `/ready` before enabling dependent app rollout.
 10. Run a bounded production smoke with a dedicated test account and remove it afterward.
 
@@ -99,6 +143,8 @@ Record:
 
 - API commit and image digest;
 - migrations applied;
+- `./scripts/validate-supabase-security.sh` output showing `gym_pulse_api` provisioned with DML
+  and policies only;
 - validation that all six legacy ownership foreign keys are validated
   `ON DELETE CASCADE` constraints;
 - staging and production smoke results;

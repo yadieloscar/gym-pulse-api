@@ -17,7 +17,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD"} {
+	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD"} {
 		t.Setenv(k, "")
 	}
 }
@@ -26,6 +26,7 @@ func setValidReleaseEnv(t *testing.T, environment string) {
 	t.Helper()
 	setEnv(t, "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode=require")
 	setEnv(t, "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode=require")
+	setEnv(t, "DATABASE_MIGRATE_URL", "postgres://owner.example.com:5432/postgres?sslmode=require")
 	setEnv(t, "ENVIRONMENT", environment)
 	setEnv(t, "ALLOWED_ORIGINS", "https://app.example.com")
 	setEnv(t, "SUPABASE_URL", "https://project.supabase.co")
@@ -157,6 +158,9 @@ func TestLoad_Overrides(t *testing.T) {
 	}
 	if cfg.DatabaseLockURL != "postgres://app.example.com:5432/postgres?sslmode=require" {
 		t.Errorf("lock URL: %q", cfg.DatabaseLockURL)
+	}
+	if cfg.DatabaseMigrateURL != "postgres://owner.example.com:5432/postgres?sslmode=require" {
+		t.Errorf("migrate URL: %q", cfg.DatabaseMigrateURL)
 	}
 	if len(cfg.AllowedOrigins) != 3 {
 		t.Fatalf("expected 3 origins, got %v", cfg.AllowedOrigins)
@@ -297,6 +301,7 @@ func TestLoad_ProductionRequiresExplicitHTTPSOrigins(t *testing.T) {
 	setEnv(t, "SUPABASE_URL", "https://project.example.com")
 	setEnv(t, "SUPABASE_SERVICE_ROLE_KEY", "server-only-key")
 	setEnv(t, "DATABASE_LOCK_URL", "postgres://project.example.com:5432/postgres?sslmode=require")
+	setEnv(t, "DATABASE_MIGRATE_URL", "postgres://owner.example.com:5432/postgres?sslmode=require")
 
 	if _, err := Load(); !errors.Is(err, ErrProductionCORS) {
 		t.Fatalf("expected ErrProductionCORS, got %v", err)
@@ -382,6 +387,86 @@ func TestLoad_ProductionRequiresSessionCapableLockURL(t *testing.T) {
 	})
 }
 
+func TestLoad_ProductionRequiresOwnerMigrateURL(t *testing.T) {
+	t.Run("explicit migrate URL required", func(t *testing.T) {
+		clearAll(t)
+		setValidReleaseEnv(t, "production")
+		setEnv(t, "DATABASE_MIGRATE_URL", "")
+
+		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
+			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
+		}
+	})
+
+	t.Run("staging requires it too", func(t *testing.T) {
+		clearAll(t)
+		setValidReleaseEnv(t, "staging")
+		setEnv(t, "DATABASE_MIGRATE_URL", " ")
+
+		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
+			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
+		}
+	})
+
+	t.Run("Supavisor transaction port rejected", func(t *testing.T) {
+		clearAll(t)
+		setValidReleaseEnv(t, "production")
+		setEnv(t, "DATABASE_MIGRATE_URL", "postgres://project.pooler.supabase.com:6543/postgres?sslmode=require")
+
+		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
+			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
+		}
+	})
+
+	t.Run("non-postgres scheme rejected", func(t *testing.T) {
+		clearAll(t)
+		setValidReleaseEnv(t, "production")
+		setEnv(t, "DATABASE_MIGRATE_URL", "https://owner.example.com/postgres?sslmode=require")
+
+		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
+			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
+		}
+	})
+
+	t.Run("owner connection kept separate from the request URL", func(t *testing.T) {
+		clearAll(t)
+		setValidReleaseEnv(t, "production")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.DatabaseMigrateURL != "postgres://owner.example.com:5432/postgres?sslmode=require" {
+			t.Fatalf("migrate URL = %q", cfg.DatabaseMigrateURL)
+		}
+		if cfg.DatabaseMigrateURL == cfg.DatabaseURL {
+			t.Fatal("migrate URL must not be replaced by the request URL in release environments")
+		}
+	})
+}
+
+func TestLoad_DevelopmentDefaultsMigrateURLToDatabaseURL(t *testing.T) {
+	clearAll(t)
+	setValidDevelopmentEnv(t)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseMigrateURL != cfg.DatabaseURL {
+		t.Fatalf("migrate URL = %q, want DATABASE_URL %q", cfg.DatabaseMigrateURL, cfg.DatabaseURL)
+	}
+
+	setEnv(t, "DATABASE_MIGRATE_URL", "postgres://owner")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.DatabaseMigrateURL != "postgres://owner" {
+		t.Fatalf("explicit development migrate URL = %q", cfg.DatabaseMigrateURL)
+	}
+}
+
 func TestLoad_ProductionRequiresDatabaseTLS(t *testing.T) {
 	for _, tc := range []struct {
 		name, key, value string
@@ -391,6 +476,8 @@ func TestLoad_ProductionRequiresDatabaseTLS(t *testing.T) {
 		{"query URL sslmode=disable", "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode=disable"},
 		{"lock URL without sslmode", "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres"},
 		{"lock URL sslmode=allow", "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode=allow"},
+		{"migrate URL without sslmode", "DATABASE_MIGRATE_URL", "postgres://owner.example.com:5432/postgres"},
+		{"migrate URL sslmode=disable", "DATABASE_MIGRATE_URL", "postgres://owner.example.com:5432/postgres?sslmode=disable"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			clearAll(t)
@@ -408,6 +495,7 @@ func TestLoad_ProductionRequiresDatabaseTLS(t *testing.T) {
 			setValidReleaseEnv(t, "production")
 			setEnv(t, "DATABASE_URL", "postgres://app.example.com:6543/postgres?sslmode="+mode)
 			setEnv(t, "DATABASE_LOCK_URL", "postgres://app.example.com:5432/postgres?sslmode="+mode)
+			setEnv(t, "DATABASE_MIGRATE_URL", "postgres://owner.example.com:5432/postgres?sslmode="+mode)
 			if _, err := Load(); err != nil {
 				t.Fatalf("sslmode=%s rejected: %v", mode, err)
 			}
