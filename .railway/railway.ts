@@ -34,6 +34,7 @@ export default defineRailway((ctx) => {
       // Secrets and per-environment values are set in Railway, never here.
       DATABASE_URL: preserve(),
       DATABASE_LOCK_URL: preserve(),
+      DATABASE_MIGRATE_URL: preserve(),
       SUPABASE_URL: preserve(),
       SUPABASE_SERVICE_ROLE_KEY: preserve(),
       SUPABASE_JWT_AUDIENCE: preserve(),

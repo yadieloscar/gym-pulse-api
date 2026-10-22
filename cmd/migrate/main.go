@@ -1,8 +1,9 @@
 // Command migrate applies pending schema migrations as a release step.
 //
 // It loads the same validated configuration as the server and migrates over
-// DATABASE_LOCK_URL, which release environments require to be a direct or
-// session-mode connection; golang-migrate's advisory lock needs one. Railway
+// DATABASE_MIGRATE_URL, the schema owner, which release environments require
+// to be a direct or session-mode connection; golang-migrate's advisory lock
+// needs one. Railway
 // runs it as the pre-deploy command, so a failure stops the deployment before
 // the new version takes traffic. SIGINT or SIGTERM stops it between
 // migrations, never inside one.
@@ -39,7 +40,7 @@ func run(ctx context.Context, logger *slog.Logger) error {
 		return fmt.Errorf("loading config: %w", err)
 	}
 
-	version, err := migration.Up(ctx, cfg.DatabaseLockURL, migration.Dir)
+	version, err := migration.Up(ctx, cfg.DatabaseMigrateURL, migration.Dir)
 	if err != nil {
 		return fmt.Errorf("applying migrations: %w", err)
 	}

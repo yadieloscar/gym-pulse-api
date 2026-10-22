@@ -24,7 +24,8 @@ Do these once, in order. The pipeline never creates accounts, environments, or s
    deploy fails until the pipeline pushes an image; that is expected.
 2. **Service variables.** In each environment, set the variables `.railway/railway.ts` marks
    `preserve()`: `DATABASE_URL`, `DATABASE_LOCK_URL` (direct or session mode, port 5432),
-   `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_AUDIENCE` (normally
+   `DATABASE_MIGRATE_URL` (the schema owner, direct or session mode), all with
+   `sslmode=require` or stricter, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_JWT_AUDIENCE` (normally
    `authenticated`), and `ALLOWED_ORIGINS` (see `README.md`). Generate a Railway domain or attach
    the custom domain.
 3. **Apply the infrastructure file** for each environment, with that environment linked:
@@ -66,6 +67,11 @@ Do these once, in order. The pipeline never creates accounts, environments, or s
       (any legacy explicit overrides must match it exactly).
 - [ ] `DATABASE_LOCK_URL` uses a direct PostgreSQL or Supavisor session-mode
       connection (normally port 5432), never transaction mode on port 6543.
+- [ ] `DATABASE_MIGRATE_URL` is the schema-owner connection (`postgres` on Supabase),
+      direct or session-mode, with TLS. `DATABASE_URL` and `DATABASE_LOCK_URL` connect
+      as `gym_pulse_api`, never as the owner.
+- [ ] `./scripts/validate-supabase-security.sh` passes against staging with the owner
+      connection, proving `gym_pulse_api` holds only DML plus policies.
 - [ ] Database capacity accounts for both the main query pool and the separate
       `DATABASE_LOCK_MAX_CONNS` advisory-lock pool.
 - [ ] `golangci-lint run` passes.
@@ -77,6 +83,44 @@ Do these once, in order. The pipeline never creates accounts, environments, or s
 - [ ] Direct Supabase Data API access to application tables is denied for `anon` and
       `authenticated`.
 
+## Runtime role rollout (migration 026)
+
+The API runs migrations as the schema owner and serves requests as `gym_pulse_api`, a role with
+`SELECT`, `INSERT`, `UPDATE`, `DELETE` on application tables and a permissive RLS policy on each.
+It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, in staging first:
+
+1. **Create the role** in the SQL editor as the owner, with its own credential. Never put the
+   credential in a migration, issue, or log:
+
+   ```sql
+   CREATE ROLE gym_pulse_api LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;
+   \password gym_pulse_api
+   ```
+
+   (Or set the password with `ALTER ROLE gym_pulse_api PASSWORD '...'` entered interactively.)
+   If the role already exists because migration 026 created it `NOLOGIN`, add `LOGIN` and a
+   credential with `ALTER ROLE`.
+2. **Grant** by deploying the release that contains migration 026 with the current configuration
+   (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL). The
+   migration grants schema usage, table DML, default DML for future tables, and creates the
+   `gym_pulse_api_access` policy on every application table. It also attempts
+   `GRANT SELECT ON auth.users`; if the log shows the warning that this grant failed, run
+   `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; GRANT SELECT ON auth.users TO gym_pulse_api;`
+   as a role that owns `auth.users` (`supabase_auth_admin` or the dashboard owner). If
+   `auth.users` has row-level security enabled in the hosted project, add a read policy for
+   `gym_pulse_api` or the identity check denies every request.
+3. **Verify the grants** with `./scripts/validate-supabase-security.sh` using the owner URL.
+4. **Switch the request connections**: set `DATABASE_URL` and `DATABASE_LOCK_URL` to
+   `gym_pulse_api` credentials (same hosts and `sslmode`), keep `DATABASE_MIGRATE_URL` on the
+   owner, and redeploy the same image.
+5. **Verify**: `/health`, `/ready`, an authenticated read and write, account deletion, and no
+   `permission denied` or `42501` in the logs. `SELECT usename, count(*) FROM pg_stat_activity
+   GROUP BY 1` must show request traffic as `gym_pulse_api` and no idle owner connections after
+   startup.
+
+Rollback is a configuration change: point `DATABASE_URL` and `DATABASE_LOCK_URL` back at the
+owner. Do not roll the migration down while any deployment still connects as `gym_pulse_api`.
+
 ## Deployment order
 
 The **Deploy** workflow (`.github/workflows/deploy.yml`) runs these steps after CI passes on
@@ -87,7 +131,7 @@ The **Deploy** workflow (`.github/workflows/deploy.yml`) runs these steps after 
    `ghcr.io/yadieloscar/gym-pulse-api:sha-<commit>`, scans the pushed digest, and records the
    digest in the run summary.
 2. **Staging deploy.** It moves `:staging` to that digest and runs `railway redeploy`. Railway runs
-   `./migrate` as the pre-deploy step over `DATABASE_LOCK_URL`; a failed migration stops the
+   `./migrate` as the pre-deploy step over `DATABASE_MIGRATE_URL`; a failed migration stops the
    deployment and leaves the previous build serving. Migration 017 deliberately fails on orphaned
    legacy ownership rows; investigate and reconcile them rather than bypassing constraint
    validation. Traffic moves once `/ready` passes, and the workflow waits until `/health` reports
@@ -108,14 +152,15 @@ The **Deploy** workflow (`.github/workflows/deploy.yml`) runs these steps after 
    deletion.
 4. **Manual: confirm the production backup**, then approve the `production` job in GitHub.
 5. **Production deploy.** The workflow moves `:production` to the **same digest** and repeats
-   step 2 against production, including the migration release step.
+   step 2 against production, including the migration release step. The first time migration 026
+   ships, follow the runtime role rollout order above.
 6. **Manual:** run a bounded production smoke with a dedicated test account and remove it
    afterward.
 
 A server in `staging` or `production` never migrates on boot. It exits at startup if the schema is
 behind its image or dirty. A dirty schema needs operator repair: inspect the failed migration,
 fix the database, then mark the last good version with the golang-migrate CLI from a trusted
-machine (`migrate -database "$DATABASE_LOCK_URL" -path migrations force <version>`). The image's
+machine (`migrate -database "$DATABASE_MIGRATE_URL" -path migrations force <version>`). The image's
 `./migrate` only applies pending migrations; it has no force or down command.
 
 Do not deploy the mobile app before the API acceptance checks pass.
@@ -165,6 +210,8 @@ Record:
 
 - API commit and image digest (from the Deploy run summary);
 - migrations applied;
+- `./scripts/validate-supabase-security.sh` output showing `gym_pulse_api` provisioned with DML
+  and policies only;
 - validation that all six legacy ownership foreign keys are validated
   `ON DELETE CASCADE` constraints;
 - staging and production smoke results;

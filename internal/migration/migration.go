@@ -166,3 +166,15 @@ func RequireCurrent(ctx context.Context, db RowQuerier, dir string) error {
 	}
 	return nil
 }
+
+// RequireCurrentAt runs RequireCurrent over a short-lived connection to
+// databaseURL. Release servers pass the schema-owner URL, because the
+// least-privilege runtime role cannot read the version table.
+func RequireCurrentAt(ctx context.Context, databaseURL, dir string) error {
+	conn, err := pgx.Connect(ctx, databaseURL)
+	if err != nil {
+		return fmt.Errorf("connecting for schema check: %w", err)
+	}
+	defer conn.Close(context.WithoutCancel(ctx))
+	return RequireCurrent(ctx, conn, dir)
+}

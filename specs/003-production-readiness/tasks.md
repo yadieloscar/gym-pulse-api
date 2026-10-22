@@ -74,6 +74,51 @@ Evidence (2026-10-18, local):
   index (digest changed in a local registry test), so retagging uses
   `skopeo copy --preserve-digests` and asserts the tag's digest; verified against a local registry.
 
+### Security sweep — 2026-10-20
+
+Cross-repository sweep (sibling: `gym-pulse-app/specs/002-production-readiness/tasks.md`).
+Three independent read-only review lanes (auth/ownership, persistence/infra, app client)
+found no critical or high defects; every DAO query on a user-owned table is scoped by
+`user_id` or reached through a user-scoped parent in the same transaction.
+
+- [x] Go 1.26.10 toolchain and digest-pinned builder/runtime images (GO-2026-6809);
+  chi v5.5.0 (GO-2026-5774/5775/5777, `RealIP` was never used). govulncheck: 0 reachable.
+- [x] Staging/production refuse `DATABASE_URL` / `DATABASE_LOCK_URL` without
+  `sslmode=require|verify-ca|verify-full` (pgx otherwise defaults to `prefer`).
+- [x] Security response headers on every route; `Cache-Control: no-store` on `/api/*`;
+  Swagger UI no longer mounted in production.
+- [x] Per-user rate limits (`429 RATE_LIMITED`) on avatar upload, account deletion,
+  schedule rewrites, and plan transitions. Keyed by JWT subject, never by IP.
+- [x] Training-block idempotency hashes now bind the target block/exposure id.
+- [x] Starter-program filters reject malformed or oversized values (422); exercise
+  history/records cap `ids` at 100; `avatar_url` on `PUT /profile` must be `https://`.
+- [x] `.dockerignore` excludes worktrees, agent config, specs, and docs; RLS inventory
+  text corrected to migrations 016/018/019/025 across 30 tables.
+- Evidence: `go test ./...` and `-race` on middleware/router pass; package coverage
+  service 90.5%, middleware 91.0%, handler 92.3%, router 100%, config 99.2%;
+  golangci-lint 0 issues; Swagger drift none; database-design gate passes;
+  `validate-supabase-security.sh` passes against the local migrated schema;
+  `smoke.sh` 23/23 against an image built from this branch.
+- Accepted/unchanged: public avatar URLs are predictable by design (public bucket);
+  migrations still run under the runtime role (least-privilege role remains a target).
+
+### Merge with main — 2026-10-22
+
+- [x] Reconcile with spec 011 (least-privilege runtime role): `./migrate`, development/test boot
+  migrations, and the startup schema check all use `DATABASE_MIGRATE_URL` (schema owner); the
+  check runs over a short-lived owner connection (`migration.RequireCurrentAt`) because
+  `gym_pulse_api` cannot read `schema_migrations`. Railway preserves `DATABASE_MIGRATE_URL`.
+- [x] CI integration step keeps main's unfiltered run and adds `./internal/migration`.
+- Evidence: lint 0 issues; `go test -race ./...` passes; coverage service 90.5%, middleware 91.0%,
+  handler 92.3%, router 100%, config 99.2%; database-design gate and Swagger drift clean;
+  actionlint clean. With TLS PostgreSQL and `scripts/ci/runtime-role.sql`: CI layout
+  (`ENVIRONMENT=test`, requests as `gym_pulse_api`) passes `smoke.sh` 23/23 and
+  `validate-supabase-security.sh`. `ENVIRONMENT=staging` on a fresh database: the server exits
+  ("behind … want 26"); `./migrate` over the owner URL reaches 26; `gym_pulse_api` gets
+  `permission denied for table schema_migrations`, confirming the owner-connection check is
+  required; the server then serves `/health` and `/ready`, and keeps serving with a repair warning
+  when the schema is dirty at 27.
+
 ## Phase 1: Convergence
 
 - [x] T001 CRITICAL: take `context.Context` first in `migration.Up` (connection via `postgres.WithConnection`, graceful stop between migrations on cancel) and cancel `cmd/migrate` on SIGINT/SIGTERM per Constitution V (contradicts)

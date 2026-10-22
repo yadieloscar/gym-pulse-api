@@ -39,11 +39,13 @@ container gates, enforce accurate statement coverage, and run CI on the protecte
 ## Phase 5 — Deployment pipeline (amended 2026-10-18)
 
 - Move migration execution into `internal/migration` with `Up` (golang-migrate over a session-mode
-  URL) and `RequireCurrent` (reads `public.schema_migrations` through the query pool without advisory
-  locks, so it is safe over the transaction pooler). Both pin the version table to
-  `public.schema_migrations`, so differing search paths on the two URLs cannot split them. Add `cmd/migrate`, which loads the full config and
-  migrates over `DATABASE_LOCK_URL`; the config already rejects port 6543 for that URL in release
-  environments, and golang-migrate needs the same session semantics for its advisory lock.
+  URL) and `RequireCurrent` (reads `public.schema_migrations` with a plain query and no advisory
+  locks). Both pin the version table to `public.schema_migrations`. Add `cmd/migrate`, which loads
+  the full config and migrates over `DATABASE_MIGRATE_URL` (spec 011's schema-owner connection);
+  the config rejects port 6543 and non-TLS for that URL in release environments, and
+  golang-migrate needs session semantics for its advisory lock. The startup check
+  (`RequireCurrentAt`) uses a short-lived connection on the same owner URL, because spec 011's
+  `gym_pulse_api` request role cannot read `schema_migrations`.
 - `cmd/server` migrates on boot only in development/test; staging/production call `RequireCurrent`
   and exit if the schema is behind or dirty at or below the image's newest migration. Accepting a
   newer schema keeps rollback images usable; a dirty newer version (`ErrSchemaDirtyAhead`) only

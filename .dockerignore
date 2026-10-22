@@ -8,4 +8,12 @@
 *.out
 *.test
 coverage/
+# Agent worktrees and local tooling never belong in the build context.
+.worktrees/
+.claude/
+.agents/
+.specify/
+specs/
+docs/*.md
+# Railway IaC typecheck toolchain (node_modules) is not part of the image.
 .railway

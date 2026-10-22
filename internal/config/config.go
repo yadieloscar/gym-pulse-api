@@ -12,22 +12,31 @@ import (
 )
 
 var (
-	ErrMissingDatabaseURL      = errors.New("DATABASE_URL is required")
-	ErrMissingJWTConfig        = errors.New("SUPABASE_JWT_SECRET or SUPABASE_JWKS_URL is required")
-	ErrProductionAuth          = errors.New("staging and production require SUPABASE_JWT_AUDIENCE")
-	ErrProductionAdmin         = errors.New("staging and production require a canonical HTTPS SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
-	ErrSupabaseProjectMismatch = errors.New("supabase issuer and JWKS URLs must match SUPABASE_URL")
-	ErrProductionDatabaseLock  = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
-	ErrProductionCORS          = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
-	ErrInvalidEnvironment      = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
-	ErrInvalidDatabasePool     = errors.New("invalid database pool configuration")
+	ErrMissingDatabaseURL        = errors.New("DATABASE_URL is required")
+	ErrMissingJWTConfig          = errors.New("SUPABASE_JWT_SECRET or SUPABASE_JWKS_URL is required")
+	ErrProductionAuth            = errors.New("staging and production require SUPABASE_JWT_AUDIENCE")
+	ErrProductionAdmin           = errors.New("staging and production require a canonical HTTPS SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
+	ErrSupabaseProjectMismatch   = errors.New("supabase issuer and JWKS URLs must match SUPABASE_URL")
+	ErrProductionDatabaseLock    = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
+	ErrProductionDatabaseMigrate = errors.New("staging and production require a direct or session-mode DATABASE_MIGRATE_URL for the schema owner")
+	ErrProductionDatabaseTLS     = errors.New("staging and production require sslmode=require, verify-ca, or verify-full on DATABASE_URL, DATABASE_LOCK_URL, and DATABASE_MIGRATE_URL")
+	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
+	ErrInvalidEnvironment        = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
+	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
 )
 
 // Config holds the application configuration.
 type Config struct {
-	Port                string
-	DatabaseURL         string
-	DatabaseLockURL     string
+	Port            string
+	DatabaseURL     string
+	DatabaseLockURL string
+	// DatabaseMigrateURL connects as the schema owner and is used only for
+	// migrations: boot migrations in development/test, and the ./migrate release
+	// step plus the startup schema check in staging/production, which require it
+	// so DATABASE_URL
+	// can point at the least-privilege gym_pulse_api role; development and test
+	// default it to DATABASE_URL.
+	DatabaseMigrateURL  string
 	SupabaseJWTSecret   string
 	SupabaseJWKSURL     string
 	SupabaseJWTIssuer   string
@@ -48,7 +57,7 @@ type Config struct {
 	DatabaseHealthCheckPeriod time.Duration
 	// MigrateOnStart lets development and test servers apply migrations at
 	// boot. Staging and production run them as a separate release step over
-	// DatabaseLockURL and only verify the schema at startup.
+	// DatabaseMigrateURL and only verify the schema at startup.
 	MigrateOnStart bool
 }
 
@@ -97,6 +106,7 @@ func Load() (*Config, error) {
 
 	isReleaseEnvironment := env == "staging" || env == "production"
 	lockURL := strings.TrimSpace(os.Getenv("DATABASE_LOCK_URL"))
+	migrateURL := strings.TrimSpace(os.Getenv("DATABASE_MIGRATE_URL"))
 	if isReleaseEnvironment {
 		canonicalSupabaseURL, err := canonicalHTTPSBaseURL(supabaseURL)
 		if err != nil || serviceRoleKey == "" {
@@ -119,6 +129,14 @@ func Load() (*Config, error) {
 		if err := validateProductionLockURL(lockURL); err != nil {
 			return nil, err
 		}
+		if err := validateProductionMigrateURL(migrateURL); err != nil {
+			return nil, err
+		}
+		for _, databaseURL := range []string{dbURL, lockURL, migrateURL} {
+			if err := validateProductionDatabaseTLS(databaseURL); err != nil {
+				return nil, err
+			}
+		}
 
 		if len(origins) == 0 {
 			return nil, ErrProductionCORS
@@ -135,6 +153,9 @@ func Load() (*Config, error) {
 		}
 		if lockURL == "" {
 			lockURL = dbURL
+		}
+		if migrateURL == "" {
+			migrateURL = dbURL
 		}
 	}
 
@@ -175,6 +196,7 @@ func Load() (*Config, error) {
 		Port:                      port,
 		DatabaseURL:               dbURL,
 		DatabaseLockURL:           lockURL,
+		DatabaseMigrateURL:        migrateURL,
 		SupabaseJWTSecret:         jwtSecret,
 		SupabaseJWKSURL:           jwksURL,
 		SupabaseJWTIssuer:         issuer,
@@ -211,17 +233,52 @@ func canonicalHTTPSBaseURL(raw string) (string, error) {
 }
 
 func validateProductionLockURL(raw string) error {
-	if strings.TrimSpace(raw) == "" {
+	if !isSessionCapablePostgresURL(raw) {
 		return ErrProductionDatabaseLock
+	}
+	return nil
+}
+
+// validateProductionMigrateURL requires an explicit owner connection for
+// migrations. golang-migrate serializes runs with a session-level advisory
+// lock, so the Supavisor transaction-mode endpoint is rejected like the lock
+// URL.
+func validateProductionMigrateURL(raw string) error {
+	if !isSessionCapablePostgresURL(raw) {
+		return ErrProductionDatabaseMigrate
+	}
+	return nil
+}
+
+func isSessionCapablePostgresURL(raw string) bool {
+	if strings.TrimSpace(raw) == "" {
+		return false
 	}
 	parsed, err := url.ParseRequestURI(raw)
 	if err != nil ||
 		(parsed.Scheme != "postgres" && parsed.Scheme != "postgresql") ||
 		parsed.Host == "" ||
 		parsed.Port() == "6543" {
-		return ErrProductionDatabaseLock
+		return false
 	}
-	return nil
+	return true
+}
+
+// validateProductionDatabaseTLS rejects release database URLs that would let
+// pgx negotiate down to plaintext. pgx defaults to sslmode=prefer, which
+// silently falls back to an unencrypted connection when TLS fails, so the
+// credentials and every row would cross the network in the clear.
+func validateProductionDatabaseTLS(raw string) error {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return ErrProductionDatabaseTLS
+	}
+	switch parsed.Query().Get("sslmode") {
+	case "require", "verify-ca", "verify-full":
+		return nil
+	default:
+		return ErrProductionDatabaseTLS
+	}
 }
 
 func positiveInt32Env(name string, fallback int32) (int32, error) {

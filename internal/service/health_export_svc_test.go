@@ -14,20 +14,35 @@ import (
 
 type healthExportRepo struct {
 	recorded *model.HealthExport
-	key      string
-	hash     string
-	outcome  model.HealthExportOutcome
-	listed   []model.HealthExport
-	err      error
+	// ledger enables idempotency-ledger behavior: stored remembers the first
+	// record, repeats of its key replay or conflict on the hash.
+	ledger  bool
+	stored  *model.HealthExport
+	key     string
+	hash    string
+	outcome model.HealthExportOutcome
+	listed  []model.HealthExport
+	err     error
 }
 
+// Record passes outcome through. With ledger set it mirrors the DAO's
+// idempotency ledger: a repeated operation key with the same request hash
+// replays the stored record; a different hash conflicts.
 func (r *healthExportRepo) Record(_ context.Context, _ uuid.UUID, export *model.HealthExport, key, hash string) (*model.HealthExport, model.HealthExportOutcome, error) {
-	r.recorded, r.key, r.hash = export, key, hash
 	if r.err != nil {
+		r.recorded, r.key, r.hash = export, key, hash
 		return nil, model.HealthExportRecorded, r.err
 	}
+	if r.ledger && r.stored != nil && r.key == key {
+		if r.hash != hash {
+			return nil, model.HealthExportRecorded, &model.ConflictError{Message: "operation_key reused with a different payload"}
+		}
+		return r.stored, model.HealthExportReplayed, nil
+	}
+	r.recorded, r.key, r.hash = export, key, hash
 	result := *export
 	result.ID = uuid.New()
+	r.stored = &result
 	return &result, r.outcome, nil
 }
 
@@ -82,6 +97,53 @@ func TestHealthExportServiceClampsFutureExportedAt(t *testing.T) {
 	}
 	if !repo.recorded.ExportedAt.Equal(past) || repo.recorded.ExportedAt.Location() != time.UTC {
 		t.Fatalf("past exported_at should be kept in UTC, got %v", repo.recorded.ExportedAt)
+	}
+}
+
+// A client that omits exported_at and retries the same operation after the
+// clock moved must replay 201, not hit IDEMPOTENCY_CONFLICT: the request hash
+// is computed from what the client sent, not from the server-defaulted time.
+func TestHealthExportServiceVerbatimRetryWithoutExportedAtReplays(t *testing.T) {
+	repo := &healthExportRepo{ledger: true}
+	clock := time.Date(2026, 10, 14, 12, 0, 0, 0, time.UTC)
+	svc := &healthExportService{exports: repo, now: func() time.Time { return clock }}
+	userID, workoutID := uuid.New(), uuid.New()
+	req := model.RecordHealthExportRequest{Source: model.HealthExportSourceAppleHealth, ExternalID: "B5D7-1", OperationKey: "hk-export-1"}
+
+	first, outcome, err := svc.Record(context.Background(), userID, "scheduled_workout", workoutID, req)
+	if err != nil || outcome != model.HealthExportRecorded {
+		t.Fatalf("first call outcome=%v err=%v", outcome, err)
+	}
+	if !first.ExportedAt.Equal(clock) {
+		t.Fatalf("exported_at should default to now, got %v", first.ExportedAt)
+	}
+	firstHash := repo.hash
+
+	clock = clock.Add(90 * time.Second)
+	second, outcome, err := svc.Record(context.Background(), userID, "scheduled_workout", workoutID, req)
+	if err != nil {
+		t.Fatalf("verbatim retry must not conflict: %v", err)
+	}
+	if outcome != model.HealthExportReplayed || second.ID != first.ID {
+		t.Fatalf("retry outcome=%v id=%v want replay of %v", outcome, second.ID, first.ID)
+	}
+	if repo.hash != firstHash {
+		t.Fatalf("request hash changed between verbatim retries: %q then %q", firstHash, repo.hash)
+	}
+
+	// A different payload under the same key must still be detected: the hash
+	// has to cover the client-sent fields.
+	changed := req
+	changed.ExternalID = "B5D7-2"
+	var conflict *model.ConflictError
+	if _, _, err := svc.Record(context.Background(), userID, "scheduled_workout", workoutID, changed); !errors.As(err, &conflict) {
+		t.Fatalf("changed payload under the same key should conflict, got %v", err)
+	}
+	sent := time.Date(2026, 10, 13, 18, 42, 0, 0, time.UTC)
+	changed = req
+	changed.ExportedAt = &sent
+	if _, _, err := svc.Record(context.Background(), userID, "scheduled_workout", workoutID, changed); !errors.As(err, &conflict) {
+		t.Fatalf("client-sent exported_at must be part of the hash, got %v", err)
 	}
 }
 

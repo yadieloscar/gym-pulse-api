@@ -61,6 +61,27 @@ func main() {
 	logger := slog.New(slogHandler)
 	slog.SetDefault(logger)
 
+	// Migrations and the schema check use the schema-owner connection before
+	// any request pool opens: the request pools may connect as the
+	// least-privilege runtime role, which can neither run DDL nor read
+	// schema_migrations. Release environments migrate in a separate step
+	// (cmd/migrate) before deployment, so their servers only confirm they are
+	// not ahead of the schema.
+	if cfg.MigrateOnStart {
+		version, err := migration.Up(context.Background(), cfg.DatabaseMigrateURL, migration.Dir)
+		if err != nil {
+			logger.Error("failed to run migrations", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("migrations complete", "version", version)
+	} else if err := migration.RequireCurrentAt(context.Background(), cfg.DatabaseMigrateURL, migration.Dir); errors.Is(err, migration.ErrSchemaDirtyAhead) {
+		// A newer release's migration failed; keep this build serving.
+		logger.Warn("database schema needs repair before the next release", "error", err)
+	} else if err != nil {
+		logger.Error("database schema is not ready for this build; run ./migrate first", "error", err)
+		os.Exit(1)
+	}
+
 	// Connect to database.
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
@@ -85,23 +106,6 @@ func main() {
 		os.Exit(1) //nolint:gocritic // pool.Close defer intentionally skipped on fatal startup error
 	}
 	logger.Info("connected to database")
-
-	// Release environments migrate in a separate step (cmd/migrate) before
-	// deployment, so a server only confirms it is not ahead of the schema.
-	if cfg.MigrateOnStart {
-		version, err := migration.Up(context.Background(), cfg.DatabaseURL, migration.Dir)
-		if err != nil {
-			logger.Error("failed to run migrations", "error", err)
-			os.Exit(1)
-		}
-		logger.Info("migrations complete", "version", version)
-	} else if err := migration.RequireCurrent(context.Background(), pool, migration.Dir); errors.Is(err, migration.ErrSchemaDirtyAhead) {
-		// A newer release's migration failed; keep this build serving.
-		logger.Warn("database schema needs repair before the next release", "error", err)
-	} else if err != nil {
-		logger.Error("database schema is not ready for this build; run ./migrate first", "error", err)
-		os.Exit(1)
-	}
 
 	// Advisory locks must never consume the main query pool. A separate,
 	// bounded pool prevents N concurrent deletion/avatar operations from

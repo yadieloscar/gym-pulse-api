@@ -62,7 +62,9 @@ container vulnerabilities. Contract documentation matches executable behavior.
     `production` environment. An older commit whose CI finishes late never deploys.
     Deploys are serialized per environment, so a pending production approval never blocks staging.
 11. Staging and production servers never run migrations on boot. The release step `./migrate`
-    applies pending migrations over `DATABASE_LOCK_URL` (direct or session mode) before deployment.
+    applies pending migrations over `DATABASE_MIGRATE_URL` (the schema owner, direct or session
+    mode) before deployment; request connections may use the least-privilege runtime role
+    (spec 011).
 12. A staging or production server exits at startup when the recorded schema version is lower than
     the newest migration in its image, or is dirty at or below that version. A newer schema
     (rollback image) is accepted. A schema left dirty by a newer release's failed migration is

@@ -80,26 +80,58 @@ func (h *TrainingProfileHandler) Update(w http.ResponseWriter, r *http.Request) 
 // @Security BearerAuth
 // @Router /api/v1/starter-programs [get]
 func (h *ProgramHandler) ListStarters(w http.ResponseWriter, r *http.Request) {
-	filter := model.StarterProgramFilter{PrimaryGoal: r.URL.Query().Get("primary_goal"), Experience: r.URL.Query().Get("experience")}
-	if raw := r.URL.Query().Get("available_days"); raw != "" {
-		filter.AvailableDays, _ = strconv.Atoi(raw)
+	query := r.URL.Query()
+	filter := model.StarterProgramFilter{PrimaryGoal: query.Get("primary_goal"), Experience: query.Get("experience"), UsualActivity: query.Get("usual_activity")}
+	var err error
+	if filter.AvailableDays, err = optionalPositiveInt(query.Get("available_days"), "available_days"); err != nil {
+		handleServiceError(w, err)
+		return
 	}
-	if raw := r.URL.Query().Get("available_weekdays"); raw != "" {
+	if filter.SessionDurationMinutes, err = optionalPositiveInt(query.Get("session_duration_minutes"), "session_duration_minutes"); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	if raw := query.Get("available_weekdays"); raw != "" {
 		for value := range strings.SplitSeq(raw, ",") {
-			if day, err := strconv.Atoi(value); err == nil {
-				filter.AvailableWeekdays = append(filter.AvailableWeekdays, day)
+			day, err := strconv.Atoi(strings.TrimSpace(value))
+			if err != nil || day < 1 || day > 7 {
+				handleServiceError(w, &model.ValidationError{Message: "available_weekdays must contain ISO weekdays 1..7", Field: "available_weekdays"})
+				return
 			}
+			filter.AvailableWeekdays = append(filter.AvailableWeekdays, day)
+		}
+		if len(filter.AvailableWeekdays) > 7 {
+			handleServiceError(w, &model.ValidationError{Message: "available_weekdays must not exceed 7 values", Field: "available_weekdays"})
+			return
 		}
 	}
-	filter.UsualActivity = r.URL.Query().Get("usual_activity")
-	if raw := r.URL.Query().Get("session_duration_minutes"); raw != "" {
-		filter.SessionDurationMinutes, _ = strconv.Atoi(raw)
-	}
-	if raw := r.URL.Query().Get("equipment"); raw != "" {
+	if raw := query.Get("equipment"); raw != "" {
 		filter.Equipment = strings.Split(raw, ",")
+		if len(filter.Equipment) > maxStarterEquipmentFilters {
+			handleServiceError(w, &model.ValidationError{Message: "equipment must not exceed 32 values", Field: "equipment"})
+			return
+		}
 	}
 	programs, err := h.svc.ListStarters(r.Context(), filter)
 	respond(w, map[string]any{"starter_programs": programs}, err, http.StatusOK)
+}
+
+// maxStarterEquipmentFilters bounds the array literal handed to the catalog
+// overlap query; the canonical equipment vocabulary has fewer than ten values.
+const maxStarterEquipmentFilters = 32
+
+// optionalPositiveInt parses an optional numeric filter. Silently coercing a
+// malformed value to zero would turn a client bug into "no filter", so
+// anything that is not a positive integer is a validation error.
+func optionalPositiveInt(raw, field string) (int, error) {
+	if raw == "" {
+		return 0, nil
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return 0, &model.ValidationError{Message: field + " must be a positive integer", Field: field}
+	}
+	return value, nil
 }
 
 // List lists authenticated user-owned programs.

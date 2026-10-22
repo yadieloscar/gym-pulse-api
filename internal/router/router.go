@@ -43,13 +43,18 @@ func New(
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestIDHeaderMiddleware)
 	r.Use(middleware.LoggingMiddleware(logger))
+	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 	r.Use(chimiddleware.Recoverer)
 
 	// Public routes.
 	r.Get("/health", handler.HealthCheck)
 	r.Get("/ready", readinessHandler.ServeHTTP)
-	r.Get("/docs/*", httpswagger.WrapHandler)
+	// The Swagger UI is a development aid. docs/CONTRACTS.md is the client
+	// contract, so production has no reason to publish the route inventory.
+	if cfg.Environment != "production" {
+		r.Get("/docs/*", httpswagger.WrapHandler)
+	}
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
@@ -58,7 +63,7 @@ func New(
 		// A cryptographically valid JWT may retry deletion cleanup after the
 		// auth identity itself has already been removed. No other route gets
 		// this exception.
-		r.Delete("/api/v1/account", accountHandler.Delete)
+		r.With(middleware.RateLimitPerUser(middleware.StorageBoundLimit)).Delete("/api/v1/account", accountHandler.Delete)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireActiveUser(activeUserChecker))
@@ -78,11 +83,14 @@ func New(
 					})
 				})
 				r.Get("/schedule", scheduleHandler.List)
-				r.Post("/schedule/materialize", scheduleHandler.Materialize)
-				r.Post("/schedule/regenerate", scheduleHandler.Regenerate)
-				r.Post("/schedule/recover", scheduleHandler.Recover)
-				r.Post("/plan-transitions/preview", planTransitionHandler.Preview)
-				r.Post("/plan-transitions/apply", planTransitionHandler.Apply)
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RateLimitPerUser(middleware.ScheduleRewriteLimit))
+					r.Post("/schedule/materialize", scheduleHandler.Materialize)
+					r.Post("/schedule/regenerate", scheduleHandler.Regenerate)
+					r.Post("/schedule/recover", scheduleHandler.Recover)
+					r.Post("/plan-transitions/preview", planTransitionHandler.Preview)
+					r.Post("/plan-transitions/apply", planTransitionHandler.Apply)
+				})
 				r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
 					r.Patch("/", scheduleHandler.Patch)
 					r.Put("/sets/{set_id}", scheduleHandler.PutSet)
@@ -156,7 +164,7 @@ func New(
 				// Profile
 				r.Get("/profile", profileHandler.Get)
 				r.Put("/profile", profileHandler.Update)
-				r.Put("/profile/avatar", profileHandler.UploadAvatar)
+				r.With(middleware.RateLimitPerUser(middleware.StorageBoundLimit)).Put("/profile/avatar", profileHandler.UploadAvatar)
 
 				// Exercise catalog (read-only v1)
 				r.Get("/exercises", exerciseCatalogHandler.List)

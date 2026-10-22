@@ -43,7 +43,13 @@ golangci-lint run # when available; mirrors the CI lint policy
 go test ./...
 ./scripts/validate-database-design.sh # any migration or docs/DATABASE_DESIGN.md change
 ./scripts/smoke-toggle.sh # handler, validator, middleware, or contract changes
+GYMPULSE_TEST_DATABASE_URL=<disposable migrated db> go test -race -tags=integration ./internal/dao -count=1 # DAO or migration changes
 ```
+
+`go test ./...` does not exercise the DAO against PostgreSQL. Every DB-backed DAO test is behind
+the `integration` build tag and needs `GYMPULSE_TEST_DATABASE_URL`; CI runs the whole tagged suite
+(no `-run` filter) in the `smoke` job. Run it locally for any DAO, transaction, or migration change,
+and put new database-backed tests in `//go:build integration` files.
 
 `./scripts/validate-database-design.sh` needs no database: it compares the tables, columns, and
 named indexes in `docs/DATABASE_DESIGN.md` against `migrations/*.up.sql` as exact sets. Run it in

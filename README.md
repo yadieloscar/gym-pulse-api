@@ -82,8 +82,9 @@ One-time setup, the release order, and rollback are in
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | — | PostgreSQL connection string |
-| `DATABASE_LOCK_URL` | Staging/production | `DATABASE_URL` in development/test | Direct or session-mode PostgreSQL connection for session advisory locks and the `./migrate` release step; Supavisor transaction mode (`:6543`) is rejected |
+| `DATABASE_URL` | Yes | — | PostgreSQL connection for requests. In staging/production this connects as the least-privilege `gym_pulse_api` role (DML plus RLS policies only) |
+| `DATABASE_LOCK_URL` | Staging/production | `DATABASE_URL` in development/test | Direct or session-mode PostgreSQL connection for session advisory locks; Supavisor transaction mode (`:6543`) is rejected |
+| `DATABASE_MIGRATE_URL` | Staging/production | `DATABASE_URL` in development/test | Schema-owner connection used only for migrations: the `./migrate` release step and the startup schema check in staging/production, boot migrations in development/test; must be direct or session-mode (`:6543` rejected) and TLS like the other database URLs |
 | `SUPABASE_URL` | Staging/production | — | Canonical Supabase project URL used to derive the production JWT issuer and JWKS endpoint |
 | `SUPABASE_SERVICE_ROLE_KEY` | Staging/production | — | Server-only credential for avatar and auth-user deletion |
 | `SUPABASE_JWT_SECRET` | Development/test | — | Legacy local HMAC token validation; production uses JWKS derived from `SUPABASE_URL` |
