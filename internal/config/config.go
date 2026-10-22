@@ -30,8 +30,10 @@ type Config struct {
 	Port            string
 	DatabaseURL     string
 	DatabaseLockURL string
-	// DatabaseMigrateURL connects as the schema owner and is used only to run
-	// migrations at startup. Staging and production require it so DATABASE_URL
+	// DatabaseMigrateURL connects as the schema owner and is used only for
+	// migrations: boot migrations in development/test, and the ./migrate release
+	// step plus the startup schema check in staging/production, which require it
+	// so DATABASE_URL
 	// can point at the least-privilege gym_pulse_api role; development and test
 	// default it to DATABASE_URL.
 	DatabaseMigrateURL  string
@@ -53,6 +55,10 @@ type Config struct {
 	DatabaseMaxConnLifetime   time.Duration
 	DatabaseMaxConnIdleTime   time.Duration
 	DatabaseHealthCheckPeriod time.Duration
+	// MigrateOnStart lets development and test servers apply migrations at
+	// boot. Staging and production run them as a separate release step over
+	// DatabaseMigrateURL and only verify the schema at startup.
+	MigrateOnStart bool
 }
 
 // Load reads configuration from environment variables.
@@ -207,6 +213,7 @@ func Load() (*Config, error) {
 		DatabaseMaxConnLifetime:   maxConnLifetime,
 		DatabaseMaxConnIdleTime:   maxConnIdleTime,
 		DatabaseHealthCheckPeriod: healthCheckPeriod,
+		MigrateOnStart:            !isReleaseEnvironment,
 	}, nil
 }
 

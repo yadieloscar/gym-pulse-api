@@ -50,8 +50,10 @@
 
 ### `GET /health`
 
-Process liveness. Returns `200 {"status":"ok"}` while the HTTP process is
-running; it does not query dependencies.
+Process liveness. Returns `200 {"status":"ok","version":"<build>"}` while the
+HTTP process is running; it does not query dependencies. `version` is the
+source commit the image was built from, or `dev` for local builds. Deployments
+use it to confirm which build is serving; clients must not depend on its format.
 
 ### `GET /ready`
 

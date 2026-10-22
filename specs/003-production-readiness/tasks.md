@@ -37,6 +37,43 @@
   to 0.55.0 and apply Alpine security updates when building the runtime image.
   The initial PR smoke passed; rerun the complete pipeline after these fixes.
 
+### Deployment pipeline — 2026-10-18
+
+- [x] Add `internal/migration` (`Up`, `RequireCurrent`) with unit and integration tests.
+- [x] Add `cmd/migrate`; stop boot migrations in staging/production and gate startup on schema state.
+- [x] Add `internal/buildinfo.Version` to `/health`; update `docs/CONTRACTS.md` and Swagger.
+- [x] Build `server` and `migrate` with the version ldflag in the Dockerfile.
+- [x] Add `.railway/railway.ts` and typecheck it in CI.
+- [x] Add `.github/workflows/deploy.yml` (build once, staging, approved production).
+- [x] Update `docs/RELEASE_RUNBOOK.md` and `README.md` with setup and the release step.
+- [x] Run API gates, actionlint, container build, and an independent review.
+- [ ] Owner: provision Railway, GitHub `staging`/`production` environments, and GHCR pull access
+  (public package, or a read token with Railway Pro), then run the first deploy. Unverified until then.
+
+Evidence (2026-10-18, local):
+- `golangci-lint run` 0 issues; `go test ./...` passes; coverage service 90.5%, middleware 90.4%,
+  handler 92.1%, router/config 100%; `govulncheck` no reachable findings; `actionlint` clean.
+- `-tags=integration` `TestRelease*` in `internal/dao` and `internal/migration` pass on PostgreSQL 16.
+- Container, `ENVIRONMENT=staging`: server exits on an unmigrated schema ("behind … want 25");
+  `./migrate` reaches 25 and repeats as a no-op; server then serves `/health` with the build
+  version and `/ready` 200. `scripts/wait-for-deploy.sh` passes on a match and fails on a stale build.
+- `scripts/smoke.sh` 23/23 against the new image in `ENVIRONMENT=test` (boot migration path),
+  reproducing `smoke-toggle.sh`'s steps (JWKS off, seeded `auth.users` row, `smoke.sh`) on an
+  isolated container. `smoke-toggle.sh` itself was not run: it recreates the shared workspace
+  container from the main checkout's image (`--no-build`), so it cannot exercise this branch and
+  would disturb other sessions. CI's `smoke` job runs the same steps on the PR image.
+- `go test -race ./...` passes (no concurrency changes; run because the plan lists it).
+- `.railway/railway.ts` typechecks against `railway@3.12.0` and evaluates for staging/production;
+  other environments throw. `railway config plan`, GHCR push, and Railway redeploy are unverified
+  until the owner setup in `docs/RELEASE_RUNBOOK.md` exists.
+- Independent review (no blockers) fixed: per-environment job concurrency instead of a workflow
+  group; only the tip of `main` deploys; a dirty schema newer than the build warns instead of
+  blocking the serving build's restarts; the version table is pinned to `public.schema_migrations`;
+  digest from `buildx --metadata-file`; inputs passed via `env`; rollback waits for the old commit.
+- Found while verifying: `docker buildx imagetools create` re-wraps a single manifest in a new
+  index (digest changed in a local registry test), so retagging uses
+  `skopeo copy --preserve-digests` and asserts the tag's digest; verified against a local registry.
+
 ### Security sweep — 2026-10-20
 
 Cross-repository sweep (sibling: `gym-pulse-app/specs/002-production-readiness/tasks.md`).
@@ -64,3 +101,25 @@ found no critical or high defects; every DAO query on a user-owned table is scop
   `smoke.sh` 23/23 against an image built from this branch.
 - Accepted/unchanged: public avatar URLs are predictable by design (public bucket);
   migrations still run under the runtime role (least-privilege role remains a target).
+
+### Merge with main — 2026-10-22
+
+- [x] Reconcile with spec 011 (least-privilege runtime role): `./migrate`, development/test boot
+  migrations, and the startup schema check all use `DATABASE_MIGRATE_URL` (schema owner); the
+  check runs over a short-lived owner connection (`migration.RequireCurrentAt`) because
+  `gym_pulse_api` cannot read `schema_migrations`. Railway preserves `DATABASE_MIGRATE_URL`.
+- [x] CI integration step keeps main's unfiltered run and adds `./internal/migration`.
+- Evidence: lint 0 issues; `go test -race ./...` passes; coverage service 90.5%, middleware 91.0%,
+  handler 92.3%, router 100%, config 99.2%; database-design gate and Swagger drift clean;
+  actionlint clean. With TLS PostgreSQL and `scripts/ci/runtime-role.sql`: CI layout
+  (`ENVIRONMENT=test`, requests as `gym_pulse_api`) passes `smoke.sh` 23/23 and
+  `validate-supabase-security.sh`. `ENVIRONMENT=staging` on a fresh database: the server exits
+  ("behind … want 26"); `./migrate` over the owner URL reaches 26; `gym_pulse_api` gets
+  `permission denied for table schema_migrations`, confirming the owner-connection check is
+  required; the server then serves `/health` and `/ready`, and keeps serving with a repair warning
+  when the schema is dirty at 27.
+
+## Phase 1: Convergence
+
+- [x] T001 CRITICAL: take `context.Context` first in `migration.Up` (connection via `postgres.WithConnection`, graceful stop between migrations on cancel) and cancel `cmd/migrate` on SIGINT/SIGTERM per Constitution V (contradicts)
+- [x] T002 Justify the Dockerfile's `-trimpath` build flag in the plan per plan: Phase 5 (unrequested)
