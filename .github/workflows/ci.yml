@@ -205,10 +205,15 @@ jobs:
       - name: Run smoke
         run: ./scripts/smoke.sh
 
-      - name: PostgreSQL rollback and concurrency acceptance
+      - name: PostgreSQL DAO integration suite
         env:
           GYMPULSE_TEST_DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
-        run: go test -race -tags=integration ./internal/dao -run '^TestRelease' -count=1 -timeout=5m
+        run: |
+          # Every DB-backed DAO test lives behind the `integration` build tag
+          # and runs here against the migrated smoke database. No -run filter:
+          # a new integration test must not need a `TestRelease` prefix to be
+          # executed in CI.
+          go test -race -tags=integration ./internal/dao -count=1 -timeout=5m
 
       - name: Tear down
         if: always()

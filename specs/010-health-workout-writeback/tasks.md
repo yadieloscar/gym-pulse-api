@@ -18,6 +18,7 @@ description: "Implementation tasks for remembering a workout's health export"
 | --- | --- | --- | --- |
 | FR-001, FR-005, US2 | T004, T010, T012 | handler list test; `[]` when empty; range rule | Passed 2026-10-14 (`TestHealthExportHandlerList`; service range test) |
 | FR-002, US1/AC1–AC3, SC-001 | T006, T008, T011 | DAO existing/conflict tests; handler 201 → 200 → 409 | Passed in unit tests; smoke 13c proved 201, 200, 409, and the list on a live database |
+| FR-002 verbatim retry (contract: "A verbatim idempotent retry replays 201") | T017 | `TestHealthExportServiceVerbatimRetryWithoutExportedAtReplays`; smoke 13c same-key retry | Fixed 2026-10-21: the request hash was computed after `exported_at` defaulted to now, so a retry omitting it returned 409 `IDEMPOTENCY_CONFLICT`. Hash now covers the client-sent request; test fails on the old code, passes on the fix; smoke 23/23 on an isolated stack |
 | FR-003, US1/AC4–AC5, SC-003 | T006, T008 | DAO not-finished, missing, foreign → `NotFoundError` | Passed (source predicates asserted; smoke 13c missing day_log → 404) |
 | FR-004 | T005, T009 | service validation table | Passed (`TestHealthExportServiceValidation`) |
 | FR-006 | T006 | DAO source test: only `SELECT` on workout tables | Passed (`TestHealthExportDAOOnlyReadsWorkoutTables`) |
@@ -56,6 +57,7 @@ description: "Implementation tasks for remembering a workout's health export"
 - [x] T014 Run `gofmt -w`, `./scripts/validate-database-design.sh`, `go test ./...`, `golangci-lint run`
 - [x] T015 Add smoke step 15: record → replay → conflict → list; run `./scripts/smoke-toggle.sh` (or the isolated acceptance stack)
 - [x] T016 Run the Supabase security SQL against the migrated database; record results in the table above
+- [x] T017 Fix `health_export_svc.go` so the idempotency hash excludes the server-defaulted `exported_at`; add the verbatim-retry service test and the same-key replay assertion to smoke step 13c
 
 ## Dependencies & Execution Order
 

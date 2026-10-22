@@ -30,14 +30,13 @@ func NewHealthExportService(exports dao.HealthExportDAO) HealthExportService {
 func (s *healthExportService) Record(ctx context.Context, userID uuid.UUID, kind string, workoutID uuid.UUID, req model.RecordHealthExportRequest) (*model.HealthExport, model.HealthExportOutcome, error) {
 	req.ExternalID = strings.TrimSpace(req.ExternalID)
 	req.OperationKey = strings.TrimSpace(req.OperationKey)
-	now := s.now().UTC()
-	if req.ExportedAt == nil || req.ExportedAt.After(now) {
-		req.ExportedAt = &now
-	}
 	exportKind, err := validateHealthExportRequest(kind, req)
 	if err != nil {
 		return nil, model.HealthExportRecorded, err
 	}
+	// Hash the request as the client sent it. Server-defaulted fields such as
+	// exported_at depend on the clock, so including them would make a verbatim
+	// retry hash differently and surface as an idempotency conflict.
 	hash, err := hashPayload(struct {
 		Kind      string
 		WorkoutID uuid.UUID
@@ -46,12 +45,17 @@ func (s *healthExportService) Record(ctx context.Context, userID uuid.UUID, kind
 	if err != nil {
 		return nil, model.HealthExportRecorded, err
 	}
+	now := s.now().UTC()
+	exportedAt := now
+	if req.ExportedAt != nil && !req.ExportedAt.After(now) {
+		exportedAt = req.ExportedAt.UTC()
+	}
 	export := &model.HealthExport{
 		WorkoutKind: exportKind,
 		WorkoutID:   workoutID,
 		Source:      req.Source,
 		ExternalID:  req.ExternalID,
-		ExportedAt:  req.ExportedAt.UTC(),
+		ExportedAt:  exportedAt,
 	}
 	return s.exports.Record(ctx, userID, export, req.OperationKey, hash)
 }
