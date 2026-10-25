@@ -85,6 +85,10 @@ func (s *sportActivityService) Create(ctx context.Context, userID uuid.UUID, req
 		DistanceMeters:  req.DistanceMeters,
 		EnergyKcal:      req.EnergyKcal,
 		AvgHeartRateBPM: req.AvgHeartRateBPM,
+		// The DAO resolves the session inside the create transaction: a
+		// foreign id is a 404, an exercise workout or sport mismatch a 422,
+		// and a completed session a SPORT_SESSION_CONFLICT.
+		ScheduledWorkoutID: req.ScheduledWorkoutID,
 	}
 	return s.activities.Create(ctx, userID, activity, profile.Timezone, req.OperationKey, hash)
 }

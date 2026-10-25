@@ -140,6 +140,11 @@
   `sport` object and omits or sends an empty `exercises` array.
 - Recording validation order: ownership (404), kind (422 `scheduled_workout_id`), sport match
   (422 `sport_id`), already completed (409), then the activity's own rules.
+- `PATCH /scheduled-workouts/{id}` on a sport session accepts a `name` change and rejects a
+  non-empty `required_sets` with 422 `kind`; renaming keeps the sport snapshot. (Analysis finding
+  U1, 2026-10-25.)
+- Weekly planned-versus-done has no API endpoint; the app derives it from the schedule, which now
+  carries sport sessions. `/stats` is unchanged. (Analysis finding U2, 2026-10-25.)
 - A program `PUT` still re-creates `program_workouts`; scheduled sport sessions keep their snapshot
   and lose `program_workout_id`, exactly as exercise workouts do today.
 - Starter programs, `from-starter`, and `adopt-legacy` produce `kind = 'exercises'` only.

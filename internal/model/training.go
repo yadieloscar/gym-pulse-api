@@ -176,13 +176,74 @@ type Program struct {
 	UpdatedAt        time.Time        `json:"updated_at"`
 }
 
+// UnitKind says whether a program or scheduled unit is an exercise workout or
+// a planned sport session.
+type UnitKind string
+
+const (
+	// UnitKindExercises is a set-based workout; the default for every unit
+	// created before planned sport sessions existed.
+	UnitKindExercises UnitKind = "exercises"
+	// UnitKindSport is a planned sport session completed by a linked sport
+	// activity.
+	UnitKindSport UnitKind = "sport"
+)
+
+// NormalizeUnitKind treats an absent kind as exercises so older clients and
+// rows keep their shape.
+func NormalizeUnitKind(kind UnitKind) UnitKind {
+	if kind == "" {
+		return UnitKindExercises
+	}
+	return kind
+}
+
+// DistanceSports are the sport identifiers that may carry a planned distance.
+var DistanceSports = map[string]bool{"cycling": true, "running": true, "swimming": true, "other": true}
+
+// SportTarget is the planned sport snapshot of a sport unit.
+type SportTarget struct {
+	SportID               string  `json:"sport_id"`
+	SportName             string  `json:"sport_name"`
+	TargetDurationMinutes int     `json:"target_duration_minutes"`
+	TargetDistanceMeters  *int    `json:"target_distance_meters,omitempty"`
+	Notes                 *string `json:"notes,omitempty"`
+}
+
+// Copy returns a value copy with its own pointer fields.
+func (t SportTarget) Copy() SportTarget {
+	out := t
+	if t.TargetDistanceMeters != nil {
+		distance := *t.TargetDistanceMeters
+		out.TargetDistanceMeters = &distance
+	}
+	if t.Notes != nil {
+		notes := *t.Notes
+		out.Notes = &notes
+	}
+	return out
+}
+
+// ScheduledSport is the sport snapshot of a scheduled sport session plus the
+// activity that completed it, when one exists.
+type ScheduledSport struct {
+	SportTarget
+	SportActivityID *uuid.UUID `json:"sport_activity_id,omitempty"`
+	PerformedDate   *string    `json:"performed_date,omitempty"`
+}
+
 type ProgramWorkout struct {
 	ID               uuid.UUID         `json:"id"`
+	Kind             UnitKind          `json:"kind"`
 	Name             string            `json:"name"`
 	PreferredWeekday *int              `json:"preferred_weekday,omitempty"`
 	SequencePosition int               `json:"sequence_position"`
+	Sport            *SportTarget      `json:"sport,omitempty"`
 	Exercises        []ProgramExercise `json:"exercises"`
 }
+
+// IsSport reports whether the unit is a planned sport session.
+func (w ProgramWorkout) IsSport() bool { return NormalizeUnitKind(w.Kind) == UnitKindSport }
 
 type ProgramExercise struct {
 	ID                      uuid.UUID  `json:"id"`
@@ -342,26 +403,42 @@ func NextFutureWeek(now time.Time, timezone string) (string, string, error) {
 }
 
 type ScheduledWorkout struct {
-	ID               uuid.UUID      `json:"id"`
-	ProgramID        *uuid.UUID     `json:"program_id,omitempty"`
-	ProgramWorkoutID *uuid.UUID     `json:"program_workout_id,omitempty"`
-	Date             string         `json:"date"`
-	Name             string         `json:"name"`
-	SequencePosition *int           `json:"sequence_position,omitempty"`
-	Status           string         `json:"status"`
-	FinalizedAt      *time.Time     `json:"finalized_at,omitempty"`
-	Resolution       *string        `json:"resolution,omitempty" enums:"skipped,recovered"`
-	ResolvedAt       *time.Time     `json:"resolved_at,omitempty"`
-	Revision         int64          `json:"revision"`
-	RequiredSets     []ScheduledSet `json:"required_sets"`
-	ExtraSets        []PerformedSet `json:"extra_sets"`
-	CreatedAt        time.Time      `json:"created_at"`
-	UpdatedAt        time.Time      `json:"updated_at"`
+	ID               uuid.UUID       `json:"id"`
+	Kind             UnitKind        `json:"kind"`
+	ProgramID        *uuid.UUID      `json:"program_id,omitempty"`
+	ProgramWorkoutID *uuid.UUID      `json:"program_workout_id,omitempty"`
+	Date             string          `json:"date"`
+	Name             string          `json:"name"`
+	SequencePosition *int            `json:"sequence_position,omitempty"`
+	Sport            *ScheduledSport `json:"sport,omitempty"`
+	Status           string          `json:"status"`
+	FinalizedAt      *time.Time      `json:"finalized_at,omitempty"`
+	Resolution       *string         `json:"resolution,omitempty" enums:"skipped,recovered"`
+	ResolvedAt       *time.Time      `json:"resolved_at,omitempty"`
+	Revision         int64           `json:"revision"`
+	RequiredSets     []ScheduledSet  `json:"required_sets"`
+	ExtraSets        []PerformedSet  `json:"extra_sets"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
+
+// IsSport reports whether the scheduled unit is a sport session.
+func (w ScheduledWorkout) IsSport() bool { return NormalizeUnitKind(w.Kind) == UnitKindSport }
 
 func (w ScheduledWorkout) Validate() error {
 	if !IsValidWorkoutStatus(w.Status) {
 		return validationError("status", "unknown scheduled workout status")
+	}
+	if w.IsSport() {
+		if w.Sport == nil {
+			return validationError("sport", "sport sessions require a sport snapshot")
+		}
+		if len(w.RequiredSets) > 0 || len(w.ExtraSets) > 0 {
+			return validationError("kind", "sport sessions have no sets")
+		}
+		if w.Status == WorkoutStatusInProgress || w.Status == WorkoutStatusIncomplete {
+			return validationError("status", "sport sessions are planned, completed, or missed")
+		}
 	}
 	for _, set := range w.RequiredSets {
 		if err := set.Validate(); err != nil {

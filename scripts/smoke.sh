@@ -15,6 +15,7 @@
 #   8. sport creation is idempotent and records participation for the date
 #   9. an imported health workout is created once; re-import answers 200
 #  10. a finished workout's health export is recorded once (201, 200, 409)
+#  11. a sport unit schedules a session completed once by a linked activity
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -575,6 +576,69 @@ if [ -n "${workout_id:-}" ]; then
   fi
 else
   bad "health export acceptance skipped: no finalized scheduled workout id from step 10" ""
+fi
+
+# ---------- 13d. planned sport session ----------
+step "13d. a sport unit schedules a session that one linked sport activity completes"
+read -r sport_week_from sport_week_to <<EOF
+$(python3 - <<'PY'
+from datetime import date, timedelta
+today=date.today(); monday=today+timedelta(days=(7-today.weekday())%7)+timedelta(days=14)
+print(monday.isoformat(), (monday+timedelta(days=6)).isoformat())
+PY
+)
+EOF
+sport_program_op="smoke-sport-program-v1"
+sport_program_payload="{\"name\":\"Smoke mixed week\",\"primary_goal\":\"strength\",\"roadmap\":{},\"operation_key\":\"$sport_program_op\",\"workouts\":[{\"name\":\"Smoke lift\",\"sequence_position\":1,\"exercises\":[{\"name\":\"Air Squat\",\"category\":\"legs\",\"modality\":\"strength\",\"exercise_order\":1,\"target_sets\":2,\"target_reps\":10}]},{\"kind\":\"sport\",\"name\":\"Smoke ride\",\"sequence_position\":2,\"sport\":{\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"target_duration_minutes\":90,\"target_distance_meters\":40000}}]}"
+sport_program_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_program_op" -d "$sport_program_payload")
+sport_program_body=$(cat /tmp/smoke.body)
+sport_program_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$sport_program_body" 2>/dev/null || true)
+sport_program_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$sport_program_body" 2>/dev/null || true)
+sport_unit_ok=$(python3 -c "import json,sys; w=json.loads(sys.argv[1])['workouts']; assert w[0]['kind']=='exercises' and 'sport' not in w[0]; assert w[1]['kind']=='sport' and w[1]['sport']['sport_id']=='cycling' and w[1]['sport']['target_distance_meters']==40000 and w[1]['exercises']==[]; print('yes')" "$sport_program_body" 2>/dev/null || echo no)
+sport_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-program-bad" \
+  -d "{\"name\":\"Bad\",\"primary_goal\":\"strength\",\"roadmap\":{},\"operation_key\":\"smoke-sport-program-bad\",\"workouts\":[{\"kind\":\"sport\",\"name\":\"Spike\",\"sequence_position\":1,\"sport\":{\"sport_id\":\"volleyball\",\"sport_name\":\"Volleyball\",\"target_duration_minutes\":60,\"target_distance_meters\":5000}}]}")
+sport_bad_body=$(cat /tmp/smoke.body)
+if [ "$sport_program_status" = "201" ] && [ "$sport_unit_ok" = "yes" ] && [ "$sport_bad_status" = "422" ] && [ -n "$sport_program_id" ]; then
+  sport_materialize_op="smoke-sport-materialize-v1"
+  sm_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/schedule/materialize" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_materialize_op" \
+    -d "{\"program_id\":\"$sport_program_id\",\"from\":\"$sport_week_from\",\"to\":\"$sport_week_to\",\"operation_key\":\"$sport_materialize_op\",\"expected_revision\":$sport_program_revision}")
+  sm_body=$(cat /tmp/smoke.body)
+  sport_session_id=$(python3 -c "import json,sys; rows=[w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['kind']=='sport']; assert rows and rows[0]['status']=='planned' and rows[0]['required_sets']==[] and rows[0]['sport']['sport_id']=='cycling' and 'sport_activity_id' not in rows[0]['sport']; print(rows[0]['id'])" "$sm_body" 2>/dev/null || true)
+  sport_session_revision=$(python3 -c "import json,sys; print([w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['kind']=='sport'][0]['revision'])" "$sm_body" 2>/dev/null || true)
+  if [ "$sm_status" != "201" ] || [ -z "$sport_session_id" ]; then
+    bad "sport unit did not materialize as a planned sport session (status=$sm_status)" "$(echo "$sm_body" | head -c 280)"
+  else
+    # The session date is in the future, so record it as performed today (performed date may differ).
+    record_op="smoke-sport-record-v1"
+    record_payload="{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":95,\"distance_meters\":42000,\"operation_key\":\"$record_op\",\"scheduled_workout_id\":\"$sport_session_id\"}"
+    record_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $record_op" -d "$record_payload")
+    record_body=$(cat /tmp/smoke.body)
+    record_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $record_op" -d "$record_payload")
+    record_replay_body=$(cat /tmp/smoke.body)
+    record_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-record-v2" \
+      -d "{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":60,\"operation_key\":\"smoke-sport-record-v2\",\"scheduled_workout_id\":\"$sport_session_id\"}")
+    record_again_body=$(cat /tmp/smoke.body)
+    sport_sched_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/schedule?from=$sport_week_from&to=$sport_week_to" "${auth[@]}")
+    sport_sched_body=$(cat /tmp/smoke.body)
+    sport_extra_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$sport_session_id/extra-sets" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-extra" \
+      -d "{\"operation_key\":\"smoke-sport-extra\",\"expected_revision\":$((sport_session_revision+1)),\"exercise_id\":null,\"exercise_name\":\"Push-Up\",\"exercise_category\":\"push\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":10,\"completed\":true}")
+    sport_extra_body=$(cat /tmp/smoke.body)
+    if [ "$record_status" = "201" ] && [ "$record_replay_status" = "201" ] && [ "$record_again_status" = "409" ] && [ "$sport_sched_status" = "200" ] && [ "$sport_extra_status" = "422" ] && \
+      python3 -c "import json,sys; a,r,c,s,e=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert a['id']==r['id'] and a['scheduled_workout_id']==sid and a['distance_meters']==42000; assert c['code']=='SPORT_SESSION_CONFLICT' and c['details']['status']=='completed' and c['resource']['id']==sid; row=[w for w in s['scheduled_workouts'] if w['id']==sid][0]; assert row['status']=='completed' and row['sport']['sport_activity_id']==a['id'] and row['sport']['performed_date']==a['date'] and row['required_sets']==[]; assert e['code']=='VALIDATION_ERROR' and e['details']['field']=='kind'" "$record_body" "$record_replay_body" "$record_again_body" "$sport_sched_body" "$sport_extra_body" 2>/dev/null; then
+      ok "sport session planned, completed once by a linked activity, replayed, conflicted on a second record, and refused an extra set"
+    else
+      bad "planned sport session acceptance failed (record=$record_status replay=$record_replay_status again=$record_again_status schedule=$sport_sched_status extra=$sport_extra_status)" "$(echo "$record_again_body $sport_extra_body" | head -c 320)"
+    fi
+  fi
+else
+  bad "sport unit program acceptance failed (create=$sport_program_status units=$sport_unit_ok distance-on-volleyball=$sport_bad_status)" "$(echo "$sport_program_body $sport_bad_body" | head -c 320)"
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------

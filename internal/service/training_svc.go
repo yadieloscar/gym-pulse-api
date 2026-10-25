@@ -5,7 +5,9 @@ import (
 	"errors"
 	"slices"
 	"sort"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -332,18 +334,81 @@ func cloneStarterWorkouts(src []model.ProgramWorkout) []model.ProgramWorkout {
 	return out
 }
 
+// validateProgramShape normalizes unit kinds in place and checks each unit.
+// An exercises unit needs at least one exercise; a sport unit needs a sport
+// target and no exercises.
 func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 	if !model.IsValidTrainingGoal(goal) {
 		return &model.ValidationError{Message: "unknown training goal", Field: "primary_goal"}
 	}
-	for _, workout := range workouts {
-		if workout.Name == "" || workout.SequencePosition < 1 || len(workout.Exercises) == 0 {
+	for i := range workouts {
+		workout := &workouts[i]
+		workout.Kind = model.NormalizeUnitKind(workout.Kind)
+		if workout.Name == "" || workout.SequencePosition < 1 {
 			return &model.ValidationError{Message: "invalid program workout", Field: "workouts"}
+		}
+		switch workout.Kind {
+		case model.UnitKindSport:
+			if err := validateSportUnit(workout); err != nil {
+				return err
+			}
+		case model.UnitKindExercises:
+			if workout.Sport != nil {
+				return &model.ValidationError{Message: "exercise workouts cannot carry a sport target", Field: "workouts"}
+			}
+			if len(workout.Exercises) == 0 {
+				return &model.ValidationError{Message: "invalid program workout", Field: "workouts"}
+			}
+		default:
+			return &model.ValidationError{Message: "kind must be exercises or sport", Field: "workouts"}
 		}
 		for _, exercise := range workout.Exercises {
 			if exercise.Name == "" || exercise.ExerciseOrder < 1 || exercise.TargetSets < 1 || (exercise.Modality != "strength" && exercise.Modality != "cardio") {
 				return &model.ValidationError{Message: "invalid program exercise", Field: "workouts"}
 			}
+		}
+	}
+	return nil
+}
+
+func validateSportUnit(workout *model.ProgramWorkout) error {
+	if workout.Sport == nil {
+		return &model.ValidationError{Message: "sport sessions require a sport target", Field: "workouts"}
+	}
+	if len(workout.Exercises) > 0 {
+		return &model.ValidationError{Message: "sport sessions cannot carry exercises", Field: "workouts"}
+	}
+	workout.Exercises = []model.ProgramExercise{}
+	sport := workout.Sport
+	sport.SportID = strings.TrimSpace(sport.SportID)
+	sport.SportName = strings.TrimSpace(sport.SportName)
+	if !sportIDPattern.MatchString(sport.SportID) || len(sport.SportID) > 64 {
+		return &model.ValidationError{Message: "invalid sport identifier", Field: "workouts"}
+	}
+	nameLength := utf8.RuneCountInString(sport.SportName)
+	if nameLength < 1 || nameLength > 80 || (sport.SportID == "other" && strings.EqualFold(sport.SportName, "other")) {
+		return &model.ValidationError{Message: "sport name must be between 1 and 80 characters", Field: "workouts"}
+	}
+	if sport.TargetDurationMinutes < 1 || sport.TargetDurationMinutes > 1440 {
+		return &model.ValidationError{Message: "target_duration_minutes must be between 1 and 1440", Field: "workouts"}
+	}
+	if sport.TargetDistanceMeters != nil {
+		if !model.DistanceSports[sport.SportID] {
+			return &model.ValidationError{Message: "target_distance_meters is only allowed for distance sports", Field: "workouts"}
+		}
+		if *sport.TargetDistanceMeters < 1 || *sport.TargetDistanceMeters > 1000000 {
+			return &model.ValidationError{Message: "target_distance_meters must be between 1 and 1000000", Field: "workouts"}
+		}
+	}
+	if sport.Notes != nil {
+		trimmed := strings.TrimSpace(*sport.Notes)
+		if trimmed == "" {
+			sport.Notes = nil
+		} else {
+			if utf8.RuneCountInString(trimmed) > 2000 {
+				return &model.ValidationError{Message: "notes must not exceed 2000 characters", Field: "workouts"}
+			}
+			sport.Notes = &trimmed
 		}
 	}
 	return nil

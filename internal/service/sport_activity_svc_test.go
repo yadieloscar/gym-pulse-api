@@ -260,3 +260,34 @@ func TestSportActivityServiceCreateImportValidation(t *testing.T) {
 		t.Fatalf("absent measurements must stay nil: %+v", repo.created)
 	}
 }
+
+func TestSportActivityServiceCreateCarriesScheduledWorkoutLink(t *testing.T) {
+	repo := &sportActivityRepo{}
+	svc := newSportServiceForTest(repo, "UTC")
+	sessionID := uuid.New()
+	base := model.CreateSportActivityRequest{SportID: "cycling", SportName: "Cycling", DurationMinutes: 95, OperationKey: "ride-op"}
+	linked := base
+	linked.ScheduledWorkoutID = &sessionID
+	if _, _, err := svc.Create(context.Background(), uuid.New(), linked); err != nil {
+		t.Fatal(err)
+	}
+	if repo.created.ScheduledWorkoutID == nil || *repo.created.ScheduledWorkoutID != sessionID {
+		t.Fatalf("link must reach the DAO: %+v", repo.created)
+	}
+	linkedHash := repo.hash
+	if _, _, err := svc.Create(context.Background(), uuid.New(), base); err != nil {
+		t.Fatal(err)
+	}
+	if repo.created.ScheduledWorkoutID != nil {
+		t.Fatal("an unlinked request must not invent a link")
+	}
+	if repo.hash == linkedHash {
+		t.Fatal("the operation hash must include scheduled_workout_id so a changed link under the same key conflicts")
+	}
+	repo.err = &model.SportSessionConflictError{Message: "sport session is already completed", Status: model.WorkoutStatusCompleted}
+	_, _, err := svc.Create(context.Background(), uuid.New(), linked)
+	var conflict *model.SportSessionConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("DAO conflict must pass through unchanged: %v", err)
+	}
+}

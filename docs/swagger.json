@@ -3573,6 +3573,9 @@
                 "id": {
                     "type": "string"
                 },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -3581,6 +3584,9 @@
                 },
                 "sequence_position": {
                     "type": "integer"
+                },
+                "sport": {
+                    "$ref": "#/definitions/model.SportTarget"
                 }
             }
         },
@@ -3756,6 +3762,32 @@
                 }
             }
         },
+        "model.ScheduledSport": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "performed_date": {
+                    "type": "string"
+                },
+                "sport_activity_id": {
+                    "type": "string"
+                },
+                "sport_id": {
+                    "type": "string"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "target_distance_meters": {
+                    "type": "integer"
+                },
+                "target_duration_minutes": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.ScheduledWorkout": {
             "type": "object",
             "properties": {
@@ -3776,6 +3808,9 @@
                 },
                 "id": {
                     "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
                 },
                 "name": {
                     "type": "string"
@@ -3807,6 +3842,9 @@
                 },
                 "sequence_position": {
                     "type": "integer"
+                },
+                "sport": {
+                    "$ref": "#/definitions/model.ScheduledSport"
                 },
                 "status": {
                     "type": "string"
@@ -3878,6 +3916,26 @@
                 },
                 "operation_key": {
                     "type": "string"
+                }
+            }
+        },
+        "model.SportTarget": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "sport_id": {
+                    "type": "string"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "target_distance_meters": {
+                    "type": "integer"
+                },
+                "target_duration_minutes": {
+                    "type": "integer"
                 }
             }
         },
@@ -4059,6 +4117,17 @@
                     "type": "string"
                 }
             }
+        },
+        "model.UnitKind": {
+            "type": "string",
+            "enum": [
+                "exercises",
+                "sport"
+            ],
+            "x-enum-varnames": [
+                "UnitKindExercises",
+                "UnitKindSport"
+            ]
         },
         "model.UpdateDayLogRequest": {
             "type": "object",

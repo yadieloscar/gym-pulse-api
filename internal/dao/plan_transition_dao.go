@@ -90,15 +90,8 @@ func (r *planTransitionDAO) Apply(ctx context.Context, userID uuid.UUID, expecte
 	if err != nil {
 		return uuid.Nil, nil, false, err
 	}
-	for i := range workouts {
-		w := &workouts[i]
-		err := tx.QueryRow(ctx, `INSERT INTO scheduled_workouts (user_id, program_id, program_workout_id, date, name, sequence_position, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, revision, created_at, updated_at`, userID, w.ProgramID, w.ProgramWorkoutID, w.Date, w.Name, w.SequencePosition, w.Status).Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
-		if err != nil {
-			return uuid.Nil, nil, false, fmt.Errorf("inserting transition workout: %w", err)
-		}
-		if err := insertScheduledSets(ctx, tx, w.ID, w.RequiredSets); err != nil {
-			return uuid.Nil, nil, false, err
-		}
+	if err := insertScheduledWorkouts(ctx, tx, userID, workouts); err != nil {
+		return uuid.Nil, nil, false, fmt.Errorf("inserting transition workouts: %w", err)
 	}
 	body, _ := json.Marshal(map[string]any{"program_id": target.ID})
 	if _, err := tx.Exec(ctx, `INSERT INTO idempotency_records (user_id, scope, operation_key, request_hash, response_status, response_body, resource_type, resource_id, resource_revision) VALUES ($1,'plan-transitions/apply',$2,$3,200,$4,'program',$5,$6)`, userID, operationKey, requestHash, body, target.ID, target.Revision); err != nil {

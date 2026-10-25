@@ -30,8 +30,10 @@ type SportActivity struct {
 	DistanceMeters  *int           `json:"distance_meters,omitempty"`
 	EnergyKcal      *int           `json:"energy_kcal,omitempty"`
 	AvgHeartRateBPM *int           `json:"avg_heart_rate_bpm,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// ScheduledWorkoutID is the scheduled sport session this activity fulfilled.
+	ScheduledWorkoutID *uuid.UUID `json:"scheduled_workout_id,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // CreateSportActivityRequest records a completed sport. Date defaults to the
@@ -49,6 +51,9 @@ type CreateSportActivityRequest struct {
 	DistanceMeters  *int           `json:"distance_meters,omitempty"`
 	EnergyKcal      *int           `json:"energy_kcal,omitempty"`
 	AvgHeartRateBPM *int           `json:"avg_heart_rate_bpm,omitempty"`
+	// ScheduledWorkoutID records the activity against an owned open scheduled
+	// sport session for the same sport.
+	ScheduledWorkoutID *uuid.UUID `json:"scheduled_workout_id,omitempty"`
 }
 
 // SportActivityCreateOutcome says what a create request did.

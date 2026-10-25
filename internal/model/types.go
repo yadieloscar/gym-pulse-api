@@ -59,6 +59,17 @@ type ResolutionConflictError struct {
 
 func (e *ResolutionConflictError) Error() string { return e.Message }
 
+// SportSessionConflictError reports a sport activity recorded against a
+// scheduled sport session that is already completed. Authoritative is the
+// current ScheduledWorkout.
+type SportSessionConflictError struct {
+	Message       string
+	Status        string
+	Authoritative any
+}
+
+func (e *SportSessionConflictError) Error() string { return e.Message }
+
 // UserSettings holds per-user preferences.
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`

@@ -194,3 +194,73 @@ func TestNestedMutationProvenanceIsOwnerScoped(t *testing.T) {
 		"INSERT INTO set_logs",
 	)
 }
+
+func TestProgramWorkoutsPersistUnitKindAndSportColumns(t *testing.T) {
+	body, err := os.ReadFile("program_dao.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source := string(body)
+	for _, marker := range []string{
+		"INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,\n\t\t\t\tkind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)",
+		"pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,",
+		"workout.Kind = model.UnitKindExercises",
+		"workout.Kind = model.NormalizeUnitKind(workout.Kind)",
+		"workout.Sport = sport.target()",
+	} {
+		if !strings.Contains(source, marker) {
+			t.Errorf("program DAO missing %q", marker)
+		}
+	}
+}
+
+func TestScheduledUnitsCarryKindThroughReadsWritesAndOutcomes(t *testing.T) {
+	schedule, err := os.ReadFile("schedule_dao.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		"sw.kind, sw.sport_id, sw.sport_name, sw.target_duration_minutes, sw.target_distance_meters, sw.sport_notes,",
+		"sa.id, to_char(sa.date, 'YYYY-MM-DD')",
+		"LEFT JOIN sport_activities sa ON sa.scheduled_workout_id = sw.id",
+		"kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)",
+		"AND status='missed' AND resolution IS NULL AND kind='exercises' ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE",
+	} {
+		if !strings.Contains(string(schedule), marker) {
+			t.Errorf("schedule DAO missing %q", marker)
+		}
+	}
+	mutation, err := os.ReadFile("training_mutation_dao.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutationSource := string(mutation)
+	outcomeStart := strings.Index(mutationSource, "func scheduledOutcome")
+	outcomeEnd := strings.Index(mutationSource, "func (r *trainingMutationDAO) FinalizeScheduledWorkout")
+	if outcomeStart < 0 || outcomeEnd <= outcomeStart {
+		t.Fatal("could not isolate scheduledOutcome")
+	}
+	outcome := mutationSource[outcomeStart:outcomeEnd]
+	for _, marker := range []string{"workout.IsSport()", "workout.Sport.SportActivityID != nil", "return model.WorkoutStatusCompleted, true", "return model.WorkoutStatusMissed, false"} {
+		if !strings.Contains(outcome, marker) {
+			t.Errorf("scheduledOutcome missing sport branch %q", marker)
+		}
+	}
+	if !strings.Contains(string(mutation), "scanScheduledWorkout(tx.QueryRow(ctx") {
+		t.Error("transaction-scoped load must use the shared kind-aware scan")
+	}
+	transition, err := os.ReadFile("plan_transition_dao.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(transition), "insertScheduledWorkouts(ctx, tx, userID, workouts)") || strings.Contains(string(transition), "INSERT INTO scheduled_workouts") {
+		t.Error("plan transition must insert through the shared kind-aware helper")
+	}
+	// Regenerate and plan-transition delete only planned, unfinalized rows with
+	// no started session; a planned sport row matches and a completed one is kept.
+	for _, src := range []string{string(schedule), string(transition)} {
+		if !strings.Contains(src, "sw.status='planned' AND sw.finalized_at IS NULL AND NOT EXISTS") {
+			t.Error("replacement delete predicate changed; sport retention relies on it")
+		}
+	}
+}

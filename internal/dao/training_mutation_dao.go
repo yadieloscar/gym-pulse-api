@@ -484,14 +484,11 @@ func (r *trainingMutationDAO) beginScheduleMutation(ctx context.Context, userID 
 
 func loadScheduledWorkout(ctx context.Context, tx pgx.Tx, userID, workoutID uuid.UUID) (*model.ScheduledWorkout, error) {
 	workout := &model.ScheduledWorkout{}
-	err := tx.QueryRow(ctx, `
-		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
-		FROM scheduled_workouts WHERE id=$1 AND user_id=$2`, workoutID, userID).Scan(
-		&workout.ID, &workout.ProgramID, &workout.ProgramWorkoutID, &workout.Date,
-		&workout.Name, &workout.SequencePosition, &workout.Status, &workout.FinalizedAt,
-		&workout.Resolution, &workout.ResolvedAt, &workout.Revision, &workout.CreatedAt, &workout.UpdatedAt,
-	)
+	err := scanScheduledWorkout(tx.QueryRow(ctx, `
+		SELECT `+scheduledWorkoutColumns+`
+		FROM scheduled_workouts sw
+		`+scheduledWorkoutJoin+`
+		WHERE sw.id=$1 AND sw.user_id=$2`, workoutID, userID), workout)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "scheduled workout not found"}
 	}
@@ -997,7 +994,15 @@ func (r *trainingMutationDAO) AddExtraSet(ctx context.Context, userID, workoutID
 	return result, false, nil
 }
 
+// scheduledOutcome derives the finalized status and whether the athlete
+// participated. A sport session is completed only by its linked activity.
 func scheduledOutcome(workout *model.ScheduledWorkout) (string, bool) {
+	if workout.IsSport() {
+		if workout.Sport != nil && workout.Sport.SportActivityID != nil {
+			return model.WorkoutStatusCompleted, true
+		}
+		return model.WorkoutStatusMissed, false
+	}
 	checked := 0
 	for _, set := range workout.RequiredSets {
 		if set.Checked {

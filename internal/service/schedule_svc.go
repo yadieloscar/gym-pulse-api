@@ -232,10 +232,13 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 	if w.FinalizedAt != nil || w.Date < s.now().UTC().Format("2006-01-02") {
 		return nil, &model.ConflictError{Message: "historical scheduled workouts cannot be replaced", Authoritative: w}
 	}
+	if w.IsSport() && req.RequiredSets != nil && len(*req.RequiredSets) > 0 {
+		return nil, errSportSessionHasNoSets
+	}
 	if req.Name != nil {
 		w.Name = *req.Name
 	}
-	if req.RequiredSets != nil {
+	if req.RequiredSets != nil && !w.IsSport() {
 		w.RequiredSets = *req.RequiredSets
 	}
 	if err := w.Validate(); err != nil {
@@ -254,9 +257,29 @@ func (s *scheduleService) PatchWorkout(ctx context.Context, userID, workoutID uu
 	return s.schedules.Get(ctx, userID, workoutID)
 }
 
+// errSportSessionHasNoSets rejects set, target, extra-set, and completion
+// routes on a sport session; a linked sport activity completes it instead.
+var errSportSessionHasNoSets = &model.ValidationError{Message: "sport sessions have no sets; record a sport activity against the session instead", Field: "kind"}
+
+// rejectSportSession answers 422 on the kind field when the owned scheduled
+// unit is a sport session. Ownership failures keep their shared 404.
+func (s *scheduleService) rejectSportSession(ctx context.Context, userID, workoutID uuid.UUID) error {
+	w, err := s.schedules.Get(ctx, userID, workoutID)
+	if err != nil {
+		return err
+	}
+	if w.IsSport() {
+		return errSportSessionHasNoSets
+	}
+	return nil
+}
+
 func (s *scheduleService) PatchSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.PatchScheduledSetTargetRequest) (*model.ScheduledWorkout, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid scheduled set target", Field: "body"}
+	}
+	if err := s.rejectSportSession(ctx, userID, workoutID); err != nil {
+		return nil, err
 	}
 	if s.mutations != nil {
 		hash, err := hashPayload(struct {
@@ -362,6 +385,9 @@ func (s *scheduleService) PutRequiredSet(ctx context.Context, userID, workoutID,
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid set mutation", Field: "body"}
 	}
+	if err := s.rejectSportSession(ctx, userID, workoutID); err != nil {
+		return nil, err
+	}
 	if s.mutations != nil {
 		hash, err := hashPayload(struct {
 			WorkoutID uuid.UUID
@@ -400,6 +426,9 @@ func (s *scheduleService) AddExtraSet(ctx context.Context, userID, workoutID uui
 	if err := set.Validate(); err != nil {
 		return nil, err
 	}
+	if err := s.rejectSportSession(ctx, userID, workoutID); err != nil {
+		return nil, err
+	}
 	if s.mutations != nil {
 		hash, err := hashPayload(struct {
 			WorkoutID uuid.UUID
@@ -431,6 +460,9 @@ func (s *scheduleService) AddExtraSet(ctx context.Context, userID, workoutID uui
 func (s *scheduleService) Complete(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error) {
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid completion request", Field: "body"}
+	}
+	if err := s.rejectSportSession(ctx, userID, workoutID); err != nil {
+		return nil, err
 	}
 	if s.mutations != nil {
 		hash, err := hashPayload(struct {
@@ -528,11 +560,27 @@ func (s *scheduleService) refreshLiveStatus(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	w.Status = deriveScheduledStatus(w.RequiredSets, w.FinalizedAt != nil)
+	w.Status = deriveWorkoutStatus(w, w.FinalizedAt != nil)
 	if err := s.schedules.UpdateOutcome(ctx, userID, w, prior.Revision); err != nil {
 		return nil, err
 	}
 	return s.schedules.Get(ctx, userID, prior.ID)
+}
+
+// deriveWorkoutStatus derives the live or finalized status for any unit kind.
+// A sport session is completed only by its linked activity and is otherwise
+// planned until finalized, then missed.
+func deriveWorkoutStatus(w *model.ScheduledWorkout, finalized bool) string {
+	if w.IsSport() {
+		if w.Sport != nil && w.Sport.SportActivityID != nil {
+			return model.WorkoutStatusCompleted
+		}
+		if finalized {
+			return model.WorkoutStatusMissed
+		}
+		return model.WorkoutStatusPlanned
+	}
+	return deriveScheduledStatus(w.RequiredSets, finalized)
 }
 
 func deriveScheduledStatus(sets []model.ScheduledSet, finalized bool) string {
@@ -591,7 +639,7 @@ func (s *scheduleService) finalizeLegacy(ctx context.Context, userID uuid.UUID, 
 		return w, nil
 	}
 	checked := checkedCount(w.RequiredSets)
-	w.Status = deriveScheduledStatus(w.RequiredSets, true)
+	w.Status = deriveWorkoutStatus(w, true)
 	now := s.now().UTC()
 	w.FinalizedAt = &now
 	if err := s.schedules.UpdateOutcome(ctx, userID, w, w.Revision); err != nil {
@@ -604,6 +652,9 @@ func (s *scheduleService) finalizeLegacy(ctx context.Context, userID uuid.UUID, 
 	participated := checked > 0
 	for _, set := range w.ExtraSets {
 		participated = participated || set.Completed
+	}
+	if w.IsSport() {
+		participated = w.Status == model.WorkoutStatusCompleted
 	}
 	outcome := &model.DayParticipation{Date: w.Date, ScheduledOpportunity: true, Participated: participated, FinalizedAt: now, Timezone: profile.Timezone, LocalDate: w.Date}
 	if err := s.participation.Finalize(ctx, userID, outcome); err != nil {

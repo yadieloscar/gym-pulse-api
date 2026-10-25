@@ -163,3 +163,55 @@ func TestSportActivityHandlerValidationFieldSurfaces(t *testing.T) {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
 }
+
+func TestSportSessionConflictIncludesStatusAndResource(t *testing.T) {
+	rec := httptest.NewRecorder()
+	handleServiceError(rec, &model.SportSessionConflictError{
+		Message: "sport session is already completed", Status: model.WorkoutStatusCompleted,
+		Authoritative: &model.ScheduledWorkout{Kind: model.UnitKindSport, Status: model.WorkoutStatusCompleted, Revision: 2},
+	})
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("status=%d want 409", rec.Code)
+	}
+	body := rec.Body.String()
+	for _, want := range []string{`"code":"SPORT_SESSION_CONFLICT"`, `"status":"completed"`, `"resource"`, `"kind":"sport"`} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("response missing %q: %s", want, body)
+		}
+	}
+}
+
+func TestSportActivityHandlerCreatePassesAndReturnsScheduledWorkoutLink(t *testing.T) {
+	sessionID := uuid.New()
+	activity := model.SportActivity{ID: uuid.New(), Date: "2026-10-31", SportID: "cycling", SportName: "Cycling", DurationMinutes: 95, Source: model.ActivitySourceManual, ScheduledWorkoutID: &sessionID}
+	svc := &sportHandlerService{activities: []model.SportActivity{activity}}
+	handler := NewSportActivityHandler(svc)
+	req := model.CreateSportActivityRequest{SportID: "cycling", SportName: "Cycling", DurationMinutes: 95, OperationKey: "ride-op", ScheduledWorkoutID: &sessionID}
+	rec := httptest.NewRecorder()
+	handler.Create(rec, guidedHandlerRequest(t, http.MethodPost, "/", req, uuid.New(), "ride-op", nil))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if svc.created.ScheduledWorkoutID == nil || *svc.created.ScheduledWorkoutID != sessionID {
+		t.Fatalf("handler dropped scheduled_workout_id: %+v", svc.created)
+	}
+	if !strings.Contains(rec.Body.String(), `"scheduled_workout_id":"`+sessionID.String()+`"`) {
+		t.Fatalf("response must carry the link: %s", rec.Body.String())
+	}
+	for _, failure := range []struct {
+		err    error
+		status int
+		want   string
+	}{
+		{&model.NotFoundError{Message: "scheduled workout not found"}, http.StatusNotFound, `"NOT_FOUND"`},
+		{&model.ValidationError{Message: "must reference a sport session", Field: "scheduled_workout_id"}, http.StatusUnprocessableEntity, `"field":"scheduled_workout_id"`},
+		{&model.ValidationError{Message: "sport mismatch", Field: "sport_id"}, http.StatusUnprocessableEntity, `"field":"sport_id"`},
+	} {
+		svc.err = failure.err
+		rec := httptest.NewRecorder()
+		handler.Create(rec, guidedHandlerRequest(t, http.MethodPost, "/", req, uuid.New(), "ride-op", nil))
+		if rec.Code != failure.status || !strings.Contains(rec.Body.String(), failure.want) {
+			t.Fatalf("err=%v status=%d body=%s", failure.err, rec.Code, rec.Body.String())
+		}
+	}
+}

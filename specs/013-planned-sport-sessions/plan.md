@@ -96,9 +96,9 @@ scripts/smoke.sh                # new step: sport unit → materialize → recor
 ```
 
 **Structure Decision**: No new packages or routes. The feature extends the program, schedule, and
-sport-activity owners in place so each resource keeps one handler → service → DAO path. The
-sport-activity service gains a dependency on the schedule mutation DAO for the link step, wired in
-`cmd/server/main.go`.
+sport-activity owners in place so each resource keeps one handler → service → DAO path. The link
+step is resolved inside the sport-activity DAO's existing create transaction (`lockSportSession`),
+so the service signature and `cmd/server/main.go` are unchanged (implementation note, 2026-10-25).
 
 ## Complexity Tracking
 
