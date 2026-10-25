@@ -1165,6 +1165,121 @@ Validator: `weight gt=0`, `unit oneof=lb kg`.
 
 ---
 
+## Nutrition
+
+Nutrition is the athlete's own daily totals and the daily target they chose.
+GymPulse stores totals only: no food, meal, or portion data, and it never
+computes or changes a target. All dates are the athlete's local calendar dates
+in their saved training-profile timezone; the two `PUT` routes and `GET
+/api/v1/nutrition/target` return the shared `404 NOT_FOUND` for an athlete
+with no training profile, while the range read does not need one. Both mutations require
+`Idempotency-Key` equal to `operation_key`; an identical retry replays the
+original status and body, and a changed payload returns `409
+IDEMPOTENCY_CONFLICT`. Energy is whole kilocalories (0–20,000); macros are
+grams with at most one decimal (0–2,000). Validation failures are `422` with
+`details.field` naming the offending field.
+
+### `PUT /api/v1/nutrition/days/{date}`
+
+Saves, replaces, or removes the athlete's totals for one date. `date` is
+`YYYY-MM-DD` and may not be after the athlete's local today.
+
+```json
+{
+  "energy_kcal": 2150,
+  "protein_g": 162.5,
+  "carbs_g": 230,
+  "fat_g": 70,
+  "source": "manual",
+  "expected_revision": 0,
+  "operation_key": "nutrition-day:2026-10-25:<uuid>"
+}
+```
+
+Every value is optional. `source` is `manual` (default when omitted) or
+`apple_health`.
+
+An **athlete save** (`manual`) carries `expected_revision`: `0` when no entry
+exists for the date, otherwise the stored revision. A stale value returns `409
+REVISION_CONFLICT` with the stored day under `resource` (`actual_revision` is
+`0` when the day no longer exists). A save over an `apple_health` day converts
+it to `manual`. A save with all four values absent removes the day and returns
+`204`; with no day to remove it also returns `204` and writes nothing. Removal
+carries `expected_revision` like any athlete save.
+
+A **Health save** (`apple_health`) carries no `expected_revision` (one that is
+sent is ignored) and must carry at least one value. It creates the day or
+replaces an existing `apple_health` day. Over a `manual` day it returns the
+stored day unchanged with `200` and writes nothing: the athlete's entry wins.
+
+Response `201` on create, `200` on replace or on an ignored Health save:
+
+```json
+{
+  "id": "<uuid>", "date": "2026-10-25",
+  "energy_kcal": 2150, "protein_g": 162.5, "carbs_g": 230, "fat_g": 70,
+  "source": "manual", "revision": 1,
+  "logged_at": "<RFC3339>", "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+Absent values are omitted from the response. Saving never changes body weight,
+participation, workouts, records, or volume.
+
+### `GET /api/v1/nutrition/days?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response `200`: `{ "days": [NutritionDay], "targets": [NutritionTarget] }`.
+`days` holds the owned days inside the inclusive range (at most 366 days),
+oldest first. `targets` holds the target in effect on `from` (the latest
+`effective_from` on or before it, if any) plus every target whose
+`effective_from` falls inside the range, oldest first, so a client resolves each
+day's target as the latest `effective_from` on or before that day. Both are
+`[]` when empty.
+
+### `GET /api/v1/nutrition/target`
+
+Response `200` is the target in effect on the athlete's local today. No saved
+target returns the shared `404 NOT_FOUND`.
+
+```json
+{
+  "id": "<uuid>", "effective_from": "2026-10-25",
+  "protein_g": 150, "energy_kcal": null, "carbs_g": null, "fat_g": null,
+  "revision": 1, "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+Optional target values are always present and `null` when unset.
+
+### `PUT /api/v1/nutrition/target`
+
+```json
+{
+  "effective_from": "2026-10-25",
+  "protein_g": 150,
+  "energy_kcal": 2200,
+  "carbs_g": null,
+  "fat_g": null,
+  "expected_revision": 0,
+  "operation_key": "nutrition-target:<uuid>"
+}
+```
+
+`protein_g` is required and greater than zero; `energy_kcal` (1–20,000),
+`carbs_g`, and `fat_g` are optional. `effective_from` defaults to the athlete's
+local today and may not be in the future. `expected_revision` is the current
+target's revision, `0` when none exists; a stale value returns `409
+REVISION_CONFLICT` with the current target under `resource`. Saving for an
+`effective_from` that already has a target replaces that row; a different date
+adds one and earlier targets are kept for the days they covered. Values
+identical to the current target with the same `effective_from` return it
+unchanged.
+
+Response `201` on create, `200` on replace or unchanged; the body is the saved
+target.
+
+---
+
 ## Account
 
 ### `DELETE /api/v1/account` → 204

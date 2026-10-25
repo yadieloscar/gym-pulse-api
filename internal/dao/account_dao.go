@@ -37,6 +37,8 @@ func (r *accountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error
 		`DELETE FROM day_logs WHERE user_id = $1`,
 		`DELETE FROM sport_activities WHERE user_id = $1`,
 		`DELETE FROM health_exports WHERE user_id = $1`,
+		`DELETE FROM nutrition_days WHERE user_id = $1`,
+		`DELETE FROM nutrition_targets WHERE user_id = $1`,
 		`DELETE FROM criteria_training_blocks WHERE user_id = $1`,
 		`DELETE FROM workout_sessions WHERE user_id = $1`,
 		`DELETE FROM scheduled_workouts WHERE user_id = $1`,

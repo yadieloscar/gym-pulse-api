@@ -71,7 +71,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		code := "CONFLICT"
 		var details any
 		switch {
-		case conflict.Actual > 0:
+		case conflict.Actual > 0 || conflict.Message == "resource revision conflict":
 			code = "REVISION_CONFLICT"
 			details = map[string]int64{"expected_revision": conflict.Expected, "actual_revision": conflict.Actual}
 		case strings.Contains(conflict.Message, "idempotency"):

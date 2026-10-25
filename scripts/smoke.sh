@@ -664,6 +664,81 @@ else
   bad "sport unit program acceptance failed (create=$sport_program_status units=$sport_unit_ok distance-on-volleyball=$sport_bad_status)" "$(echo "$sport_program_body $sport_bad_body" | head -c 320)"
 fi
 
+# ---------- 13f. nutrition days and target ----------
+step "13f. Nutrition: target 201/200, day 201/replay/Health-ignored, Health day 201 → manual takeover → ignored, clear 204, range, future 422"
+nu_yesterday=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat())")
+nu_before=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()-timedelta(days=2)).isoformat())")
+nu_tomorrow=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()+timedelta(days=1)).isoformat())")
+nu_today=$(python3 -c "from datetime import datetime,timezone; print(datetime.now(timezone.utc).date().isoformat())")
+nu_put() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API$1" "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $2" -d "$3"; }
+nt_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-a" "{\"protein_g\":150,\"energy_kcal\":2200,\"expected_revision\":0,\"operation_key\":\"smoke-nt-a\"}")
+nt_body=$(cat /tmp/smoke.body)
+nt_rev=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$nt_body" 2>/dev/null || echo 0)
+nt_same_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-b" "{\"protein_g\":150,\"energy_kcal\":2200,\"expected_revision\":$nt_rev,\"operation_key\":\"smoke-nt-b\"}")
+nt_same_body=$(cat /tmp/smoke.body)
+nt_get_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/target" "${auth[@]}")
+nt_get_body=$(cat /tmp/smoke.body)
+nd_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-a" "{\"protein_g\":162.5,\"energy_kcal\":2150,\"expected_revision\":0,\"operation_key\":\"smoke-nd-a\"}")
+nd_body=$(cat /tmp/smoke.body)
+nd_replay_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-a" "{\"protein_g\":162.5,\"energy_kcal\":2150,\"expected_revision\":0,\"operation_key\":\"smoke-nd-a\"}")
+nd_replay_body=$(cat /tmp/smoke.body)
+nd_stale_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-stale" "{\"protein_g\":1,\"expected_revision\":0,\"operation_key\":\"smoke-nd-stale\"}")
+nd_stale_body=$(cat /tmp/smoke.body)
+nd_hk_over_manual_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-hk1" "{\"source\":\"apple_health\",\"protein_g\":99,\"operation_key\":\"smoke-nd-hk1\"}")
+nd_hk_over_manual_body=$(cat /tmp/smoke.body)
+nd_hk_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk2" "{\"source\":\"apple_health\",\"protein_g\":120,\"carbs_g\":200.5,\"operation_key\":\"smoke-nd-hk2\"}")
+nd_hk_body=$(cat /tmp/smoke.body)
+nd_hk_replace_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk2b" "{\"source\":\"apple_health\",\"protein_g\":125,\"operation_key\":\"smoke-nd-hk2b\"}")
+nd_hk_replace_body=$(cat /tmp/smoke.body)
+nd_takeover_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-m2" "{\"protein_g\":130,\"expected_revision\":2,\"operation_key\":\"smoke-nd-m2\"}")
+nd_takeover_body=$(cat /tmp/smoke.body)
+nd_hk_again_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk3" "{\"source\":\"apple_health\",\"protein_g\":121,\"operation_key\":\"smoke-nd-hk3\"}")
+nd_hk_again_body=$(cat /tmp/smoke.body)
+nd_clear_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear" "{\"expected_revision\":1,\"operation_key\":\"smoke-nd-clear\"}")
+nd_clear_replay_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear" "{\"expected_revision\":1,\"operation_key\":\"smoke-nd-clear\"}")
+nd_clear_none_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear2" "{\"expected_revision\":0,\"operation_key\":\"smoke-nd-clear2\"}")
+nd_gone_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-gone" "{\"protein_g\":5,\"expected_revision\":1,\"operation_key\":\"smoke-nd-gone\"}")
+nd_gone_body=$(cat /tmp/smoke.body)
+# An older target is inserted while the revision is checked against the current (today's) target.
+nt_old_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-old" "{\"effective_from\":\"$nu_before\",\"protein_g\":140,\"expected_revision\":1,\"operation_key\":\"smoke-nt-old\"}")
+nt_old_body=$(cat /tmp/smoke.body)
+nd_range_old_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_yesterday&to=$nu_yesterday" "${auth[@]}")
+nd_range_old_body=$(cat /tmp/smoke.body)
+nd_range_today_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_today&to=$nu_today" "${auth[@]}")
+nd_range_today_body=$(cat /tmp/smoke.body)
+nd_range_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_before&to=$nu_today" "${auth[@]}")
+nd_range_body=$(cat /tmp/smoke.body)
+nd_future_status=$(nu_put "/api/v1/nutrition/days/$nu_tomorrow" "smoke-nd-future" "{\"protein_g\":1,\"expected_revision\":0,\"operation_key\":\"smoke-nd-future\"}")
+if [ "$nt_status" = "201" ] && [ "$nt_same_status" = "200" ] && [ "$nt_get_status" = "200" ] && \
+   [ "$nd_status" = "201" ] && [ "$nd_replay_status" = "201" ] && [ "$nd_stale_status" = "409" ] && [ "$nd_hk_over_manual_status" = "200" ] && \
+   [ "$nd_hk_status" = "201" ] && [ "$nd_takeover_status" = "200" ] && [ "$nd_hk_again_status" = "200" ] && [ "$nd_clear_status" = "204" ] && \
+   [ "$nd_range_status" = "200" ] && [ "$nd_future_status" = "422" ] && \
+   [ "$nd_hk_replace_status" = "200" ] && [ "$nd_clear_replay_status" = "204" ] && [ "$nd_clear_none_status" = "204" ] && [ "$nd_gone_status" = "409" ] && \
+   [ "$nt_old_status" = "201" ] && [ "$nd_range_old_status" = "200" ] && [ "$nd_range_today_status" = "200" ] && \
+   python3 -c "
+import json,sys
+t,ts,tg,d,dr,st,hm,hk,tk,ha,rg,hr,gn,to,ro,rt=[json.loads(x) for x in sys.argv[1:]]
+assert hr['id']==hk['id'] and hr['source']=='apple_health' and hr['protein_g']==125 and hr['revision']==2 and 'carbs_g' not in hr
+assert gn['code']=='REVISION_CONFLICT' and gn['details']['actual_revision']==0 and 'resource' not in gn
+assert to['effective_from']=='$nu_before' and to['protein_g']==140 and to['revision']==1 and to['id']!=t['id']
+assert ro['days']==[] and [x['id'] for x in ro['targets']]==[to['id']]
+assert [x['id'] for x in rt['targets']]==[t['id']]
+assert t['protein_g']==150 and t['energy_kcal']==2200 and t['carbs_g'] is None and t['revision']==1
+assert ts['id']==t['id'] and ts['revision']==1 and tg['id']==t['id']
+assert d['protein_g']==162.5 and d['energy_kcal']==2150 and d['source']=='manual' and d['revision']==1 and 'carbs_g' not in d
+assert dr['id']==d['id'] and dr['logged_at']==d['logged_at']
+assert st['code']=='REVISION_CONFLICT' and st['details']['actual_revision']==1 and st['resource']['id']==d['id']
+assert hm['id']==d['id'] and hm['protein_g']==162.5 and hm['source']=='manual'
+assert hk['source']=='apple_health' and hk['protein_g']==120 and hk['carbs_g']==200.5 and hk['revision']==1
+assert tk['id']==hk['id'] and tk['source']=='manual' and tk['protein_g']==130 and tk['revision']==3 and 'carbs_g' not in tk
+assert ha['id']==hk['id'] and ha['protein_g']==130 and ha['source']=='manual'
+assert [x['date'] for x in rg['days']]==['$nu_before'] and [x['id'] for x in rg['targets']]==[to['id'],t['id']]
+" "$nt_body" "$nt_same_body" "$nt_get_body" "$nd_body" "$nd_replay_body" "$nd_stale_body" "$nd_hk_over_manual_body" "$nd_hk_body" "$nd_takeover_body" "$nd_hk_again_body" "$nd_range_body" "$nd_hk_replace_body" "$nd_gone_body" "$nt_old_body" "$nd_range_old_body" "$nd_range_today_body" 2>/dev/null; then
+  ok "nutrition target saved, unchanged, read back, and an older target inserted under the current revision; day created, replayed, stale-conflicted, protected from a Health import; Health day replaced by Health, taken over by the athlete, then protected; cleared 204 (replay and no-row too), gone-row conflict omits resource; ranges carry the target in effect and never duplicate; future date rejected"
+else
+  bad "nutrition acceptance failed (target=$nt_status same=$nt_same_status get=$nt_get_status day=$nd_status replay=$nd_replay_status stale=$nd_stale_status hk_over_manual=$nd_hk_over_manual_status hk=$nd_hk_status hk_replace=$nd_hk_replace_status takeover=$nd_takeover_status hk_again=$nd_hk_again_status clear=$nd_clear_status clear_replay=$nd_clear_replay_status clear_none=$nd_clear_none_status gone=$nd_gone_status old_target=$nt_old_status range=$nd_range_status range_old=$nd_range_old_status range_today=$nd_range_today_status future=$nd_future_status)" "$(echo "$nd_range_old_body $nd_gone_body" | head -c 400)"
+fi
+
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")

@@ -35,6 +35,7 @@ func New(
 	participationHandler *handler.ParticipationHandler,
 	sportActivityHandler *handler.SportActivityHandler,
 	healthExportHandler *handler.HealthExportHandler,
+	nutritionHandler *handler.NutritionHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -119,6 +120,12 @@ func New(
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)
 					r.Put("/{workout_kind}/{workout_id}", healthExportHandler.Record)
+				})
+				r.Route("/nutrition", func(r chi.Router) {
+					r.Get("/days", nutritionHandler.ListDays)
+					r.Put("/days/{date}", nutritionHandler.SaveDay)
+					r.Get("/target", nutritionHandler.GetTarget)
+					r.Put("/target", nutritionHandler.SaveTarget)
 				})
 				r.Route("/training-blocks", func(r chi.Router) {
 					r.Get("/", trainingBlockHandler.List)
