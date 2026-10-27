@@ -84,7 +84,7 @@
   A missing profile surfaces the profile DAO's `NotFoundError`, as it does for sport activities.
 - **Rejected**: `model.UTCToday()` (the legacy body-weight rule) because it mis-dates evening saves.
 
-### Migration 027 provisions the runtime role
+### Migration 029 provisions the runtime role
 
 - **Decision**: The up migration creates both tables, enables RLS, revokes Data API role privileges
   (copying the DO block from 025), and, when the `gym_pulse_api` role exists, grants DML and creates
@@ -109,4 +109,4 @@
 - Account deletion: `DELETE FROM nutrition_days` and `DELETE FROM nutrition_targets` join the list in
   `account_dao.go`; the DAO test that enumerates tables is updated.
 - Swagger: swag godoc on the four handlers; `docs/swagger.*` regenerated so CI's drift check passes. `docs/CONTRACTS.md` remains the client contract.
-- Migration number: `027`; `026` is the runtime role on `main`.
+- Migration number: `029` (renumbered from `027` on 2026-10-27 after planned sport sessions merged as 027 and 028); `026` is the runtime role on `main`.

@@ -17,6 +17,7 @@
 #  10. a finished workout's health export is recorded once (201, 200, 409)
 #  11. a sport unit schedules a session completed once by a linked activity
 #  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
+#  13. nutrition target and days: save, replay, conflicts, Health precedence, clear, ranges
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)

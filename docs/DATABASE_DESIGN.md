@@ -991,7 +991,7 @@ policies and existing Data API roles have table privileges revoked.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API role privileges are revoked, and the `gym_pulse_api` runtime role holds DML plus the `gym_pulse_api_access` policy.
 
-**Migration source**: 027.
+**Migration source**: 029.
 
 ### Table: `public.nutrition_targets`
 
@@ -1020,7 +1020,7 @@ policies and existing Data API roles have table privileges revoked.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS, Data API revocation, and runtime-role provisioning as for `nutrition_days`.
 
-**Migration source**: 027.
+**Migration source**: 029.
 
 ### Table: `public.criteria_training_blocks`
 

@@ -8,7 +8,7 @@ import (
 )
 
 func TestNutritionMigrationContract(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/027_create_nutrition.up.sql")
+	body, err := os.ReadFile("../../migrations/029_create_nutrition.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestNutritionMigrationContract(t *testing.T) {
 }
 
 func TestNutritionMigrationRollbackIsScoped(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/027_create_nutrition.down.sql")
+	body, err := os.ReadFile("../../migrations/029_create_nutrition.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

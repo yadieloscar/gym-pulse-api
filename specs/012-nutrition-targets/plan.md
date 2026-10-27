@@ -52,7 +52,7 @@ returns the current one. Nothing else moves: no participation, stats, body weigh
 - [x] Contract changes are identified in `contracts/nutrition.openapi.yaml` and land in `docs/CONTRACTS.md` ("Nutrition" section after "Body weight") with the code.
 - [x] Authentication, ownership, idempotency, revision, and error behavior are specified: owner-scoped queries, shared 404 for a missing target, verbatim replay through the ledger, `REVISION_CONFLICT` with the current revision, `IDEMPOTENCY_CONFLICT` on payload mismatch, 200-unchanged for a Health save over an athlete day.
 - [x] Tests are identified before implementation in `quickstart.md`, including contract smoke and schema-document validation.
-- [x] Migration 027 creates two tables with RLS enabled, Data API grants revoked, and the `gym_pulse_api_access` policy and DML grant for the runtime role; the down migration drops both tables.
+- [x] Migration 029 creates two tables with RLS enabled, Data API grants revoked, and the `gym_pulse_api_access` policy and DML grant for the runtime role; the down migration drops both tables.
 - [x] No new dependency, layer, or concurrency.
 
 ## Project Structure
@@ -75,7 +75,7 @@ specs/012-nutrition-targets/
 cmd/server/main.go
 docs/CONTRACTS.md
 docs/DATABASE_DESIGN.md
-migrations/027_create_nutrition.{up,down}.sql
+migrations/029_create_nutrition.{up,down}.sql
 internal/
 ├── dao/{nutrition_dao.go,nutrition_dao_test.go,account_dao.go,supabase_security_migration_test.go}
 ├── handler/{nutrition.go,nutrition_test.go}

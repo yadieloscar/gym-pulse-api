@@ -2,7 +2,7 @@
 
 ## Implementation order
 
-1. Migration 027 (up and down) with both tables, RLS, Data API revoke, and runtime-role policy and grant;
+1. Migration 029 (up and down) with both tables, RLS, Data API revoke, and runtime-role policy and grant;
    `docs/DATABASE_DESIGN.md` sections and index rows; `./scripts/validate-database-design.sh`.
 2. Model, enums, request types, outcomes, and the migration acceptance test; update
    `supabase_security_migration_test.go` expectations for the new tables.

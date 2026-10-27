@@ -1,6 +1,6 @@
 # Data Model: Daily nutrition totals and a chosen target
 
-## `nutrition_days` (migration 027)
+## `nutrition_days` (migration 029)
 
 | Field | Type | Rules |
 |---|---|---|
@@ -22,7 +22,7 @@ Table check `ck_nutrition_days_has_value`: at least one of the four values is no
 `date ASC`. RLS enabled, Data API role privileges revoked, `gym_pulse_api_access` policy and DML
 granted to the runtime role when present.
 
-## `nutrition_targets` (migration 027)
+## `nutrition_targets` (migration 029)
 
 | Field | Type | Rules |
 |---|---|---|
