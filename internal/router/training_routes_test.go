@@ -32,6 +32,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/plan-transitions/preview", "POST /api/v1/plan-transitions/apply",
 		"POST /api/v1/schedule/recover", "PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target",
 		"GET /api/v1/sport-activities/", "POST /api/v1/sport-activities/", "GET /api/v1/sport-activities/{id}",
+		"POST /api/v1/sport-activities/{id}/link", "POST /api/v1/sport-activities/{id}/unlink",
 		"GET /api/v1/training-blocks/", "POST /api/v1/training-blocks/", "GET /api/v1/training-blocks/{block_id}/",
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",

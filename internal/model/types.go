@@ -63,8 +63,11 @@ func (e *ResolutionConflictError) Error() string { return e.Message }
 // scheduled sport session that is already completed. Authoritative is the
 // current ScheduledWorkout.
 type SportSessionConflictError struct {
-	Message       string
-	Status        string
+	Message string
+	Status  string
+	// Reason distinguishes link and unlink conflicts: activity_linked,
+	// session_completed, or not_linked. Empty for a create against a completed session.
+	Reason        string
 	Authoritative any
 }
 

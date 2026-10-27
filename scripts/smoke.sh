@@ -16,6 +16,7 @@
 #   9. an imported health workout is created once; re-import answers 200
 #  10. a finished workout's health export is recorded once (201, 200, 409)
 #  11. a sport unit schedules a session completed once by a linked activity
+#  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -613,7 +614,7 @@ if [ "$sport_program_status" = "201" ] && [ "$sport_unit_ok" = "yes" ] && [ "$sp
   else
     # The session date is in the future, so record it as performed today (performed date may differ).
     record_op="smoke-sport-record-v1"
-    record_payload="{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":95,\"distance_meters\":42000,\"operation_key\":\"$record_op\",\"scheduled_workout_id\":\"$sport_session_id\"}"
+    record_payload="{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":95,\"distance_meters\":42000,\"perceived_effort\":7,\"operation_key\":\"$record_op\",\"scheduled_workout_id\":\"$sport_session_id\"}"
     record_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
       "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $record_op" -d "$record_payload")
     record_body=$(cat /tmp/smoke.body)
@@ -631,8 +632,30 @@ if [ "$sport_program_status" = "201" ] && [ "$sport_unit_ok" = "yes" ] && [ "$sp
       -d "{\"operation_key\":\"smoke-sport-extra\",\"expected_revision\":$((sport_session_revision+1)),\"exercise_id\":null,\"exercise_name\":\"Push-Up\",\"exercise_category\":\"push\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":10,\"completed\":true}")
     sport_extra_body=$(cat /tmp/smoke.body)
     if [ "$record_status" = "201" ] && [ "$record_replay_status" = "201" ] && [ "$record_again_status" = "409" ] && [ "$sport_sched_status" = "200" ] && [ "$sport_extra_status" = "422" ] && \
-      python3 -c "import json,sys; a,r,c,s,e=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert a['id']==r['id'] and a['scheduled_workout_id']==sid and a['distance_meters']==42000; assert c['code']=='SPORT_SESSION_CONFLICT' and c['details']['status']=='completed' and c['resource']['id']==sid; row=[w for w in s['scheduled_workouts'] if w['id']==sid][0]; assert row['status']=='completed' and row['sport']['sport_activity_id']==a['id'] and row['sport']['performed_date']==a['date'] and row['required_sets']==[]; assert e['code']=='VALIDATION_ERROR' and e['details']['field']=='kind'" "$record_body" "$record_replay_body" "$record_again_body" "$sport_sched_body" "$sport_extra_body" 2>/dev/null; then
+      python3 -c "import json,sys; a,r,c,s,e=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert a['id']==r['id'] and a['scheduled_workout_id']==sid and a['distance_meters']==42000 and a['perceived_effort']==7; assert c['code']=='SPORT_SESSION_CONFLICT' and c['details']['status']=='completed' and c['resource']['id']==sid; row=[w for w in s['scheduled_workouts'] if w['id']==sid][0]; assert row['status']=='completed' and row['sport']['sport_activity_id']==a['id'] and row['sport']['performed_date']==a['date'] and row['required_sets']==[]; assert e['code']=='VALIDATION_ERROR' and e['details']['field']=='kind'" "$record_body" "$record_replay_body" "$record_again_body" "$sport_sched_body" "$sport_extra_body" 2>/dev/null; then
       ok "sport session planned, completed once by a linked activity, replayed, conflicted on a second record, and refused an extra set"
+      # 13e. contract 1.3.0: unlink reopens the future session; linking the same activity back completes it again.
+      record_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$record_body" 2>/dev/null || true)
+      done_revision=$(python3 -c "import json,sys; print([w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['id']=='$sport_session_id'][0]['revision'])" "$sport_sched_body" 2>/dev/null || true)
+      unlink_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/unlink" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-unlink" \
+        -d "{\"expected_revision\":$done_revision,\"operation_key\":\"smoke-sport-unlink\"}")
+      unlink_body=$(cat /tmp/smoke.body)
+      reopened_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workout']['revision'])" "$unlink_body" 2>/dev/null || echo 0)
+      unlink_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/unlink" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-unlink-2" \
+        -d "{\"expected_revision\":$reopened_revision,\"operation_key\":\"smoke-sport-unlink-2\"}")
+      unlink_again_body=$(cat /tmp/smoke.body)
+      relink_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/link" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-link" \
+        -d "{\"scheduled_workout_id\":\"$sport_session_id\",\"expected_revision\":$reopened_revision,\"operation_key\":\"smoke-sport-link\"}")
+      relink_body=$(cat /tmp/smoke.body)
+      if [ "$unlink_status" = "200" ] && [ "$unlink_again_status" = "409" ] && [ "$relink_status" = "200" ] && \
+        python3 -c "import json,sys; u,a,l=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert 'scheduled_workout_id' not in u['sport_activity'] and u['scheduled_workout']['status']=='planned' and u['scheduled_workout'].get('finalized_at') is None and 'sport_activity_id' not in u['scheduled_workout']['sport']; assert a['code']=='SPORT_SESSION_CONFLICT' and a['details']['reason']=='not_linked'; assert l['sport_activity']['scheduled_workout_id']==sid and l['scheduled_workout']['status']=='completed' and l['scheduled_workout']['sport']['sport_activity_id']==l['sport_activity']['id']" "$unlink_body" "$unlink_again_body" "$relink_body" 2>/dev/null; then
+        ok "unlink reopened the session, a second unlink conflicted with not_linked, and link-existing completed it again"
+      else
+        bad "sport session link repair failed (unlink=$unlink_status again=$unlink_again_status relink=$relink_status)" "$(echo "$unlink_body $unlink_again_body $relink_body" | head -c 320)"
+      fi
     else
       bad "planned sport session acceptance failed (record=$record_status replay=$record_replay_status again=$record_again_status schedule=$sport_sched_status extra=$sport_extra_status)" "$(echo "$record_again_body $sport_extra_body" | head -c 320)"
     fi

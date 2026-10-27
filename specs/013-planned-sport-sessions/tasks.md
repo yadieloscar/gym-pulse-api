@@ -34,7 +34,7 @@ description: "Implementation tasks for planned sport sessions API"
 | FR-016, SC-002 | T002, T035, T036 | `docs/CONTRACTS.md` diff reviewed with the code; `./scripts/smoke-toggle.sh` with the new smoke step (five replays → one activity, one completed session) | Passed (`docs/CONTRACTS.md` updated with the code; `scripts/smoke.sh` 24/24 on an isolated stack built from this worktree, port 18081; five-replay guarantee covered by replay + conflict assertions) |
 | SC-005 | T021, T024 | Ownership tests above | Passed (ownership tests above) |
 | Schema document | T003, T008, T034 | `./scripts/validate-database-design.sh` (31 tables, 305 columns) | Passed (`./scripts/validate-database-design.sh`: 31 tables, 305 columns, 28 named indexes) |
-| FR-017–FR-020, US6/AC1–AC4 (research amendment) | T040–T049 | Integration tests for link, unlink, tie-break, guard, effort; smoke 13d extension; contract 1.3.0 | Planned |
+| FR-017–FR-020, US6/AC1–AC4 (research amendment) | T040–T049 | Integration tests for link, unlink, tie-break, guard, effort; smoke 13d extension; contract 1.3.0 | Passed 2026-10-26: `TestUnlinkAndLinkExistingRepairAWrongMatch`, `TestImportAutoMatchPrefersClosestDurationAndSkipsShortImports` (race, isolated Postgres at migration 28); unit, handler, source-text tests; smoke 25/25 incl. unlink → planned, not_linked conflict, link-existing; lint 0; schema 306 columns; security validator passed |
 | Supabase security | T037 | `./scripts/validate-supabase-security.sh` on a migrated local database | Passed (`validate-supabase-security.sh` piped into the isolated db container after migration 027) |
 
 ## Phase 1: Setup
@@ -136,16 +136,16 @@ description: "Implementation tasks for planned sport sessions API"
 
 **Independent Test**: Link, unlink, and re-link through the API; import a short commute and a full ride on a planned-ride day and see only the ride link; create an activity with effort 7 and read it back.
 
-- [ ] T040 [US6] Amend spec FR-008 and edge cases (A1), add US6 and FR-017–FR-020, and record the decisions in research.md, data-model.md, quickstart.md, and the OpenAPI contract (1.3.0)
-- [ ] T041 [P] [US6] Add migration `migrations/028_add_sport_activity_effort.{up,down}.sql`, the model acceptance text contract, and the `docs/DATABASE_DESIGN.md` row, count (306), history line; run `./scripts/validate-database-design.sh`
-- [ ] T042 [P] [US6] Add `PerceivedEffort` to `SportActivity` and `CreateSportActivityRequest`, `LinkSportActivityRequest`, `UnlinkSportActivityRequest`, `SportSessionLinkResult`, and a `Reason` on `SportSessionConflictError` in `internal/model`
-- [ ] T043 [US6] Validate effort 1–10 in `internal/service/sport_activity_svc.go`; persist and scan it in `internal/dao/sport_activity_dao.go`
-- [ ] T044 [US6] Change auto-match ordering to closest planned duration and add the one-third guard in `lockSportSession` (`internal/dao/sport_activity_dao.go`)
-- [ ] T045 [US6] Add `Link` and `Unlink` to the sport-activity DAO and service (lock order, replay, row locks, revision check, conflicts with `reason`, unlink status by local today, scheduled-date participation on unlink to missed)
-- [ ] T046 [US6] Add `POST /sport-activities/{id}/link` and `/unlink` handlers and routes; map `details.reason`; update `internal/router/training_routes_test.go`
-- [ ] T047 [P] [US6] Unit tests: service effort bounds and link/unlink validation; handler status and error mapping; DAO source-text marker order for link and unlink and the auto-match ordering and guard
-- [ ] T048 [US6] Integration tests in `internal/dao/planned_sport_sessions_integration_test.go`: unlink to planned and to missed with participation, link-existing completes without a second credit, conflicts, closest-duration tie-break, short-import guard, effort round trip
-- [ ] T049 [US6] Update `docs/CONTRACTS.md` (1.3.0), extend smoke step 13d with unlink, link-existing, and effort; run gates (`go test ./...`, race, integration, lint, smoke on an isolated stack, schema and security validators)
+- [x] T040 [US6] Amend spec FR-008 and edge cases (A1), add US6 and FR-017–FR-020, and record the decisions in research.md, data-model.md, quickstart.md, and the OpenAPI contract (1.3.0)
+- [x] T041 [P] [US6] Add migration `migrations/028_add_sport_activity_effort.{up,down}.sql`, the model acceptance text contract, and the `docs/DATABASE_DESIGN.md` row, count (306), history line; run `./scripts/validate-database-design.sh`
+- [x] T042 [P] [US6] Add `PerceivedEffort` to `SportActivity` and `CreateSportActivityRequest`, `LinkSportActivityRequest`, `UnlinkSportActivityRequest`, `SportSessionLinkResult`, and a `Reason` on `SportSessionConflictError` in `internal/model`
+- [x] T043 [US6] Validate effort 1–10 in `internal/service/sport_activity_svc.go`; persist and scan it in `internal/dao/sport_activity_dao.go`
+- [x] T044 [US6] Change auto-match ordering to closest planned duration and add the one-third guard in `lockSportSession` (`internal/dao/sport_activity_dao.go`)
+- [x] T045 [US6] Add `Link` and `Unlink` to the sport-activity DAO and service (lock order, replay, row locks, revision check, conflicts with `reason`, unlink status by local today, scheduled-date participation on unlink to missed)
+- [x] T046 [US6] Add `POST /sport-activities/{id}/link` and `/unlink` handlers and routes; map `details.reason`; update `internal/router/training_routes_test.go`
+- [x] T047 [P] [US6] Unit tests: service effort bounds and link/unlink validation; handler status and error mapping; DAO source-text marker order for link and unlink and the auto-match ordering and guard
+- [x] T048 [US6] Integration tests in `internal/dao/planned_sport_sessions_integration_test.go`: unlink to planned and to missed with participation, link-existing completes without a second credit, conflicts, closest-duration tie-break, short-import guard, effort round trip
+- [x] T049 [US6] Update `docs/CONTRACTS.md` (1.3.0), extend smoke step 13d with unlink, link-existing, and effort; run gates (`go test ./...`, race, integration, lint, smoke on an isolated stack, schema and security validators)
 
 ## Dependencies & Execution Order
 

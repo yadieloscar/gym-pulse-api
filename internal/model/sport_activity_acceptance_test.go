@@ -215,3 +215,29 @@ func TestSportActivityJSONCarriesScheduledWorkoutLinkOnlyWhenSet(t *testing.T) {
 		t.Fatalf("linked activity must carry scheduled_workout_id: %s", linked)
 	}
 }
+
+func TestSportActivityEffortMigrationContract(t *testing.T) {
+	up, err := os.ReadFile("../../migrations/028_add_sport_activity_effort.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invariant := range []string{"ALTER TABLE sport_activities", "ADD COLUMN perceived_effort SMALLINT", "perceived_effort BETWEEN 1 AND 10"} {
+		if !strings.Contains(string(up), invariant) {
+			t.Errorf("effort migration missing %q", invariant)
+		}
+	}
+	down, err := os.ReadFile("../../migrations/028_add_sport_activity_effort.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(down), "DROP COLUMN IF EXISTS perceived_effort") || strings.Contains(string(down), "DROP TABLE") {
+		t.Fatalf("effort rollback must drop only the column: %s", down)
+	}
+	encoded, err := json.Marshal(SportActivity{Source: ActivitySourceManual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "perceived_effort") {
+		t.Fatalf("effort must be omitted when absent: %s", encoded)
+	}
+}

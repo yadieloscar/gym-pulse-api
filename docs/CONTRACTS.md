@@ -180,6 +180,8 @@ completed returns:
   "resource": { "id": "<uuid>", "kind": "sport", "status": "completed", "revision": 2 }
 }
 ```
+Link and unlink add `details.reason` (`activity_linked`, `session_completed`,
+`not_linked`).
 All four conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
 `404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
 `{"error":"string","code":"CODE","details":{}}` shape.
@@ -735,9 +737,50 @@ transaction the activity is created with the link, the session becomes
 participation is credited to the activity date. The scheduled date's
 participation row is left as finalization wrote it. An imported activity
 (`source` not `manual`) sent without `scheduled_workout_id` fulfils the
-earliest open session (lowest `sequence_position`) for the same sport and date,
-if one exists; a manual activity never links on its own. An import duplicate
-(same `source` and `external_id`) returns 200 and never links.
+open session for the same sport and date whose `target_duration_minutes` is
+closest to the activity's duration, then the lowest `sequence_position`; a
+session planned for more than three times the activity's duration is skipped
+(contract 1.3.0). A manual activity never links on its own. An import
+duplicate (same `source` and `external_id`) returns 200 and never links.
+GymPulse never changes a link on its own after it is made; the athlete changes
+it with link and unlink below.
+
+Contract 1.3.0 adds optional `perceived_effort`, a whole number from 1 (very
+easy) to 10 (maximal) given after the session; it is returned when set and
+never feeds records, volume, distribution, or participation. Out-of-range values
+return `422` on `perceived_effort`.
+
+#### `POST /api/v1/sport-activities/{id}/link` (contract 1.3.0)
+
+```json
+{ "scheduled_workout_id": "<uuid>", "expected_revision": 2, "operation_key": "link-123" }
+```
+
+Requires `Idempotency-Key` equal to `operation_key`; `expected_revision` is the
+session's. Links an owned unlinked activity to an owned open (`planned` or
+`missed`) sport session of the same sport and completes the session exactly as
+recording against it would, without crediting participation again. Response
+200 is `{ "sport_activity": SportActivity, "scheduled_workout": ScheduledWorkout }`.
+A missing or foreign activity or session returns the shared 404; an exercise
+workout returns `422` on `kind`; a different sport returns `422` on `sport_id`;
+a stale revision returns `409 REVISION_CONFLICT`; an already linked activity or
+a completed session returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason` `activity_linked` or `session_completed` and the session as
+`resource`. A verbatim retry replays the stored response.
+
+#### `POST /api/v1/sport-activities/{id}/unlink` (contract 1.3.0)
+
+```json
+{ "expected_revision": 3, "operation_key": "unlink-123" }
+```
+
+`expected_revision` is the linked session's. Clears the link. The session
+returns to `planned` with `finalized_at` cleared (omitted) when its date is today or later
+in the athlete's timezone, otherwise to `missed` (still finalized, any skip
+cleared), and that scheduled date counts as a missed opportunity. The activity
+and its own date's participation are unchanged. Response 200 is the same pair.
+An unlinked activity returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason: "not_linked"`; a stale revision returns `409 REVISION_CONFLICT`.
 
 Response 201 is the authoritative activity. `source` is always present;
 `external_id`, measurements, and `scheduled_workout_id` appear only when set:

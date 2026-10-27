@@ -58,7 +58,11 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 	var sportSession *model.SportSessionConflictError
 	if errors.As(err, &sportSession) {
-		writeJSON(w, http.StatusConflict, apiError{Error: sportSession.Message, Code: "SPORT_SESSION_CONFLICT", Details: map[string]any{"status": sportSession.Status}, Resource: sportSession.Authoritative})
+		details := map[string]any{"status": sportSession.Status}
+		if sportSession.Reason != "" {
+			details["reason"] = sportSession.Reason
+		}
+		writeJSON(w, http.StatusConflict, apiError{Error: sportSession.Message, Code: "SPORT_SESSION_CONFLICT", Details: details, Resource: sportSession.Authoritative})
 		return
 	}
 

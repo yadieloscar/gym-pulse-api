@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **31 tables and 305 supported columns**. For the Supabase-managed
+The current inventory contains **31 tables and 306 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -912,6 +912,7 @@ active program when necessary, changes the revision, and replaces all child work
 | `created_at` | `timestamptz` | not null; `now()` | Creation instant | Health |
 | `updated_at` | `timestamptz` | not null; `now()` | Latest aggregate mutation instant | Health |
 | `scheduled_workout_id` | `uuid` | nullable | Scheduled sport session this activity fulfilled | Health |
+| `perceived_effort` | `smallint` | nullable | Athlete's whole-session effort, 1–10, given after the fact | Health |
 
 **Current constraints and indexes**
 
@@ -928,7 +929,10 @@ active program when necessary, changes the revision, and replaces all child work
 Account deletion removes the owned record and any composition children; RLS is enabled without direct-client
 policies and existing Data API roles have table privileges revoked.
 
-**Migration source**: 018, 022 (origin, identity, and measurements), 027 (scheduled sport session link).
+- Check: `perceived_effort` 1–10 when present. Display only; no stat reads it.
+- Link and unlink (contract 1.3.0) change only `scheduled_workout_id`, take `schedule:` then `sport-activity:`, lock the activity and session rows, and store an idempotency response.
+
+**Migration source**: 018, 022 (origin, identity, and measurements), 027 (scheduled sport session link), 028 (perceived effort).
 
 ### Table: `public.health_exports`
 
@@ -1091,12 +1095,12 @@ columns:
 | Catalog and legacy template/log/plan | 8 | 70 |
 | Starter and user programs | 6 | 69 |
 | Scheduled execution/history/workflow | 6 | 72 |
-| Sport activity | 1 | 15 |
+| Sport activity | 1 | 16 |
 | Health exports | 1 | 8 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **31** | **305** |
+| **Total** | **31** | **306** |
 
-The count is derived from the final state after migration 027, not the sum of every historical
+The count is derived from the final state after migration 028, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1334,6 +1338,7 @@ when deletion/maintenance plans demonstrate table scans at material size.
 | Scheduled finalization/session completion | Finalized outcome, participation preservation and exact replay response commit or roll back together |
 | Plan transition | Profile, active program, future schedule, idempotency |
 | Sport creation | Activity, optional scheduled sport session completion (explicit id or import auto-match), participation preservation, idempotency response |
+| Sport link and unlink | Locked activity and session rows, link change, session completion or reopening (unlink to missed also records the scheduled date's opportunity), idempotency response |
 | Training-block mutation | Owned locked aggregate, exposure/response/transition, revision, idempotency response |
 | Account deletion | All application-owned roots and composition children; provider identity is separate |
 
@@ -1882,6 +1887,7 @@ Report one of:
 | 025 | `health_exports` write-once ledger, RLS and role revocation |
 | 026 | `gym_pulse_api` runtime role: DML grants, default DML for future tables, `gym_pulse_api_access` policies on all 30 application tables, `auth.users` read |
 | 027 | Planned sport sessions: `kind` and sport snapshot columns on `program_workouts` and `scheduled_workouts`, `sport_activities.scheduled_workout_id` link with partial unique index |
+| 028 | `sport_activities.perceived_effort` (1–10, optional) |
 
 ## 19. Decision summary
 

@@ -18,6 +18,8 @@ type sportHandlerService struct {
 	err        error
 	created    model.CreateSportActivityRequest
 	outcome    model.SportActivityCreateOutcome
+	linkReq    *model.LinkSportActivityRequest
+	unlinkReq  *model.UnlinkSportActivityRequest
 }
 
 func (s *sportHandlerService) List(context.Context, uuid.UUID, string, string) ([]model.SportActivity, error) {
@@ -35,6 +37,22 @@ func (s *sportHandlerService) Create(_ context.Context, _ uuid.UUID, req model.C
 		return nil, model.SportActivityCreated, s.err
 	}
 	return &s.activities[0], s.outcome, nil
+}
+
+func (s *sportHandlerService) Link(_ context.Context, _ uuid.UUID, id uuid.UUID, req model.LinkSportActivityRequest) (*model.SportSessionLinkResult, error) {
+	s.linkReq = &req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &model.SportSessionLinkResult{SportActivity: model.SportActivity{ID: id, ScheduledWorkoutID: &req.ScheduledWorkoutID}, ScheduledWorkout: model.ScheduledWorkout{ID: req.ScheduledWorkoutID, Kind: model.UnitKindSport, Status: model.WorkoutStatusCompleted}}, nil
+}
+
+func (s *sportHandlerService) Unlink(_ context.Context, _ uuid.UUID, id uuid.UUID, req model.UnlinkSportActivityRequest) (*model.SportSessionLinkResult, error) {
+	s.unlinkReq = &req
+	if s.err != nil {
+		return nil, s.err
+	}
+	return &model.SportSessionLinkResult{SportActivity: model.SportActivity{ID: id}, ScheduledWorkout: model.ScheduledWorkout{Kind: model.UnitKindSport, Status: model.WorkoutStatusPlanned}}, nil
 }
 
 func TestSportActivityHandlerSuccess(t *testing.T) {
@@ -213,5 +231,46 @@ func TestSportActivityHandlerCreatePassesAndReturnsScheduledWorkoutLink(t *testi
 		if rec.Code != failure.status || !strings.Contains(rec.Body.String(), failure.want) {
 			t.Fatalf("err=%v status=%d body=%s", failure.err, rec.Code, rec.Body.String())
 		}
+	}
+}
+
+func TestSportActivityHandlerLinkAndUnlink(t *testing.T) {
+	activityID, sessionID := uuid.New(), uuid.New()
+	svc := &sportHandlerService{}
+	handler := NewSportActivityHandler(svc)
+	params := map[string]string{"id": activityID.String()}
+
+	link := httptest.NewRecorder()
+	handler.Link(link, guidedHandlerRequest(t, http.MethodPost, "/", model.LinkSportActivityRequest{ScheduledWorkoutID: sessionID, ExpectedRevision: 2, OperationKey: "link-op"}, uuid.New(), "link-op", params))
+	if link.Code != http.StatusOK || !strings.Contains(link.Body.String(), `"scheduled_workout":`) || !strings.Contains(link.Body.String(), `"sport_activity":`) {
+		t.Fatalf("link status=%d body=%s", link.Code, link.Body.String())
+	}
+	if svc.linkReq == nil || svc.linkReq.ScheduledWorkoutID != sessionID || svc.linkReq.ExpectedRevision != 2 {
+		t.Fatalf("link request not passed through: %+v", svc.linkReq)
+	}
+
+	unlink := httptest.NewRecorder()
+	handler.Unlink(unlink, guidedHandlerRequest(t, http.MethodPost, "/", model.UnlinkSportActivityRequest{ExpectedRevision: 3, OperationKey: "unlink-op"}, uuid.New(), "unlink-op", params))
+	if unlink.Code != http.StatusOK || svc.unlinkReq == nil || svc.unlinkReq.ExpectedRevision != 3 {
+		t.Fatalf("unlink status=%d body=%s req=%+v", unlink.Code, unlink.Body.String(), svc.unlinkReq)
+	}
+
+	badKey := httptest.NewRecorder()
+	handler.Unlink(badKey, guidedHandlerRequest(t, http.MethodPost, "/", model.UnlinkSportActivityRequest{ExpectedRevision: 3, OperationKey: "body"}, uuid.New(), "header", params))
+	if badKey.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("mismatched key status=%d", badKey.Code)
+	}
+	badID := httptest.NewRecorder()
+	handler.Link(badID, guidedHandlerRequest(t, http.MethodPost, "/", model.LinkSportActivityRequest{}, uuid.New(), "", map[string]string{"id": "bad"}))
+	if badID.Code != http.StatusBadRequest {
+		t.Fatalf("bad id status=%d", badID.Code)
+	}
+
+	svc.err = &model.SportSessionConflictError{Message: "sport activity is already linked to a session", Status: "planned", Reason: "activity_linked", Authoritative: &model.ScheduledWorkout{ID: sessionID}}
+	conflict := httptest.NewRecorder()
+	handler.Link(conflict, guidedHandlerRequest(t, http.MethodPost, "/", model.LinkSportActivityRequest{ScheduledWorkoutID: sessionID, ExpectedRevision: 2, OperationKey: "link-op-2"}, uuid.New(), "link-op-2", params))
+	body := conflict.Body.String()
+	if conflict.Code != http.StatusConflict || !strings.Contains(body, `"code":"SPORT_SESSION_CONFLICT"`) || !strings.Contains(body, `"reason":"activity_linked"`) || !strings.Contains(body, `"resource"`) {
+		t.Fatalf("conflict status=%d body=%s", conflict.Code, body)
 	}
 }

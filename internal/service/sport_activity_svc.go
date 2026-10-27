@@ -21,6 +21,10 @@ type SportActivityService interface {
 	// Create records a sport and reports whether it was created, replayed, or
 	// already existed as an imported activity.
 	Create(ctx context.Context, userID uuid.UUID, req model.CreateSportActivityRequest) (*model.SportActivity, model.SportActivityCreateOutcome, error)
+	// Link counts an owned unlinked activity toward an owned open sport session.
+	Link(ctx context.Context, userID, activityID uuid.UUID, req model.LinkSportActivityRequest) (*model.SportSessionLinkResult, error)
+	// Unlink clears an activity's session link so the athlete can repair a wrong match.
+	Unlink(ctx context.Context, userID, activityID uuid.UUID, req model.UnlinkSportActivityRequest) (*model.SportSessionLinkResult, error)
 }
 
 type sportActivityService struct {
@@ -89,8 +93,63 @@ func (s *sportActivityService) Create(ctx context.Context, userID uuid.UUID, req
 		// foreign id is a 404, an exercise workout or sport mismatch a 422,
 		// and a completed session a SPORT_SESSION_CONFLICT.
 		ScheduledWorkoutID: req.ScheduledWorkoutID,
+		PerceivedEffort:    req.PerceivedEffort,
 	}
 	return s.activities.Create(ctx, userID, activity, profile.Timezone, req.OperationKey, hash)
+}
+
+func validLinkKey(operationKey string, expectedRevision int64) error {
+	if operationKey == "" || len(operationKey) > 128 {
+		return &model.ValidationError{Message: "operation_key must be between 1 and 128 characters", Field: "operation_key"}
+	}
+	if expectedRevision < 1 {
+		return &model.ValidationError{Message: "expected_revision must be at least 1", Field: "expected_revision"}
+	}
+	return nil
+}
+
+func (s *sportActivityService) Link(ctx context.Context, userID, activityID uuid.UUID, req model.LinkSportActivityRequest) (*model.SportSessionLinkResult, error) {
+	req.OperationKey = strings.TrimSpace(req.OperationKey)
+	if req.ScheduledWorkoutID == uuid.Nil {
+		return nil, &model.ValidationError{Message: "scheduled_workout_id is required", Field: "scheduled_workout_id"}
+	}
+	if err := validLinkKey(req.OperationKey, req.ExpectedRevision); err != nil {
+		return nil, err
+	}
+	hash, err := hashPayload(struct {
+		ActivityID uuid.UUID
+		Request    model.LinkSportActivityRequest
+	}{activityID, req})
+	if err != nil {
+		return nil, err
+	}
+	result, _, err := s.activities.Link(ctx, userID, activityID, req, hash)
+	return result, err
+}
+
+func (s *sportActivityService) Unlink(ctx context.Context, userID, activityID uuid.UUID, req model.UnlinkSportActivityRequest) (*model.SportSessionLinkResult, error) {
+	req.OperationKey = strings.TrimSpace(req.OperationKey)
+	if err := validLinkKey(req.OperationKey, req.ExpectedRevision); err != nil {
+		return nil, err
+	}
+	profile, err := s.profiles.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	location, err := time.LoadLocation(profile.Timezone)
+	if err != nil {
+		return nil, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
+	}
+	hash, err := hashPayload(struct {
+		ActivityID uuid.UUID
+		Request    model.UnlinkSportActivityRequest
+	}{activityID, req})
+	if err != nil {
+		return nil, err
+	}
+	localToday := s.now().In(location).Format("2006-01-02")
+	result, _, err := s.activities.Unlink(ctx, userID, activityID, req, localToday, profile.Timezone, hash)
+	return result, err
 }
 
 func validateSportRange(from, to string) error {
@@ -129,6 +188,9 @@ func validateSportRequest(req model.CreateSportActivityRequest, localNow time.Ti
 	}
 	if req.OperationKey == "" || len(req.OperationKey) > 128 {
 		return &model.ValidationError{Message: "operation_key must be between 1 and 128 characters", Field: "operation_key"}
+	}
+	if req.PerceivedEffort != nil && (*req.PerceivedEffort < 1 || *req.PerceivedEffort > 10) {
+		return &model.ValidationError{Message: "perceived_effort must be between 1 and 10", Field: "perceived_effort"}
 	}
 	return validateSportOrigin(req)
 }
