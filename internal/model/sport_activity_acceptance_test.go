@@ -128,3 +128,116 @@ func TestSportActivityJSONKeepsLegacyShapeAndAddsSource(t *testing.T) {
 		}
 	}
 }
+
+func TestPlannedSportSessionsMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/027_add_planned_sport_sessions.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(body)
+	for _, invariant := range []string{
+		"ALTER TABLE program_workouts",
+		"ALTER TABLE scheduled_workouts",
+		"ALTER TABLE sport_activities",
+		"ADD COLUMN kind TEXT NOT NULL DEFAULT 'exercises'",
+		"CHECK (kind IN ('exercises', 'sport'))",
+		"ADD COLUMN target_duration_minutes INTEGER",
+		"target_duration_minutes BETWEEN 1 AND 1440",
+		"target_distance_meters BETWEEN 1 AND 1000000",
+		"char_length(sport_notes) BETWEEN 1 AND 2000",
+		"ADD CONSTRAINT program_workouts_sport_kind_check",
+		"ADD CONSTRAINT scheduled_workouts_sport_kind_check",
+		"(kind = 'sport') = (sport_id IS NOT NULL)",
+		"ADD COLUMN scheduled_workout_id UUID",
+		"REFERENCES scheduled_workouts(id) ON DELETE SET NULL",
+		"CREATE UNIQUE INDEX ux_sport_activities_scheduled_workout",
+		"WHERE scheduled_workout_id IS NOT NULL",
+	} {
+		if !strings.Contains(migration, invariant) {
+			t.Errorf("planned sport sessions migration missing %q", invariant)
+		}
+	}
+	if strings.Contains(migration, "UPDATE ") {
+		t.Fatal("migration must not backfill; the kind default covers existing rows")
+	}
+	if strings.Contains(migration, "CREATE TABLE") {
+		t.Fatal("migration must not create a table; RLS inventory is unchanged")
+	}
+}
+
+func TestPlannedSportSessionsMigrationRollbackIsScoped(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/027_add_planned_sport_sessions.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	down := string(body)
+	for _, statement := range []string{
+		"DROP INDEX IF EXISTS ux_sport_activities_scheduled_workout",
+		"DROP COLUMN IF EXISTS scheduled_workout_id",
+		"DROP CONSTRAINT IF EXISTS scheduled_workouts_sport_kind_check",
+		"DROP CONSTRAINT IF EXISTS program_workouts_sport_kind_check",
+		"DROP COLUMN IF EXISTS kind",
+		"DROP COLUMN IF EXISTS sport_id",
+		"DROP COLUMN IF EXISTS sport_name",
+		"DROP COLUMN IF EXISTS target_duration_minutes",
+		"DROP COLUMN IF EXISTS target_distance_meters",
+		"DROP COLUMN IF EXISTS sport_notes",
+	} {
+		if !strings.Contains(down, statement) {
+			t.Errorf("rollback missing %q", statement)
+		}
+	}
+	if strings.Contains(down, "DROP TABLE") {
+		t.Fatal("rollback must not drop any table")
+	}
+}
+
+func TestSportActivityJSONCarriesScheduledWorkoutLinkOnlyWhenSet(t *testing.T) {
+	unlinked, err := json.Marshal(SportActivity{Source: ActivitySourceManual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(unlinked), "scheduled_workout_id") {
+		t.Fatalf("unlinked activity must omit scheduled_workout_id: %s", unlinked)
+	}
+	var req CreateSportActivityRequest
+	if err := json.Unmarshal([]byte(`{"sport_id":"cycling","sport_name":"Cycling","duration_minutes":95,"operation_key":"op","scheduled_workout_id":"2b1f0d8e-4a77-4c51-9c7e-6f0d9b3c2e1a"}`), &req); err != nil {
+		t.Fatal(err)
+	}
+	if req.ScheduledWorkoutID == nil || req.ScheduledWorkoutID.String() != "2b1f0d8e-4a77-4c51-9c7e-6f0d9b3c2e1a" {
+		t.Fatalf("request must decode scheduled_workout_id: %+v", req.ScheduledWorkoutID)
+	}
+	linked, err := json.Marshal(SportActivity{Source: ActivitySourceManual, ScheduledWorkoutID: req.ScheduledWorkoutID})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(linked), `"scheduled_workout_id":"2b1f0d8e-4a77-4c51-9c7e-6f0d9b3c2e1a"`) {
+		t.Fatalf("linked activity must carry scheduled_workout_id: %s", linked)
+	}
+}
+
+func TestSportActivityEffortMigrationContract(t *testing.T) {
+	up, err := os.ReadFile("../../migrations/028_add_sport_activity_effort.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, invariant := range []string{"ALTER TABLE sport_activities", "ADD COLUMN perceived_effort SMALLINT", "perceived_effort BETWEEN 1 AND 10"} {
+		if !strings.Contains(string(up), invariant) {
+			t.Errorf("effort migration missing %q", invariant)
+		}
+	}
+	down, err := os.ReadFile("../../migrations/028_add_sport_activity_effort.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(down), "DROP COLUMN IF EXISTS perceived_effort") || strings.Contains(string(down), "DROP TABLE") {
+		t.Fatalf("effort rollback must drop only the column: %s", down)
+	}
+	encoded, err := json.Marshal(SportActivity{Source: ActivitySourceManual})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(encoded), "perceived_effort") {
+		t.Fatalf("effort must be omitted when absent: %s", encoded)
+	}
+}

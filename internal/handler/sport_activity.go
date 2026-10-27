@@ -46,3 +46,31 @@ func (h *SportActivityHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	respond(w, activity, err, status)
 }
+
+// Link counts an owned unlinked activity toward an owned open sport session.
+func (h *SportActivityHandler) Link(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req model.LinkSportActivityRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	result, err := h.svc.Link(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
+	respond(w, result, err, http.StatusOK)
+}
+
+// Unlink clears an activity's session link; the session reopens or is missed again.
+func (h *SportActivityHandler) Unlink(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req model.UnlinkSportActivityRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	result, err := h.svc.Unlink(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
+	respond(w, result, err, http.StatusOK)
+}

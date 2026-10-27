@@ -170,7 +170,19 @@ A skip or unskip that does not apply to the workout's current outcome returns:
   "resource": { "id": "<uuid>", "revision": 5 }
 }
 ```
-All three conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
+A sport activity recorded against a scheduled sport session that is already
+completed returns:
+```json
+{
+  "error": "sport session is already completed",
+  "code": "SPORT_SESSION_CONFLICT",
+  "details": { "status": "completed" },
+  "resource": { "id": "<uuid>", "kind": "sport", "status": "completed", "revision": 2 }
+}
+```
+Link and unlink add `details.reason` (`activity_linked`, `session_completed`,
+`not_linked`).
+All four conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
 `404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
 `{"error":"string","code":"CODE","details":{}}` shape.
 
@@ -271,7 +283,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
   "starter_version": 2, "name": "My Strength Plan", "primary_goal": "strength",
   "roadmap": {}, "active": true, "revision": 1,
   "workouts": [{
-    "id": "<uuid>", "name": "Full Body A", "preferred_weekday": 1,
+    "id": "<uuid>", "kind": "exercises", "name": "Full Body A", "preferred_weekday": 1,
     "sequence_position": 1,
     "exercises": [{
       "id": "<uuid>", "catalog_id": "<uuid|null>",
@@ -280,10 +292,29 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
       "target_sets": 3, "target_reps": 5, "target_weight": null,
       "target_duration_seconds": null, "rest_seconds": 180, "notes": null
     }]
+  }, {
+    "id": "<uuid>", "kind": "sport", "name": "Long ride", "preferred_weekday": 6,
+    "sequence_position": 2,
+    "sport": {
+      "sport_id": "cycling", "sport_name": "Cycling",
+      "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null
+    },
+    "exercises": []
   }],
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
+Planned sport sessions (contract 1.2.0): every program unit carries `kind`,
+`exercises` (the default when omitted on write) or `sport`. An `exercises`
+unit has at least one exercise and no `sport`. A `sport` unit has a `sport`
+target and no exercises: `sport_id` is a lowercase slug of at most 64
+characters, `sport_name` is trimmed and 1–80 characters (`other` requires a
+custom name), `target_duration_minutes` is 1–1,440, optional
+`target_distance_meters` is 1–1,000,000 and allowed only for `cycling`,
+`running`, `swimming`, and `other`, and optional `notes` is trimmed and at most
+2,000 characters. Violations return `422 VALIDATION_ERROR` with
+`details.field = "workouts"`. Starter programs, `from-starter`, and
+`adopt-legacy` produce `exercises` units only.
 
 #### `GET /api/v1/programs/{id}`
 
@@ -347,9 +378,15 @@ Response 200:
 `ScheduledWorkout` is:
 ```json
 {
-  "id": "<uuid>", "program_id": "<uuid|null>",
+  "id": "<uuid>", "kind": "exercises|sport", "program_id": "<uuid|null>",
   "program_workout_id": "<uuid|null>", "date": "2026-07-20",
   "name": "Full Body A", "sequence_position": 1,
+  "sport": {
+    "sport_id": "cycling", "sport_name": "Cycling",
+    "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null,
+    "sport_activity_id": "<uuid> (present once completed)",
+    "performed_date": "2026-07-20 (present once completed)"
+  },
   "status": "planned|in_progress|completed|incomplete|missed",
   "finalized_at": "<RFC3339|null>",
   "resolution": "skipped|recovered (omitted when unresolved)",
@@ -370,6 +407,18 @@ Response 200:
 ```
 Exercise name/category/modality and targets are immutable snapshots. Nullable
 program/catalog IDs are provenance only and deletion never erases history.
+`sport` is present only when `kind` is `sport` (contract 1.2.0). A scheduled
+sport session snapshots its sport target at generation, has empty
+`required_sets`, and only ever holds `planned`, `completed`, or `missed`. It
+becomes `completed` when a sport activity is recorded against it (see "Sport
+activities"), and `sport.sport_activity_id` and `sport.performed_date` then
+name that activity and its date. Materialize, regenerate, plan transitions,
+skip, and unskip treat sport sessions exactly like workouts. `complete`, set
+check, target edit, extra set, and a `PATCH` carrying non-empty
+`required_sets` answer `422 VALIDATION_ERROR` with `details.field = "kind"` on
+a sport session; a `PATCH` with only `name` is accepted. `schedule/recover`
+selects exercise workouts only, and health exports never apply to sport
+sessions.
 `resolution` records how the athlete resolved a missed workout: `skipped`
 (undoable) or `recovered` (a copy was planned through recover). It is
 meaningful only when `status` is `missed`; clients treat a missed workout as
@@ -676,20 +725,77 @@ is 1–1,000,000, `energy_kcal` is 1–20,000, and `avg_heart_rate_bpm` is 30–
 each is optional and stored only when supplied. Zero is rejected. Measurements
 are display facts and never feed records, volume, or distribution.
 
+Planned sport sessions (contract 1.2.0) add optional `scheduled_workout_id`.
+When present it must name an owned scheduled sport session (a missing or
+foreign id is the shared 404; an exercise workout is `422` on
+`scheduled_workout_id`) for the same `sport_id` (`422` on `sport_id`) that is
+not yet completed (`409 SPORT_SESSION_CONFLICT` with the authoritative session
+as `resource`). The session may be `planned` or `missed`; the activity `date`
+is the performed date and may differ from the scheduled date. In one
+transaction the activity is created with the link, the session becomes
+`completed` with any skip cleared and its revision incremented, and
+participation is credited to the activity date. The scheduled date's
+participation row is left as finalization wrote it. An imported activity
+(`source` not `manual`) sent without `scheduled_workout_id` fulfils the
+open session for the same sport and date whose `target_duration_minutes` is
+closest to the activity's duration, then the lowest `sequence_position`; a
+session planned for more than three times the activity's duration is skipped
+(contract 1.3.0). A manual activity never links on its own. An import
+duplicate (same `source` and `external_id`) returns 200 and never links.
+GymPulse never changes a link on its own after it is made; the athlete changes
+it with link and unlink below.
+
+Contract 1.3.0 adds optional `perceived_effort`, a whole number from 1 (very
+easy) to 10 (maximal) given after the session; it is returned when set and
+never feeds records, volume, distribution, or participation. Out-of-range values
+return `422` on `perceived_effort`.
+
+#### `POST /api/v1/sport-activities/{id}/link` (contract 1.3.0)
+
+```json
+{ "scheduled_workout_id": "<uuid>", "expected_revision": 2, "operation_key": "link-123" }
+```
+
+Requires `Idempotency-Key` equal to `operation_key`; `expected_revision` is the
+session's. Links an owned unlinked activity to an owned open (`planned` or
+`missed`) sport session of the same sport and completes the session exactly as
+recording against it would, without crediting participation again. Response
+200 is `{ "sport_activity": SportActivity, "scheduled_workout": ScheduledWorkout }`.
+A missing or foreign activity or session returns the shared 404; an exercise
+workout returns `422` on `kind`; a different sport returns `422` on `sport_id`;
+a stale revision returns `409 REVISION_CONFLICT`; an already linked activity or
+a completed session returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason` `activity_linked` or `session_completed` and the session as
+`resource`. A verbatim retry replays the stored response.
+
+#### `POST /api/v1/sport-activities/{id}/unlink` (contract 1.3.0)
+
+```json
+{ "expected_revision": 3, "operation_key": "unlink-123" }
+```
+
+`expected_revision` is the linked session's. Clears the link. The session
+returns to `planned` with `finalized_at` cleared (omitted) when its date is today or later
+in the athlete's timezone, otherwise to `missed` (still finalized, any skip
+cleared), and that scheduled date counts as a missed opportunity. The activity
+and its own date's participation are unchanged. Response 200 is the same pair.
+An unlinked activity returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason: "not_linked"`; a stale revision returns `409 REVISION_CONFLICT`.
+
 Response 201 is the authoritative activity. `source` is always present;
-`external_id` and measurements appear only when set:
+`external_id`, measurements, and `scheduled_workout_id` appear only when set:
 
 ```json
 {
   "id": "<uuid>", "date": "2026-08-02",
   "sport_id": "basketball", "sport_name": "Basketball",
   "duration_minutes": 60, "notes": "Pickup game",
-  "source": "manual",
+  "source": "manual", "scheduled_workout_id": "<uuid> (when linked)",
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
 
-Creation and date participation commit atomically. An identical idempotent retry
+Creation, any session completion, and date participation commit atomically. An identical idempotent retry
 returns the original activity with 201; a changed payload returns 409
 `IDEMPOTENCY_CONFLICT`. When an imported workout's `source` and `external_id`
 already exist for the athlete, the existing activity is returned with 200 and

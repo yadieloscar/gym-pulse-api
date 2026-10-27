@@ -3579,6 +3579,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -3587,6 +3590,9 @@ const docTemplate = `{
                 },
                 "sequence_position": {
                     "type": "integer"
+                },
+                "sport": {
+                    "$ref": "#/definitions/model.SportTarget"
                 }
             }
         },
@@ -3762,6 +3768,32 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ScheduledSport": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "performed_date": {
+                    "type": "string"
+                },
+                "sport_activity_id": {
+                    "type": "string"
+                },
+                "sport_id": {
+                    "type": "string"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "target_distance_meters": {
+                    "type": "integer"
+                },
+                "target_duration_minutes": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.ScheduledWorkout": {
             "type": "object",
             "properties": {
@@ -3782,6 +3814,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
                 },
                 "name": {
                     "type": "string"
@@ -3813,6 +3848,9 @@ const docTemplate = `{
                 },
                 "sequence_position": {
                     "type": "integer"
+                },
+                "sport": {
+                    "$ref": "#/definitions/model.ScheduledSport"
                 },
                 "status": {
                     "type": "string"
@@ -3884,6 +3922,26 @@ const docTemplate = `{
                 },
                 "operation_key": {
                     "type": "string"
+                }
+            }
+        },
+        "model.SportTarget": {
+            "type": "object",
+            "properties": {
+                "notes": {
+                    "type": "string"
+                },
+                "sport_id": {
+                    "type": "string"
+                },
+                "sport_name": {
+                    "type": "string"
+                },
+                "target_distance_meters": {
+                    "type": "integer"
+                },
+                "target_duration_minutes": {
+                    "type": "integer"
                 }
             }
         },
@@ -4065,6 +4123,17 @@ const docTemplate = `{
                     "type": "string"
                 }
             }
+        },
+        "model.UnitKind": {
+            "type": "string",
+            "enum": [
+                "exercises",
+                "sport"
+            ],
+            "x-enum-varnames": [
+                "UnitKindExercises",
+                "UnitKindSport"
+            ]
         },
         "model.UpdateDayLogRequest": {
             "type": "object",

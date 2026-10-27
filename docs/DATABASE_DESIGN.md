@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **31 tables and 292 supported columns**. For the Supabase-managed
+The current inventory contains **31 tables and 306 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -652,6 +652,12 @@ active program when necessary, changes the revision, and replaces all child work
 | `name` | `text` | not null | Workout name snapshot | Health |
 | `preferred_weekday` | `smallint` | nullable | Preferred ISO weekday | Health |
 | `sequence_position` | `integer` | not null | Positive program order | Health |
+| `kind` | `text` | not null; `'exercises'` | `exercises` workout or planned `sport` session | Health |
+| `sport_id` | `text` | nullable | Canonical sport identifier of a sport unit | Health |
+| `sport_name` | `text` | nullable | Stored sport display name of a sport unit | Health |
+| `target_duration_minutes` | `integer` | nullable | Planned duration of a sport unit | Health |
+| `target_distance_meters` | `integer` | nullable | Planned distance of a distance-sport unit | Health |
+| `sport_notes` | `text` | nullable | Planned note of a sport unit | Health |
 
 **Current constraints and indexes**
 
@@ -659,8 +665,10 @@ active program when necessary, changes the revision, and replaces all child work
 - FK `program_id → programs(id) ON DELETE CASCADE`.
 - Unique `(program_id, sequence_position)`.
 - Weekday 1–7 when present; sequence position `> 0`.
+- `kind IN ('exercises', 'sport')`; `program_workouts_sport_kind_check` requires `sport_id`, `sport_name`, and `target_duration_minutes` exactly when `kind = 'sport'` and allows `target_distance_meters` and `sport_notes` only then. Sport id is a 1–64 lowercase slug, name 1–80, duration 1–1440, distance 1–1,000,000, notes 1–2,000.
+- A sport unit has no `program_exercises` rows; an exercises unit has at least one (application-enforced).
 
-**Migration source**: `012_create_training_domain`.
+**Migration source**: `012_create_training_domain`, `027_add_planned_sport_sessions`.
 
 ### Table: `public.program_exercises`
 
@@ -717,13 +725,20 @@ active program when necessary, changes the revision, and replaces all child work
 | `revision` | `bigint` | not null; `1` | Optimistic concurrency revision | Operational |
 | `created_at` | `timestamptz` | not null; `now()` | Materialization instant | Private |
 | `updated_at` | `timestamptz` | not null; `now()` | Last snapshot/outcome change | Private |
+| `kind` | `text` | not null; `'exercises'` | `exercises` workout or planned `sport` session snapshot | Health |
+| `sport_id` | `text` | nullable | Sport identifier snapshot of a sport session | Health |
+| `sport_name` | `text` | nullable | Sport display snapshot of a sport session | Health |
+| `target_duration_minutes` | `integer` | nullable | Planned duration snapshot | Health |
+| `target_distance_meters` | `integer` | nullable | Planned distance snapshot | Health |
+| `sport_notes` | `text` | nullable | Planned note snapshot | Health |
 
 **Current constraints and indexes**
 
 - Primary key: `id`.
 - FK `user_id → auth.users CASCADE`.
 - FKs `program_id → programs SET NULL` and `program_workout_id → program_workouts SET NULL`.
-- Status: `planned|in_progress|completed|incomplete|missed`; revision `> 0`.
+- Status: `planned|in_progress|completed|incomplete|missed`; revision `> 0`. A sport session only ever holds `planned`, `completed`, or `missed` (application-enforced).
+- `kind IN ('exercises', 'sport')`; `scheduled_workouts_sport_kind_check` mirrors the `program_workouts` pair rule. A sport row has no `scheduled_sets`; its completion is the `sport_activities` row whose `scheduled_workout_id` points at it.
 - Named index `idx_scheduled_workouts_user_date(user_id, date)`.
 - Resolution: `skipped|recovered`; `scheduled_workouts_resolution_check` limits values and `scheduled_workouts_resolution_pair` requires `resolution` and `resolved_at` to be both null or both set.
 - Migration `020` backfilled `recovered` from `idempotency_records` rows with scope `schedule/recover`, marking the missed source each recovery copied.
@@ -731,7 +746,7 @@ active program when necessary, changes the revision, and replaces all child work
 - **Gap**: no DB check limits `resolution` to `missed` rows; corrections clear it in application code.
 - **Gap**: no provenance FK indexes.
 
-**Migration source**: `012_create_training_domain`, `020_add_scheduled_workout_resolution`.
+**Migration source**: `012_create_training_domain`, `020_add_scheduled_workout_resolution`, `027_add_planned_sport_sessions`.
 
 ### Table: `public.scheduled_sets`
 
@@ -896,6 +911,8 @@ active program when necessary, changes the revision, and replaces all child work
 | `avg_heart_rate_bpm` | `smallint` | nullable | Imported average heart rate | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Creation instant | Health |
 | `updated_at` | `timestamptz` | not null; `now()` | Latest aggregate mutation instant | Health |
+| `scheduled_workout_id` | `uuid` | nullable | Scheduled sport session this activity fulfilled | Health |
+| `perceived_effort` | `smallint` | nullable | Athlete's whole-session effort, 1–10, given after the fact | Health |
 
 **Current constraints and indexes**
 
@@ -905,13 +922,17 @@ active program when necessary, changes the revision, and replaces all child work
 - Checks: `source IN ('manual', 'apple_health')`; non-null `external_id` 1–128; `distance_meters` 1–1,000,000; `energy_kcal` 1–20,000; `avg_heart_rate_bpm` 30–250; `sport_activities_source_identity_check` requires `external_id` exactly when `source <> 'manual'`.
 - Index `idx_sport_activities_user_date(user_id, date DESC, created_at DESC, id DESC)` supports deterministic bounded date-history reads.
 - Partial unique `ux_sport_activities_user_source_external(user_id, source, external_id) WHERE external_id IS NOT NULL` makes a re-imported health workout map to one activity per athlete.
-- Creation atomically writes participation and an idempotency response; the sport row has no operation-key or revision column. An import whose `(user_id, source, external_id)` already exists returns the existing row and writes nothing.
+- FK `scheduled_workout_id → scheduled_workouts(id) ON DELETE SET NULL`; partial unique `ux_sport_activities_scheduled_workout(scheduled_workout_id) WHERE scheduled_workout_id IS NOT NULL` allows one activity per scheduled sport session.
+- Creation atomically writes participation and an idempotency response; the sport row has no operation-key or revision column. An import whose `(user_id, source, external_id)` already exists returns the existing row and writes nothing. When the request names an owned open sport session, or an import matches the earliest open session for the same sport and date, the same transaction links the activity and marks the session `completed`.
 
 **Ownership/lifecycle**: Private to the authenticated owner, directly or through its block.
 Account deletion removes the owned record and any composition children; RLS is enabled without direct-client
 policies and existing Data API roles have table privileges revoked.
 
-**Migration source**: 018, 022 (origin, identity, and measurements).
+- Check: `perceived_effort` 1–10 when present. Display only; no stat reads it.
+- Link and unlink (contract 1.3.0) change only `scheduled_workout_id`, take `schedule:` then `sport-activity:`, lock the activity and session rows, and store an idempotency response.
+
+**Migration source**: 018, 022 (origin, identity, and measurements), 027 (scheduled sport session link), 028 (perceived effort).
 
 ### Table: `public.health_exports`
 
@@ -1072,14 +1093,14 @@ columns:
 | Managed identity | 1 | 1 supported column |
 | Profile/settings/body | 4 | 29 |
 | Catalog and legacy template/log/plan | 8 | 70 |
-| Starter and user programs | 6 | 63 |
-| Scheduled execution/history/workflow | 6 | 66 |
-| Sport activity | 1 | 14 |
+| Starter and user programs | 6 | 69 |
+| Scheduled execution/history/workflow | 6 | 72 |
+| Sport activity | 1 | 16 |
 | Health exports | 1 | 8 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **31** | **292** |
+| **Total** | **31** | **306** |
 
-The count is derived from the final state after migration 026, not the sum of every historical
+The count is derived from the final state after migration 028, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1106,6 +1127,7 @@ The count is derived from the final state after migration 026, not the sum of ev
 | `program_exercises` | `scheduled_sets` | Set null | Keeps dated target snapshot |
 | `scheduled_workouts` | `scheduled_sets` | Cascade | Removes planned composition |
 | `scheduled_workouts` | `workout_sessions` | Set null | Keeps performed session |
+| `scheduled_workouts` | `sport_activities` | Set null | Keeps the completed sport activity; the session loses its link |
 | `scheduled_sets` | `set_logs` | Set null | Keeps performed result snapshot |
 | `workout_sessions` | session `set_logs` | Cascade | Removes complete performed session detail |
 | `programs` | `criteria_training_blocks` | Set null | Keeps athlete-authored block |
@@ -1203,6 +1225,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | `day_participation` | `idx_day_participation_user_date(user_id, date)` | Date-range participation/streak |
 | `sport_activities` | `idx_sport_activities_user_date` | Owner/date/creation/ID history order |
 | `sport_activities` | `ux_sport_activities_user_source_external(user_id, source, external_id)` partial unique | One activity per imported health workout |
+| `sport_activities` | `ux_sport_activities_scheduled_workout(scheduled_workout_id)` partial unique | One activity per scheduled sport session; schedule-side link lookup |
 | `health_exports` | `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` unique | One Health export per finished workout and origin |
 | `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
@@ -1314,7 +1337,8 @@ when deletion/maintenance plans demonstrate table scans at material size.
 | Scheduled required/extra set mutation | Lock schedule, create/reuse session, write set, update workout outcome and store exact replay response |
 | Scheduled finalization/session completion | Finalized outcome, participation preservation and exact replay response commit or roll back together |
 | Plan transition | Profile, active program, future schedule, idempotency |
-| Sport creation | Activity, participation preservation, idempotency response |
+| Sport creation | Activity, optional scheduled sport session completion (explicit id or import auto-match), participation preservation, idempotency response |
+| Sport link and unlink | Locked activity and session rows, link change, session completion or reopening (unlink to missed also records the scheduled date's opportunity), idempotency response |
 | Training-block mutation | Owned locked aggregate, exposure/response/transition, revision, idempotency response |
 | Account deletion | All application-owned roots and composition children; provider identity is separate |
 
@@ -1329,8 +1353,12 @@ Cross-domain planning workflows acquire transaction-scoped advisory locks in thi
 
 1. `program:<user UUID>`
 2. `schedule:<user UUID>`
-3. Resource row locks (`programs`, `workout_sessions`, `scheduled_workouts`, idempotency rows) as
+3. `sport-activity:<user UUID>`
+4. Resource row locks (`programs`, `workout_sessions`, `scheduled_workouts`, idempotency rows) as
    needed
+
+Sport creation takes `schedule:` and then `sport-activity:` on every request, because linking an
+activity updates `scheduled_workouts`; it never takes `program:`.
 
 Every new workflow touching both domains must preserve that order. Single-session set changes lock
 the owned session row directly. Avoid waiting on network I/O inside a transaction.
@@ -1858,6 +1886,8 @@ Report one of:
 | 024 | Settings palette gains `voltLime`, `oliveCitrine`, `slateMint` |
 | 025 | `health_exports` write-once ledger, RLS and role revocation |
 | 026 | `gym_pulse_api` runtime role: DML grants, default DML for future tables, `gym_pulse_api_access` policies on all 30 application tables, `auth.users` read |
+| 027 | Planned sport sessions: `kind` and sport snapshot columns on `program_workouts` and `scheduled_workouts`, `sport_activities.scheduled_workout_id` link with partial unique index |
+| 028 | `sport_activities.perceived_effort` (1–10, optional) |
 
 ## 19. Decision summary
 

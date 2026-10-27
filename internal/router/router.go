@@ -113,6 +113,8 @@ func New(
 					r.Get("/", sportActivityHandler.List)
 					r.Post("/", sportActivityHandler.Create)
 					r.Get("/{id}", sportActivityHandler.Get)
+					r.Post("/{id}/link", sportActivityHandler.Link)
+					r.Post("/{id}/unlink", sportActivityHandler.Unlink)
 				})
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)

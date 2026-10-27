@@ -628,12 +628,16 @@ definitions:
         type: array
       id:
         type: string
+      kind:
+        $ref: '#/definitions/model.UnitKind'
       name:
         type: string
       preferred_weekday:
         type: integer
       sequence_position:
         type: integer
+      sport:
+        $ref: '#/definitions/model.SportTarget'
     type: object
   model.PutPlanOverrideRequest:
     properties:
@@ -750,6 +754,23 @@ definitions:
       target_weight:
         type: number
     type: object
+  model.ScheduledSport:
+    properties:
+      notes:
+        type: string
+      performed_date:
+        type: string
+      sport_activity_id:
+        type: string
+      sport_id:
+        type: string
+      sport_name:
+        type: string
+      target_distance_meters:
+        type: integer
+      target_duration_minutes:
+        type: integer
+    type: object
   model.ScheduledWorkout:
     properties:
       created_at:
@@ -764,6 +785,8 @@ definitions:
         type: string
       id:
         type: string
+      kind:
+        $ref: '#/definitions/model.UnitKind'
       name:
         type: string
       program_id:
@@ -785,6 +808,8 @@ definitions:
         type: integer
       sequence_position:
         type: integer
+      sport:
+        $ref: '#/definitions/model.ScheduledSport'
       status:
         type: string
       updated_at:
@@ -833,6 +858,19 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.SportTarget:
+    properties:
+      notes:
+        type: string
+      sport_id:
+        type: string
+      sport_name:
+        type: string
+      target_distance_meters:
+        type: integer
+      target_duration_minutes:
+        type: integer
     type: object
   model.StarterProgram:
     properties:
@@ -952,6 +990,14 @@ definitions:
       type_id:
         type: string
     type: object
+  model.UnitKind:
+    enum:
+    - exercises
+    - sport
+    type: string
+    x-enum-varnames:
+    - UnitKindExercises
+    - UnitKindSport
   model.UpdateDayLogRequest:
     properties:
       overrides:

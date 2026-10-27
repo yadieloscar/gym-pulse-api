@@ -300,3 +300,38 @@ func TestGuidedTrainingHandlerInputFailures(t *testing.T) {
 		t.Fatal("authenticated user was not propagated")
 	}
 }
+
+func TestProgramHandlersPassSportUnitsThrough(t *testing.T) {
+	userID := uuid.New()
+	const operationKey = "sport-unit-op"
+	distance := 40000
+	req := model.CreateProgramRequest{Name: "Mixed week", PrimaryGoal: model.GoalStrength, OperationKey: operationKey, Workouts: []model.ProgramWorkout{
+		{Name: "Full Body A", SequencePosition: 1, Exercises: []model.ProgramExercise{{Name: "Back Squat", Category: "legs", Modality: "strength", ExerciseOrder: 1, TargetSets: 3}}},
+		{Kind: model.UnitKindSport, Name: "Long ride", SequencePosition: 2, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance}},
+	}}
+	captured := &capturingProgramService{}
+	program := NewProgramHandler(captured)
+	assertGuidedStatus(t, http.StatusCreated, func(w http.ResponseWriter) {
+		program.Create(w, guidedHandlerRequest(t, http.MethodPost, "/", req, userID, operationKey, nil))
+	})
+	if captured.created == nil || len(captured.created.Workouts) != 2 {
+		t.Fatalf("service must receive both units: %+v", captured.created)
+	}
+	sport := captured.created.Workouts[1]
+	if sport.Kind != model.UnitKindSport || sport.Sport == nil || sport.Sport.SportID != "cycling" || sport.Sport.TargetDistanceMeters == nil || *sport.Sport.TargetDistanceMeters != 40000 {
+		t.Fatalf("sport unit must decode intact: %+v", sport)
+	}
+	if captured.created.Workouts[0].Kind != "" {
+		t.Fatalf("handler must not invent a kind; the service normalizes it: %q", captured.created.Workouts[0].Kind)
+	}
+}
+
+type capturingProgramService struct {
+	guidedProgramService
+	created *model.CreateProgramRequest
+}
+
+func (s *capturingProgramService) Create(_ context.Context, _ uuid.UUID, req model.CreateProgramRequest) (*model.Program, error) {
+	s.created = &req
+	return &model.Program{Name: req.Name, Workouts: req.Workouts}, nil
+}

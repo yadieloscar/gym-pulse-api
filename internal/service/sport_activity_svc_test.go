@@ -20,6 +20,7 @@ type sportActivityRepo struct {
 	hash       string
 	outcome    model.SportActivityCreateOutcome
 	err        error
+	linked     *linkCall
 }
 
 func (r *sportActivityRepo) List(context.Context, uuid.UUID, string, string) ([]model.SportActivity, error) {
@@ -39,6 +40,31 @@ func (r *sportActivityRepo) Create(_ context.Context, _ uuid.UUID, activity *mod
 	result := *activity
 	result.ID = uuid.New()
 	return &result, r.outcome, nil
+}
+
+func (r *sportActivityRepo) Link(_ context.Context, _ uuid.UUID, activityID uuid.UUID, req model.LinkSportActivityRequest, hash string) (*model.SportSessionLinkResult, bool, error) {
+	r.linked = &linkCall{activityID: activityID, link: req, hash: hash}
+	if r.err != nil {
+		return nil, false, r.err
+	}
+	return &model.SportSessionLinkResult{SportActivity: model.SportActivity{ID: activityID}}, false, nil
+}
+
+func (r *sportActivityRepo) Unlink(_ context.Context, _ uuid.UUID, activityID uuid.UUID, req model.UnlinkSportActivityRequest, localToday, timezone, hash string) (*model.SportSessionLinkResult, bool, error) {
+	r.linked = &linkCall{activityID: activityID, unlink: req, localToday: localToday, timezone: timezone, hash: hash}
+	if r.err != nil {
+		return nil, false, r.err
+	}
+	return &model.SportSessionLinkResult{SportActivity: model.SportActivity{ID: activityID}}, false, nil
+}
+
+type linkCall struct {
+	activityID uuid.UUID
+	link       model.LinkSportActivityRequest
+	unlink     model.UnlinkSportActivityRequest
+	localToday string
+	timezone   string
+	hash       string
 }
 
 type sportProfileRepo struct {
@@ -258,5 +284,102 @@ func TestSportActivityServiceCreateImportValidation(t *testing.T) {
 	}
 	if repo.created.DistanceMeters != nil || repo.created.EnergyKcal != nil || repo.created.AvgHeartRateBPM != nil {
 		t.Fatalf("absent measurements must stay nil: %+v", repo.created)
+	}
+}
+
+func TestSportActivityServiceCreateCarriesScheduledWorkoutLink(t *testing.T) {
+	repo := &sportActivityRepo{}
+	svc := newSportServiceForTest(repo, "UTC")
+	sessionID := uuid.New()
+	base := model.CreateSportActivityRequest{SportID: "cycling", SportName: "Cycling", DurationMinutes: 95, OperationKey: "ride-op"}
+	linked := base
+	linked.ScheduledWorkoutID = &sessionID
+	if _, _, err := svc.Create(context.Background(), uuid.New(), linked); err != nil {
+		t.Fatal(err)
+	}
+	if repo.created.ScheduledWorkoutID == nil || *repo.created.ScheduledWorkoutID != sessionID {
+		t.Fatalf("link must reach the DAO: %+v", repo.created)
+	}
+	linkedHash := repo.hash
+	if _, _, err := svc.Create(context.Background(), uuid.New(), base); err != nil {
+		t.Fatal(err)
+	}
+	if repo.created.ScheduledWorkoutID != nil {
+		t.Fatal("an unlinked request must not invent a link")
+	}
+	if repo.hash == linkedHash {
+		t.Fatal("the operation hash must include scheduled_workout_id so a changed link under the same key conflicts")
+	}
+	repo.err = &model.SportSessionConflictError{Message: "sport session is already completed", Status: model.WorkoutStatusCompleted}
+	_, _, err := svc.Create(context.Background(), uuid.New(), linked)
+	var conflict *model.SportSessionConflictError
+	if !errors.As(err, &conflict) {
+		t.Fatalf("DAO conflict must pass through unchanged: %v", err)
+	}
+}
+
+func TestSportActivityServicePerceivedEffortBounds(t *testing.T) {
+	for _, tc := range []struct {
+		effort  int
+		wantErr bool
+	}{{1, false}, {10, false}, {0, true}, {11, true}} {
+		repo := &sportActivityRepo{}
+		svc := newSportServiceForTest(repo, "UTC")
+		effort := tc.effort
+		_, _, err := svc.Create(context.Background(), uuid.New(), model.CreateSportActivityRequest{
+			SportID: "cycling", SportName: "Cycling", DurationMinutes: 60, OperationKey: "op", PerceivedEffort: &effort,
+		})
+		var ve *model.ValidationError
+		if tc.wantErr {
+			if !errors.As(err, &ve) || ve.Field != "perceived_effort" {
+				t.Fatalf("effort %d: want 422 perceived_effort, got %v", tc.effort, err)
+			}
+			continue
+		}
+		if err != nil || repo.created.PerceivedEffort == nil || *repo.created.PerceivedEffort != tc.effort {
+			t.Fatalf("effort %d must reach the DAO: %+v err=%v", tc.effort, repo.created, err)
+		}
+	}
+}
+
+func TestSportActivityServiceLinkAndUnlinkValidateAndPassThrough(t *testing.T) {
+	repo := &sportActivityRepo{}
+	svc := newSportServiceForTest(repo, "America/Los_Angeles")
+	activityID, sessionID := uuid.New(), uuid.New()
+
+	for _, tc := range []struct {
+		name  string
+		req   model.LinkSportActivityRequest
+		field string
+	}{
+		{"missing session", model.LinkSportActivityRequest{ExpectedRevision: 1, OperationKey: "k"}, "scheduled_workout_id"},
+		{"missing key", model.LinkSportActivityRequest{ScheduledWorkoutID: sessionID, ExpectedRevision: 1}, "operation_key"},
+		{"missing revision", model.LinkSportActivityRequest{ScheduledWorkoutID: sessionID, OperationKey: "k"}, "expected_revision"},
+	} {
+		_, err := svc.Link(context.Background(), uuid.New(), activityID, tc.req)
+		var ve *model.ValidationError
+		if !errors.As(err, &ve) || ve.Field != tc.field {
+			t.Fatalf("%s: want 422 %s, got %v", tc.name, tc.field, err)
+		}
+	}
+	if _, err := svc.Link(context.Background(), uuid.New(), activityID, model.LinkSportActivityRequest{ScheduledWorkoutID: sessionID, ExpectedRevision: 3, OperationKey: " link-1 "}); err != nil {
+		t.Fatal(err)
+	}
+	if repo.linked.activityID != activityID || repo.linked.link.OperationKey != "link-1" || repo.linked.hash == "" {
+		t.Fatalf("link must reach the DAO normalized: %+v", repo.linked)
+	}
+	linkHash := repo.linked.hash
+
+	if _, err := svc.Unlink(context.Background(), uuid.New(), activityID, model.UnlinkSportActivityRequest{ExpectedRevision: 4, OperationKey: "unlink-1"}); err != nil {
+		t.Fatal(err)
+	}
+	// newSportServiceForTest pins now to 2026-08-03 01:30 UTC, which is 2026-08-02 in Los Angeles.
+	if repo.linked.localToday != "2026-08-02" || repo.linked.timezone != "America/Los_Angeles" || repo.linked.hash == linkHash {
+		t.Fatalf("unlink must carry the athlete-local today and its own hash: %+v", repo.linked)
+	}
+	_, err := svc.Unlink(context.Background(), uuid.New(), activityID, model.UnlinkSportActivityRequest{OperationKey: "unlink-2"})
+	var ve *model.ValidationError
+	if !errors.As(err, &ve) || ve.Field != "expected_revision" {
+		t.Fatalf("unlink without a revision must be 422: %v", err)
 	}
 }
