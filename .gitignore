@@ -1,5 +1,6 @@
 # Binaries
 /server
+/migrate
 *.exe
 *.exe~
 *.dll
@@ -30,3 +31,6 @@ vendor/
 
 # Sibling git worktrees created by agents or scripts
 .worktrees/
+
+# Railway IaC toolchain (typecheck only)
+.railway/node_modules/

@@ -11,9 +11,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -22,16 +20,13 @@ import (
 	"time"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	_ "github.com/gym-pulse/gym-pulse-api/docs"
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
+	"github.com/gym-pulse/gym-pulse-api/internal/migration"
 	"github.com/gym-pulse/gym-pulse-api/internal/router"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
@@ -66,14 +61,26 @@ func main() {
 	logger := slog.New(slogHandler)
 	slog.SetDefault(logger)
 
-	// Run migrations as the schema owner before any request pool opens. The
-	// request pools below may connect as the least-privilege runtime role,
-	// which cannot run DDL.
-	if err := runMigrations(cfg.DatabaseMigrateURL); err != nil {
-		logger.Error("failed to run migrations", "error", err)
+	// Migrations and the schema check use the schema-owner connection before
+	// any request pool opens: the request pools may connect as the
+	// least-privilege runtime role, which can neither run DDL nor read
+	// schema_migrations. Release environments migrate in a separate step
+	// (cmd/migrate) before deployment, so their servers only confirm they are
+	// not ahead of the schema.
+	if cfg.MigrateOnStart {
+		version, err := migration.Up(context.Background(), cfg.DatabaseMigrateURL, migration.Dir)
+		if err != nil {
+			logger.Error("failed to run migrations", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("migrations complete", "version", version)
+	} else if err := migration.RequireCurrentAt(context.Background(), cfg.DatabaseMigrateURL, migration.Dir); errors.Is(err, migration.ErrSchemaDirtyAhead) {
+		// A newer release's migration failed; keep this build serving.
+		logger.Warn("database schema needs repair before the next release", "error", err)
+	} else if err != nil {
+		logger.Error("database schema is not ready for this build; run ./migrate first", "error", err)
 		os.Exit(1)
 	}
-	logger.Info("migrations complete")
 
 	// Connect to database.
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
@@ -239,28 +246,4 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
-}
-
-func runMigrations(databaseURL string) error {
-	db, err := sql.Open("pgx", databaseURL)
-	if err != nil {
-		return fmt.Errorf("opening migration db: %w", err)
-	}
-	defer db.Close()
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return fmt.Errorf("creating migration driver: %w", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
-	if err != nil {
-		return fmt.Errorf("creating migrator: %w", err)
-	}
-
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("running migrations: %w", err)
-	}
-
-	return nil
 }
