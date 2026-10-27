@@ -661,6 +661,236 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nutrition/days": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "List nutrition days in a range with the targets that applied",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD (at most 366 days after from)",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionRange"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/days/{date}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Athlete saves carry expected_revision; Health saves never overwrite an athlete day.\nAll four values absent removes the day. See docs/CONTRACTS.md \"Nutrition\".",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Save, replace, or remove one day's nutrition totals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local calendar date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Totals",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveNutritionDayRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionDay"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionDay"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/target": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Read the nutrition target in effect today",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionTarget"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "expected_revision is the current target's revision, 0 when none exists.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Save the athlete's chosen nutrition target",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Target",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveNutritionTargetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionTarget"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionTarget"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/participation": {
             "get": {
                 "security": [
@@ -3313,6 +3543,104 @@ const docTemplate = `{
                 }
             }
         },
+        "model.NutritionDay": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "source": {
+                    "$ref": "#/definitions/model.NutritionSource"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.NutritionRange": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NutritionDay"
+                    }
+                },
+                "targets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.NutritionTarget"
+                    }
+                }
+            }
+        },
+        "model.NutritionSource": {
+            "type": "string",
+            "enum": [
+                "manual",
+                "apple_health"
+            ],
+            "x-enum-varnames": [
+                "NutritionSourceManual",
+                "NutritionSourceAppleHealth"
+            ]
+        },
+        "model.NutritionTarget": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
         "model.PatchScheduledSetTargetRequest": {
             "type": "object",
             "required": [
@@ -3706,6 +4034,58 @@ const docTemplate = `{
                 },
                 "operation_key": {
                     "type": "string"
+                }
+            }
+        },
+        "model.SaveNutritionDayRequest": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "source": {
+                    "$ref": "#/definitions/model.NutritionSource"
+                }
+            }
+        },
+        "model.SaveNutritionTargetRequest": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "effective_from": {
+                    "type": "string"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
                 }
             }
         },

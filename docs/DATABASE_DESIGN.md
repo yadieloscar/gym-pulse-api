@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **31 tables and 306 supported columns**. For the Supabase-managed
+The current inventory contains **33 tables and 328 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -962,6 +962,66 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 025.
 
+### Table: `public.nutrition_days`
+
+**Purpose**: One set of daily nutrition totals per athlete and calendar date. GymPulse stores totals only; there is no food, meal, or portion data.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Day identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `date` | `date` | not null | Athlete's local calendar date | Health |
+| `energy_kcal` | `integer` | nullable | Energy in kilocalories | Health |
+| `protein_g` | `numeric(6,1)` | nullable | Protein in grams | Health |
+| `carbs_g` | `numeric(6,1)` | nullable | Carbohydrate in grams | Health |
+| `fat_g` | `numeric(6,1)` | nullable | Fat in grams | Health |
+| `source` | `text` | not null | `manual` (athlete) or `apple_health` (import) | Health |
+| `revision` | `bigint` | not null; `1` | Optimistic revision for athlete saves | Operational |
+| `logged_at` | `timestamptz` | not null | Last athlete or device save | Health |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; UUID is application-generated.
+- FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: `energy_kcal` 0–20,000; each macro 0–2,000; `source IN ('manual', 'apple_health')`; `revision > 0`; `ck_nutrition_days_has_value` requires at least one of the four values.
+- Unique `ux_nutrition_days_user_date(user_id, date)` is the identity and serves the oldest-first range read.
+- The save transaction enforces: athlete saves carry the current revision; a Health save never overwrites a `manual` row (it returns the stored row and writes only the idempotency ledger); an athlete save over an `apple_health` row converts it to `manual`.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API role privileges are revoked, and the `gym_pulse_api` runtime role holds DML plus the `gym_pulse_api_access` policy.
+
+**Migration source**: 029.
+
+### Table: `public.nutrition_targets`
+
+**Purpose**: The athlete's chosen daily nutrition target with the date it took effect, so past days are judged against the target that applied then. GymPulse never computes or changes a target.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Target identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `effective_from` | `date` | not null | First local date the target applies to | Health |
+| `protein_g` | `numeric(6,1)` | not null | Daily protein target in grams | Health |
+| `energy_kcal` | `integer` | nullable | Optional daily energy target | Health |
+| `carbs_g` | `numeric(6,1)` | nullable | Optional daily carbohydrate target | Health |
+| `fat_g` | `numeric(6,1)` | nullable | Optional daily fat target | Health |
+| `revision` | `bigint` | not null; `1` | Optimistic revision of the current target | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; UUID is application-generated.
+- FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: `protein_g` > 0 and ≤ 2,000; `energy_kcal` 1–20,000; each optional macro 0–2,000; `revision > 0`.
+- Unique `ux_nutrition_targets_user_effective(user_id, effective_from)`; the current target is the latest `effective_from` on or before the athlete's local today.
+- Saving for an existing `effective_from` replaces that row; a new date inserts and earlier rows remain.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS, Data API revocation, and runtime-role provisioning as for `nutrition_days`.
+
+**Migration source**: 029.
+
 ### Table: `public.criteria_training_blocks`
 
 **Purpose**: Owner-scoped athlete-authored block, optionally associated with an owned program without changing its schedule.
@@ -1097,10 +1157,11 @@ columns:
 | Scheduled execution/history/workflow | 6 | 72 |
 | Sport activity | 1 | 16 |
 | Health exports | 1 | 8 |
+| Nutrition | 2 | 22 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **31** | **306** |
+| **Total** | **33** | **328** |
 
-The count is derived from the final state after migration 028, not the sum of every historical
+The count is derived from the final state after migration 029, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1185,6 +1246,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Stats | None | Union logs, sessions, sets, participation; settings goal | Derived, no stats table |
 | Body weight | `body_weights` | Measurements ordered by date | Authoritative health series |
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
+| Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
 | Account deletion | All user-owned roots, avatar storage, then auth provider | None | Retryable destructive workflow |
 
@@ -1228,6 +1290,8 @@ snapshot; `set_logs` is the preferred per-set history.
 | `sport_activities` | `ux_sport_activities_scheduled_workout(scheduled_workout_id)` partial unique | One activity per scheduled sport session; schedule-side link lookup |
 | `health_exports` | `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` unique | One Health export per finished workout and origin |
 | `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
+| `nutrition_days` | `ux_nutrition_days_user_date(user_id, date)` unique | One day per athlete and date; oldest-first range read |
+| `nutrition_targets` | `ux_nutrition_targets_user_effective(user_id, effective_from)` unique | One target per effective date; current-target lookup and range read |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_program` | Nullable program association/set-null |
 | `criteria_training_exposures` | `idx_criteria_training_exposures_block_created` | Latest exposure history |
@@ -1852,7 +1916,7 @@ Report one of:
 
 ### Definition of complete
 
-- All 31 current tables and 292 supported columns are cataloged.
+- All 33 current tables and 314 supported columns are cataloged.
 - All current named indexes, keys, checks, and delete actions are described.
 - Every API persistence surface is traceable.
 - Every user-owned root has a current and target ownership/deletion outcome.
@@ -1888,6 +1952,7 @@ Report one of:
 | 026 | `gym_pulse_api` runtime role: DML grants, default DML for future tables, `gym_pulse_api_access` policies on all 30 application tables, `auth.users` read |
 | 027 | Planned sport sessions: `kind` and sport snapshot columns on `program_workouts` and `scheduled_workouts`, `sport_activities.scheduled_workout_id` link with partial unique index |
 | 028 | `sport_activities.perceived_effort` (1–10, optional) |
+| 029 | `nutrition_days` and `nutrition_targets`, RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary
 
