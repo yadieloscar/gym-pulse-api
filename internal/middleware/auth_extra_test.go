@@ -58,3 +58,86 @@ func TestAuthMiddleware_JWKS_MalformedAndUnsupportedKeys(t *testing.T) {
 		t.Errorf("expected 401, got %d", rec.Code)
 	}
 }
+
+func TestAuthMiddlewareChallengeAndCodeOn401(t *testing.T) {
+	secret := "test-secret-key"
+	handler := AuthMiddleware(secret, "")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	cases := []struct {
+		name          string
+		authorization string
+		wantChallenge string
+	}{
+		{name: "missing header", authorization: "", wantChallenge: `Bearer realm="gym-pulse"`},
+		{name: "wrong scheme", authorization: "Basic abc", wantChallenge: `Bearer realm="gym-pulse"`},
+		{name: "garbage token", authorization: "Bearer not-a-jwt", wantChallenge: `Bearer realm="gym-pulse", error="invalid_token"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+			if tc.authorization != "" {
+				req.Header.Set("Authorization", tc.authorization)
+			}
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusUnauthorized {
+				t.Fatalf("status = %d, want 401", rec.Code)
+			}
+			if got := rec.Header().Get("WWW-Authenticate"); got != tc.wantChallenge {
+				t.Fatalf("WWW-Authenticate = %q, want %q", got, tc.wantChallenge)
+			}
+			var body map[string]string
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode body: %v", err)
+			}
+			if body["code"] != "AUTHENTICATION_REQUIRED" {
+				t.Fatalf("code = %q, want AUTHENTICATION_REQUIRED", body["code"])
+			}
+			if body["error"] == "" {
+				t.Fatal("error message must not be empty")
+			}
+		})
+	}
+}
+
+func TestAuthMiddlewareToleratesClockSkew(t *testing.T) {
+	secret := "test-secret-key"
+	sub := uuid.New().String()
+	handler := AuthMiddleware(secret, "")(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	sign := func(claims jwt.MapClaims) string {
+		claims["sub"] = sub
+		str, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		return str
+	}
+	now := time.Now()
+
+	cases := []struct {
+		name   string
+		claims jwt.MapClaims
+		want   int
+	}{
+		{name: "expired inside leeway", claims: jwt.MapClaims{"exp": now.Add(-10 * time.Second).Unix()}, want: http.StatusOK},
+		{name: "expired beyond leeway", claims: jwt.MapClaims{"exp": now.Add(-2 * time.Minute).Unix()}, want: http.StatusUnauthorized},
+		{name: "not yet valid inside leeway", claims: jwt.MapClaims{"exp": now.Add(time.Hour).Unix(), "nbf": now.Add(10 * time.Second).Unix()}, want: http.StatusOK},
+		{name: "not yet valid beyond leeway", claims: jwt.MapClaims{"exp": now.Add(time.Hour).Unix(), "nbf": now.Add(2 * time.Minute).Unix()}, want: http.StatusUnauthorized},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/test", nil)
+			req.Header.Set("Authorization", "Bearer "+sign(tc.claims))
+			rec := httptest.NewRecorder()
+			handler.ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
+			}
+		})
+	}
+}

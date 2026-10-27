@@ -19,9 +19,19 @@
   legacy HMAC with `SUPABASE_JWT_SECRET`.
 - Production accepts only expiring `RS256` RSA or `ES256` P-256 tokens whose
   JWKS algorithm exactly matches the token, and `sub` must be a UUID.
+- `exp`, `nbf`, and `iat` are checked with 30 seconds of clock-skew leeway so a
+  device or host a few seconds off does not get a spurious `401`.
 - After signature and claim validation, every `/api/v1/*` request verifies
   that the JWT subject still exists in `auth.users`. A deleted identity is
   rejected even while its previously issued access token remains unexpired.
+- Every authentication failure is
+  `401 { "error": "<message>", "code": "AUTHENTICATION_REQUIRED" }` with a
+  `WWW-Authenticate` challenge (RFC 6750): `Bearer realm="gym-pulse"` when no
+  bearer token was presented, and
+  `Bearer realm="gym-pulse", error="invalid_token"` when one was presented but
+  failed validation or its subject no longer exists. Clients branch on `code`
+  and the challenge, never on the message text. A transient identity-check
+  failure is `503 AUTHENTICATION_UNAVAILABLE` and must not sign the user out.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
 - Browser preflight accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and
   `OPTIONS`, including `Authorization`, `Content-Type`, and `Idempotency-Key`.

@@ -44,6 +44,31 @@ logs, commits, or release notes.
 - [ ] The production container scan has no unaccepted critical or high finding.
 - [ ] Direct Supabase Data API access to application tables is denied for `anon` and
       `authenticated`.
+- [ ] The Supabase Auth dashboard settings below match this runbook (they are not
+      enforced by code or migrations).
+
+## Supabase Auth dashboard settings
+
+The API verifies tokens; Supabase Auth issues them and owns sign-up, password, and email policy.
+Review these in **Authentication → Settings** (and **Rate Limits**) for staging and production on
+every release, and record the values in the release notes:
+
+- [ ] **Password minimum length** is 8 or more and the required-characters rule is at least
+      "letters and digits". The app enforces 8 on sign-up and reset; the project must not
+      accept shorter passwords through any other client.
+- [ ] **Leaked password protection** (HaveIBeenPwned check) is enabled.
+- [ ] **Confirm email** is enabled, so an unverified address never receives a session.
+- [ ] **Email OTP / link expiry** is 3600 seconds or less.
+- [ ] **JWT expiry** is 3600 seconds or less. A shorter value bounds how long a signed-out
+      or compromised access token stays usable; the app refreshes silently.
+- [ ] **Refresh token rotation** is on with **reuse detection**; reuse interval at the default
+      10 seconds.
+- [ ] **Auth rate limits** for sign-in, sign-up, password reset, and token refresh are at or
+      below the defaults, and **CAPTCHA** is considered if sign-up abuse is observed.
+- [ ] **Redirect URLs** contain only the app's registered links (see the mobile release
+      checklist) and no wildcard.
+- [ ] **JWT signing keys**: the project uses an asymmetric key (ES256 or RS256) served from
+      JWKS; the legacy HMAC secret is not used by any release environment.
 
 ## Runtime role rollout (migration 026)
 
