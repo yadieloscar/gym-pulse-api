@@ -37,6 +37,26 @@ release deliberately excluded sport planning.
   date participation, like any planned workout. Lifted volume, strength records, and exercise
   distribution are untouched, exactly as for sport activities today.
 
+### Session 2026-10-26 (research amendment)
+
+Decisions after the targets research brief
+(`docs/briefs/sport-session-targets-research-2026-10.md` in the parent workspace). The owner
+asked for all six recommendations and re-confirmed import auto-match.
+
+- Q: Should a planned sport session carry more targets (intensity, session type, elevation,
+  zones)? → A: No. Duration plus optional distance stays the plan. Effort is recorded after the
+  session, on the activity.
+- Q: Can a link between a session and an activity be wrong and stay wrong? → A: No. GymPulse
+  never changes a link on its own, but the athlete can unlink an activity from a session and
+  link an existing unlinked activity of the same sport to an open session.
+- Q: How does an import choose among open sessions, and when does it not link? → A: It picks the
+  open same-sport session on that date whose planned duration is closest to the activity, then
+  the lowest sequence position. It does not link when the activity is shorter than a third of
+  the planned duration; the athlete can link it by hand.
+- Q: Is effort recorded? → A: Yes, optionally: a whole-session effort from 1 (very easy) to 10
+  (maximal) on a sport activity, recorded after the fact. It is a display fact; nothing computes
+  load from it. Reading effort from Apple Health is deferred (it needs a new read permission).
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Plan a sport session inside a program (Priority: P1)
@@ -182,6 +202,33 @@ verify the schedule, participation, weekly summary, and activity list all descri
 3. **Given** account deletion, **When** it completes, **Then** no planned, scheduled, or linked
    sport session data remains for that athlete.
 
+### User Story 6 - Fix a wrong link (Priority: P2)
+
+A short commute ride was imported before the real ride and completed the planned session. The
+athlete unlinks it, and the session is open again. When the real ride arrives, or later, the
+athlete links that existing activity to the session.
+
+**Why this priority**: Auto-match is automation; the product forbids surprising automation the
+athlete cannot repair.
+
+**Independent Test**: Link an activity, unlink it, and verify the session is planned (future or
+today) or missed (past) with no link and the activity unchanged; then link another unlinked
+same-sport activity and verify the session is completed by it.
+
+**Acceptance Scenarios**:
+
+1. **Given** a completed session linked to an activity, **When** the athlete unlinks it,
+   **Then** the activity keeps every fact and its participation credit, the session loses the
+   link, and its status returns to planned (date today or later) or missed (earlier date).
+2. **Given** an open session and an unlinked activity of the same sport, **When** the athlete
+   links them, **Then** the session is completed by that activity exactly as if it had been
+   recorded against it, without a second participation credit.
+3. **Given** an activity already linked elsewhere, a different sport, a completed session, or a
+   stale session revision, **When** the athlete links, **Then** the request is refused with a
+   stable error and nothing changes.
+4. **Given** an unlinked activity, **When** later imports run, **Then** GymPulse never links it
+   again on its own.
+
 ### Edge Cases
 
 - A sport session's planned duration is a whole number of minutes from 1 through 1,440; distance,
@@ -194,7 +241,11 @@ verify the schedule, participation, weekly summary, and activity list all descri
 - Replacing a program never changes already materialized sessions, including their sport snapshot.
 - Deleting or renaming the program unit behind a scheduled session leaves the session intact with
   its snapshot; provenance identifiers become absent, never dangling.
-- A sport activity linked to a session cannot be re-linked to another session.
+- GymPulse never changes a link on its own after it is made; the athlete may unlink and
+  link an existing activity (US6).
+- An import shorter than a third of the planned duration stays unlinked; among several open
+  same-sport sessions on one date the closest planned duration wins.
+- Perceived effort, when given, is a whole number from 1 to 10.
 - Recording, linking, and participation preservation succeed or fail as one observable operation.
 - An authentication expiry, cancellation, or server error never reports success and never leaves a
   session half-completed.
@@ -204,7 +255,9 @@ verify the schedule, participation, weekly summary, and activity list all descri
 ## Non-Goals *(mandatory)*
 
 - Sport-specific structure inside a session: intervals, power or heart-rate zones, drills, routes,
-  scores, opponents, teams, or coaching guidance.
+  scores, opponents, teams, or coaching guidance. Planned intensity, session type, and elevation
+  stay out of the plan (research brief 2026-10).
+- Reading perceived effort from Apple Health; editing effort after creation.
 - Starter-program catalog changes; starter programs remain exercise-only in this release.
 - Editing or deleting sport activities, which still requires a history-preserving follow-up.
 - Automatic schedule shifting, reminders beyond the existing planned-day reminder, or any new
@@ -236,12 +289,15 @@ verify the schedule, participation, weekly summary, and activity list all descri
   no later than the athlete's local today, and the same duration, distance, measurement, and note
   rules as a sport activity.
 - **FR-008**: Recording against a completed session MUST fail with a stable conflict that returns
-  the current session, and a linked activity MUST never be re-linked.
+  the current session. GymPulse MUST never change a link on its own; only the athlete's unlink
+  (FR-017) and link-existing (FR-018) change a link after it is made.
 - **FR-009**: A sport activity MUST expose which scheduled session it fulfilled, if any, and a
   scheduled sport session MUST expose the activity that completed it, if any.
 - **FR-010**: Importing a sport activity MUST fulfil at most one open scheduled session for the
-  same sport on the same local date, choosing the earliest in sequence, and MUST leave the activity
-  unlinked when none matches; replaying the import MUST change nothing.
+  same sport on the same local date, choosing the closest planned duration and then the earliest
+  in sequence, MUST skip a session whose planned duration is more than three times the activity's
+  duration, and MUST leave the activity unlinked when none matches; replaying the import MUST
+  change nothing.
 - **FR-011**: Weekly planned-versus-done and date participation MUST include sport sessions;
   lifted volume, records, and exercise distribution MUST exclude them.
 - **FR-012**: Every mutation MUST be safely retryable under the existing operation-identity and
@@ -254,6 +310,19 @@ verify the schedule, participation, weekly summary, and activity list all descri
   the same guarantees as other training data.
 - **FR-016**: The public contract document MUST describe every new field, status, validation rule,
   response, and error in the same change, and the change MUST be additive.
+- **FR-017**: An athlete MUST be able to unlink an owned activity from its session in one
+  revision-checked, retry-safe operation that clears the link, returns the session to planned
+  (local date today or later) or missed (earlier), and leaves the activity and its participation
+  credit unchanged.
+- **FR-018**: An athlete MUST be able to link an owned unlinked activity to an owned open sport
+  session of the same sport in one revision-checked, retry-safe operation with the same effects
+  as recording against the session, except that participation is not credited again.
+- **FR-019**: Link and unlink MUST refuse a foreign or missing activity or session with the shared
+  not-found, an exercise workout with a field-level error on `kind`, a sport mismatch on
+  `sport_id`, and a completed session, an already linked activity, or an unlinked activity's
+  unlink with the stable sport-session conflict.
+- **FR-020**: A sport activity MAY carry a perceived effort from 1 to 10, given at creation and
+  returned on reads; it MUST NOT feed records, volume, distribution, or participation.
 
 ### Key Entities
 

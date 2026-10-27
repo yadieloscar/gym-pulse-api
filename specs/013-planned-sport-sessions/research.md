@@ -128,6 +128,32 @@
   recorded as residual risk in `quickstart.md`, not fixed here, because they change exercise
   workout behavior and need their own spec.
 
+### Research amendment (2026-10-26)
+
+Source: `docs/briefs/sport-session-targets-research-2026-10.md` (parent workspace). The owner
+asked for recommendations A1–A6; the API carries A1, A3, and A5.
+
+- **A1, links are repairable**: the normative "never re-linked" becomes "never changed
+  automatically". The same-day false-positive risk is recorded in `quickstart.md`.
+- **A3, link and unlink live on the activity**: `POST /api/v1/sport-activities/{id}/link` with
+  `scheduled_workout_id` and `POST /api/v1/sport-activities/{id}/unlink`, both with the session's
+  `expected_revision` and an `operation_key`, both answering `{sport_activity, scheduled_workout}`.
+  Placing them on the activity keeps the sport-activity handler → service → DAO path and its
+  lock order (`schedule:` → `sport-activity:`), and avoids changing the schedule service signature.
+  No migration: the nullable link column and one-per-session index already exist.
+- **A3, unlink status**: date ≥ local today → `planned`, `finalized_at` cleared; earlier →
+  `missed`, `finalized_at` kept, and `day_participation` for the scheduled date is upserted with
+  `scheduled_opportunity = true` without lowering `participated`, so a session completed before
+  lazy finalization still counts as a missed opportunity.
+- **A3, auto-match**: `ORDER BY abs(target_duration_minutes - $duration), sequence_position NULLS
+  LAST, created_at, id` and `AND target_duration_minutes <= 3 * $duration`. With link-existing
+  available, the guard's false negatives are repairable.
+- **A5, perceived effort**: migration `028_add_sport_activity_effort` adds
+  `perceived_effort SMALLINT CHECK (1..10)`. CR-10-style whole-session rating; 0 ("rest") is not
+  a session. Display only.
+- **Unknown request keys**: `decodeJSON` does not reject unknown fields, so newer clients that
+  echo future `sport` keys back on a program replace are tolerated (A2 verification for the app).
+
 ## Resolved Technical Questions
 
 - Distance sports: `cycling`, `running`, `swimming`, `other`; `target_distance_meters` is rejected

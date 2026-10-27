@@ -71,6 +71,12 @@ error, and keep creating manual activities. To roll back, roll back the app firs
 delete programs that hold sport units, then run the down migration, which drops the index, the link
 column, and the kind/sport columns.
 
+## Residual risk: same-day auto-match (research amendment)
+
+An import on a day with an open same-sport session links automatically. A short commute can
+still complete a long planned ride when it clears the one-third duration guard. The athlete
+repairs it with unlink and link-existing; GymPulse never re-links on its own.
+
 ## Residual risk carried from existing code
 
 Materialization ignores `preferred_weekday`, restarts the sequence on every call, and regenerate

@@ -38,6 +38,29 @@ No new table: RLS, policy, Data API revokes, and the `publicTables` count in
 column rows (292 → 305 supported columns), one index, one FK row, the new lock-order line, and the
 transaction row below.
 
+## `sport_activities` (altered by migration 028)
+
+| Field | Type | Rules |
+|---|---|---|
+| `perceived_effort` | SMALLINT nullable | `CHECK (perceived_effort IS NULL OR perceived_effort BETWEEN 1 AND 10)` |
+
+Existing rows stay null. 306 supported columns after 028.
+
+## Link and unlink transactions (sport-activity DAO, research amendment)
+
+Both take `schedule:` then `sport-activity:`, replay from `idempotency_records`
+(`sport-activities/link`, `sport-activities/unlink`), lock the owned activity row and the owned
+session row `FOR UPDATE`, check the session revision, and store the replay response.
+
+- **Link**: activity unlinked (else 409 `SPORT_SESSION_CONFLICT`, details `reason: activity_linked`),
+  session `kind = 'sport'` (else 422 `kind`), same `sport_id` (else 422 `sport_id`), session not
+  completed (else 409, `reason: session_completed`). Set the activity's `scheduled_workout_id`,
+  complete the session exactly as the create path does. No participation write.
+- **Unlink**: session linked to this activity (else 409, `reason: not_linked`). Clear the link;
+  session `status` becomes `planned` with `finalized_at = NULL` when its date ≥ local today, else
+  `missed` with `finalized_at` kept and the scheduled date's participation upserted as an
+  opportunity. Revision +1.
+
 ## Program unit (API)
 
 ```json

@@ -1,5 +1,5 @@
 openapi: 3.0.3
-info: {title: GymPulse Planned Sport Sessions Contract, version: 1.2.0}
+info: {title: GymPulse Planned Sport Sessions Contract, version: 1.3.0}
 paths:
   /api/v1/programs:
     post:
@@ -55,8 +55,44 @@ paths:
         '404': {description: Unknown or foreign scheduled_workout_id}
         '409': {$ref: '#/components/responses/SportSessionConflict'}
         '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/sport-activities/{id}/link:
+    post:
+      summary: Link an owned unlinked activity to an owned open sport session of the same sport (1.3.0)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LinkSportActivityRequest'}}}}
+      responses:
+        '200': {description: Linked, content: {application/json: {schema: {$ref: '#/components/schemas/SportSessionLinkResult'}}}}
+        '404': {description: Missing or foreign activity or session}
+        '409': {$ref: '#/components/responses/SportSessionConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/sport-activities/{id}/unlink:
+    post:
+      summary: Clear the activity's session link; the session returns to planned or missed (1.3.0)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UnlinkSportActivityRequest'}}}}
+      responses:
+        '200': {description: Unlinked, content: {application/json: {schema: {$ref: '#/components/schemas/SportSessionLinkResult'}}}}
+        '404': {description: Missing or foreign activity}
+        '409': {$ref: '#/components/responses/SportSessionConflict'}
 components:
   schemas:
+    LinkSportActivityRequest:
+      type: object
+      required: [scheduled_workout_id, expected_revision, operation_key]
+      properties:
+        scheduled_workout_id: {type: string, format: uuid}
+        expected_revision: {type: integer, minimum: 1, description: The session's revision}
+        operation_key: {type: string, description: Equals Idempotency-Key}
+    UnlinkSportActivityRequest:
+      type: object
+      required: [expected_revision, operation_key]
+      properties:
+        expected_revision: {type: integer, minimum: 1, description: The linked session's revision}
+        operation_key: {type: string}
+    SportSessionLinkResult:
+      type: object
+      required: [sport_activity, scheduled_workout]
+      properties:
+        sport_activity: {$ref: '#/components/schemas/SportActivity'}
+        scheduled_workout: {$ref: '#/components/schemas/ScheduledWorkout'}
     UnitKind: {type: string, enum: [exercises, sport], default: exercises}
     SportTarget:
       type: object
@@ -115,11 +151,13 @@ components:
       description: Existing request (contract 1.1.0) plus one optional field
       properties:
         scheduled_workout_id: {type: string, format: uuid, nullable: true}
+        perceived_effort: {type: integer, minimum: 1, maximum: 10, nullable: true, description: Whole-session effort after the fact (1.3.0)}
     SportActivity:
       type: object
       description: Existing activity shape plus one optional field
       properties:
         scheduled_workout_id: {type: string, format: uuid, description: Present when the activity fulfilled a session}
+        perceived_effort: {type: integer, minimum: 1, maximum: 10, description: Present when given (1.3.0)}
     ErrorBody:
       type: object
       required: [error, code]
@@ -136,5 +174,5 @@ components:
       description: 409 REVISION_CONFLICT or IDEMPOTENCY_CONFLICT as documented today
       content: {application/json: {schema: {$ref: '#/components/schemas/ErrorBody'}}}
     SportSessionConflict:
-      description: 409 SPORT_SESSION_CONFLICT with details.status and the authoritative ScheduledWorkout as resource
+      description: 409 SPORT_SESSION_CONFLICT with details.status (and details.reason on link/unlink) and the authoritative ScheduledWorkout as resource
       content: {application/json: {schema: {$ref: '#/components/schemas/ErrorBody'}}}
