@@ -19,7 +19,10 @@ const (
 	// ScheduleRewriteLimit bounds schedule materialization, regeneration,
 	// recovery, and plan transitions per minute.
 	ScheduleRewriteLimit = 30
-	rateLimitWindow      = time.Minute
+	// FoodLookupLimit bounds food search and barcode lookups per minute so one
+	// athlete cannot spend the shared outside-source quotas.
+	FoodLookupLimit = 60
+	rateLimitWindow = time.Minute
 )
 
 // RateLimitPerUser returns a middleware that allows requestLimit requests per

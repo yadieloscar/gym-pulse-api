@@ -85,6 +85,12 @@ func (r *nutritionDAO) SaveDay(ctx context.Context, userID uuid.UUID, day *model
 		return nil, model.NutritionDayCreated, fmt.Errorf("querying nutrition day: %w", err)
 	}
 
+	// A day that is the sum of its food entries refuses typed saves and
+	// removes; a Health save over it falls through to the ignored branch.
+	if existing != nil && existing.Source == model.NutritionSourceFoods && day.Source != model.NutritionSourceAppleHealth {
+		return nil, model.NutritionDayCreated, &model.DayHasFoodEntriesError{Day: existing}
+	}
+
 	var result *model.NutritionDay
 	var outcome model.NutritionDayOutcome
 	switch {

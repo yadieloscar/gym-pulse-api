@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info: {title: GymPulse Food Logging Contract, version: 1.0.0}
+paths:
+  /api/v1/nutrition/foods/search:
+    get:
+      summary: Search foods by text (private foods first, then USDA; catalog only when USDA is unavailable)
+      parameters:
+        - {name: q, in: query, required: true, schema: {type: string, minLength: 2, maxLength: 100}}
+        - {name: limit, in: query, required: false, schema: {type: integer, minimum: 1, maximum: 25, default: 25}}
+      responses:
+        '200':
+          description: foods is [] when nothing matches; incomplete is true when the outside source could not be asked
+          content: {application/json: {schema: {type: object, required: [foods, incomplete], properties: {foods: {type: array, items: {$ref: '#/components/schemas/Food'}}, incomplete: {type: boolean}}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/v1/nutrition/foods/barcode/{code}:
+    get:
+      summary: Look up one product by retail barcode (private → catalog → USDA → Open Food Facts)
+      parameters:
+        - {name: code, in: path, required: true, schema: {type: string, pattern: '^[0-9 -]{8,18}$'}, description: '8, 12, 13, or 14 digits with a valid GS1 check digit'}
+      responses:
+        '200': {description: Found, content: {application/json: {schema: {$ref: '#/components/schemas/Food'}}}}
+        '404': {description: 'Not found in any source (shared NOT_FOUND shape); details.retry_after_seconds is set when the fallback budget was spent and the code was not asked', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/RateLimited'}
+  /api/v1/nutrition/foods/recent:
+    get:
+      summary: Foods logged in the last 30 days, most often and most recently first
+      responses:
+        '200': {description: 'up to 20; [] when none', content: {application/json: {schema: {type: object, required: [foods], properties: {foods: {type: array, items: {$ref: '#/components/schemas/RecentFood'}}}}}}}
+  /api/v1/nutrition/foods:
+    post:
+      summary: Create a private food from a label
+      description: Requires Idempotency-Key equal to operation_key; a verbatim retry replays 201.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveUserFoodRequest'}}}}
+      responses:
+        '201': {description: 'Created (source own)', content: {application/json: {schema: {$ref: '#/components/schemas/Food'}}}}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nutrition/foods/{id}:
+    put:
+      summary: Change a private food; existing entries keep their snapshot
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveUserFoodRequest'}}}}
+      responses:
+        '200': {description: Replaced, content: {application/json: {schema: {$ref: '#/components/schemas/Food'}}}}
+        '404': {description: Not owned or unknown (shared NOT_FOUND)}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      summary: Archive a private food
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: expected_revision, in: query, required: true, schema: {type: integer, minimum: 1}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+      responses:
+        '204': {description: 'Archived, or verbatim replay'}
+        '404': {description: Not owned or unknown}
+        '409': {$ref: '#/components/responses/ConflictError'}
+  /api/v1/nutrition/days/{date}/entries:
+    get:
+      summary: The day's totals and its entries, oldest first
+      parameters: [{name: date, in: path, required: true, schema: {type: string, format: date}}]
+      responses:
+        '200': {description: 'day is null when the date has no totals; entries is [] when none', content: {application/json: {schema: {type: object, required: [day, entries], properties: {day: {nullable: true, $ref: '#/components/schemas/NutritionDay'}, entries: {type: array, items: {$ref: '#/components/schemas/FoodEntry'}}}}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    post:
+      summary: Log a food or a quick add to a local date; the day's totals become the sum of its entries
+      description: >
+        Requires Idempotency-Key equal to operation_key. Exactly one of food or quick_add. When the
+        date already has typed totals (source manual or apple_health) and no entries, those totals are
+        converted into one quick_add entry, returned under converted. A date after local today is 422.
+      parameters: [{name: date, in: path, required: true, schema: {type: string, format: date}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateFoodEntryRequest'}}}}
+      responses:
+        '201': {description: 'Created, or verbatim replay', content: {application/json: {schema: {type: object, required: [entry, day, converted], properties: {entry: {$ref: '#/components/schemas/FoodEntry'}, day: {$ref: '#/components/schemas/NutritionDay'}, converted: {type: array, items: {$ref: '#/components/schemas/FoodEntry'}}}}}}}
+        '404': {description: 'No training profile, or the referenced food is unknown, foreign, or archived (shared NOT_FOUND)'}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nutrition/entries/{id}:
+    put:
+      summary: Change an entry's serving, amount, or quick-add values
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UpdateFoodEntryRequest'}}}}
+      responses:
+        '200': {description: Replaced, content: {application/json: {schema: {type: object, required: [entry, day], properties: {entry: {$ref: '#/components/schemas/FoodEntry'}, day: {$ref: '#/components/schemas/NutritionDay'}}}}}}
+        '404': {description: Not owned or unknown}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      summary: Remove an entry; removing the last one removes the day's totals
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: expected_revision, in: query, required: true, schema: {type: integer, minimum: 1}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+      responses:
+        '200': {description: 'Removed; day is null when no entries remain', content: {application/json: {schema: {type: object, required: [day], properties: {day: {nullable: true, $ref: '#/components/schemas/NutritionDay'}}}}}}
+        '404': {description: Not owned or unknown}
+        '409': {$ref: '#/components/responses/ConflictError'}
+  /api/v1/nutrition/days/{date}:
+    put:
+      summary: Amendment to spec 012; see nutrition.openapi.yaml for the full route
+      description: >
+        A day whose source is foods refuses athlete saves and removes with 409 DAY_HAS_FOOD_ENTRIES
+        and the stored day as resource. A Health save over a foods day returns the stored day with 200
+        and writes nothing. NutritionDay.source may now be foods.
+      responses:
+        '409': {description: 'REVISION_CONFLICT, IDEMPOTENCY_CONFLICT, or DAY_HAS_FOOD_ENTRIES', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+components:
+  schemas:
+    Serving:
+      type: object
+      required: [label, grams]
+      properties:
+        label: {type: string, maxLength: 60}
+        grams: {type: number, exclusiveMinimum: 0, maximum: 5000}
+    Per100g:
+      type: object
+      required: [energy_kcal, protein_g, carbs_g, fat_g]
+      properties:
+        energy_kcal: {type: number, minimum: 0, maximum: 900}
+        protein_g: {type: number, minimum: 0, maximum: 100}
+        carbs_g: {type: number, minimum: 0, maximum: 100}
+        fat_g: {type: number, minimum: 0, maximum: 100}
+    Attribution:
+      type: object
+      required: [name, url, license]
+      properties:
+        name: {type: string, example: Open Food Facts}
+        url: {type: string, format: uri}
+        license: {type: string, example: ODbL}
+    Food:
+      type: object
+      required: [id, source, name, brand, barcode, servings, per_100g, attribution, revision, archived]
+      properties:
+        id: {type: string, format: uuid}
+        source: {type: string, enum: [usda, open_food_facts, own]}
+        name: {type: string}
+        brand: {type: string, nullable: true}
+        barcode: {type: string, nullable: true, description: '13 digits when the GTIN fits, otherwise 14'}
+        servings: {type: array, minItems: 1, items: {$ref: '#/components/schemas/Serving'}, description: always includes a 100 g serving}
+        per_100g: {$ref: '#/components/schemas/Per100g'}
+        attribution: {nullable: true, $ref: '#/components/schemas/Attribution'}
+        revision: {type: integer, nullable: true, description: own foods only}
+        archived: {type: boolean}
+    RecentFood:
+      type: object
+      required: [food, last_serving, last_amount, times_logged, last_logged_at]
+      properties:
+        food: {$ref: '#/components/schemas/Food'}
+        last_serving: {$ref: '#/components/schemas/Serving'}
+        last_amount: {type: number}
+        times_logged: {type: integer, minimum: 1}
+        last_logged_at: {type: string, format: date-time}
+    SaveUserFoodRequest:
+      type: object
+      required: [name, serving, energy_kcal, protein_g, carbs_g, fat_g, operation_key]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 200}
+        brand: {type: string, maxLength: 120, nullable: true}
+        barcode: {type: string, nullable: true, description: '8, 12, 13, or 14 digits with a valid check digit'}
+        serving: {$ref: '#/components/schemas/Serving'}
+        energy_kcal: {type: integer, minimum: 0, maximum: 20000, description: per serving}
+        protein_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+        carbs_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+        fat_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+        expected_revision: {type: integer, minimum: 1, description: required on PUT; absent on POST}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    FoodRef:
+      type: object
+      required: [id]
+      properties:
+        id: {type: string, format: uuid, description: 'a Food id from search, barcode, recent, or create'}
+    QuickAdd:
+      type: object
+      description: at least one value present
+      properties:
+        energy_kcal: {type: integer, minimum: 0, maximum: 20000}
+        protein_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+        carbs_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+        fat_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1}
+    CreateFoodEntryRequest:
+      type: object
+      required: [operation_key]
+      properties:
+        food: {$ref: '#/components/schemas/FoodRef'}
+        serving: {$ref: '#/components/schemas/Serving', description: "required with food; must be one of the food's servings or a grams-only serving"}
+        amount: {type: number, minimum: 0.1, maximum: 50, multipleOf: 0.01, description: required with food}
+        quick_add: {$ref: '#/components/schemas/QuickAdd'}
+        logged_at: {type: string, format: date-time, description: defaults to now}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    UpdateFoodEntryRequest:
+      type: object
+      required: [expected_revision, operation_key]
+      properties:
+        serving: {$ref: '#/components/schemas/Serving'}
+        amount: {type: number, minimum: 0.1, maximum: 50, multipleOf: 0.01}
+        quick_add: {$ref: '#/components/schemas/QuickAdd'}
+        expected_revision: {type: integer, minimum: 1}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    FoodEntry:
+      type: object
+      required: [id, date, kind, food, serving, amount, revision, logged_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        date: {type: string, format: date}
+        kind: {type: string, enum: [food, quick_add]}
+        food: {nullable: true, type: object, required: [id, source, name, brand], properties: {id: {type: string, format: uuid}, source: {type: string, enum: [usda, open_food_facts, own]}, name: {type: string}, brand: {type: string, nullable: true}}}
+        serving: {nullable: true, $ref: '#/components/schemas/Serving'}
+        amount: {type: number, nullable: true}
+        energy_kcal: {type: integer}
+        protein_g: {type: number}
+        carbs_g: {type: number}
+        fat_g: {type: number}
+        revision: {type: integer, minimum: 1}
+        logged_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    NutritionDay:
+      description: As in spec 012; source may now be foods
+      type: object
+      properties:
+        source: {type: string, enum: [manual, apple_health, foods]}
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: {type: string}
+        code: {type: string, enum: [VALIDATION_ERROR, NOT_FOUND, IDEMPOTENCY_CONFLICT, REVISION_CONFLICT, DAY_HAS_FOOD_ENTRIES, RATE_LIMITED]}
+        details: {type: object, nullable: true}
+        resource: {description: 'the entry, private food, or stored day on a conflict'}
+  responses:
+    ValidationError:
+      description: details.field names the offending field (q, limit, code, date, name, brand, barcode, serving, amount, food, quick_add, energy_kcal, protein_g, carbs_g, fat_g, expected_revision, operation_key, logged_at)
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ConflictError:
+      description: Reused operation_key with a different payload, a stale expected_revision, or a typed save on a day that has entries
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    RateLimited:
+      description: More than 60 search or barcode requests in a minute for one athlete
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}

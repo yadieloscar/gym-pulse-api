@@ -1197,7 +1197,9 @@ Saves, replaces, or removes the athlete's totals for one date. `date` is
 ```
 
 Every value is optional. `source` is `manual` (default when omitted) or
-`apple_health`.
+`apple_health`. A stored day may also carry `source: "foods"`, meaning its
+totals are the sum of its food entries (see "Food logging"); clients never send
+that value.
 
 An **athlete save** (`manual`) carries `expected_revision`: `0` when no entry
 exists for the date, otherwise the stored revision. A stale value returns `409
@@ -1209,8 +1211,14 @@ carries `expected_revision` like any athlete save.
 
 A **Health save** (`apple_health`) carries no `expected_revision` (one that is
 sent is ignored) and must carry at least one value. It creates the day or
-replaces an existing `apple_health` day. Over a `manual` day it returns the
-stored day unchanged with `200` and writes nothing: the athlete's entry wins.
+replaces an existing `apple_health` day. Over a `manual` or `foods` day it
+returns the stored day unchanged with `200` and writes nothing: the athlete's
+entry wins.
+
+A **typed save or remove on a `foods` day** is refused with `409
+DAY_HAS_FOOD_ENTRIES` and the stored day under `resource`; change or remove the
+entries instead (`POST /days/{date}/entries` with `quick_add` adds typed totals
+beside them).
 
 Response `201` on create, `200` on replace or on an ignored Health save:
 
@@ -1279,6 +1287,169 @@ Response `201` on create, `200` on replace or unchanged; the body is the saved
 target.
 
 ---
+
+## Food logging
+
+Food logging adds foods to a day. Facts come from USDA FoodData Central first
+and Open Food Facts when a barcode is not found there; the API makes those
+calls with server-held credentials and keeps a copy of every food it returns in
+a shared catalog, so repeat lookups never leave GymPulse. A food the athlete
+creates from a label is private (`source: "own"`). Every entry stores the values
+it was logged with; a day's totals (`nutrition_days`, `source: "foods"`) are the
+sum of its entries and are rewritten in the same transaction as every entry
+change. Mutations require `Idempotency-Key` equal to `operation_key` (the header
+alone on body-less deletes); a verbatim retry replays the original status and
+body. Dates follow "Nutrition": local calendar dates, never after local today.
+Search and barcode lookups are limited to 60 per athlete per minute (`429
+RATE_LIMITED`).
+
+### `Food`
+
+```json
+{
+  "id": "<uuid>", "source": "usda",
+  "name": "Greek yogurt, plain, nonfat", "brand": "Kirkland Signature",
+  "barcode": "0096619123452",
+  "servings": [{ "label": "1 container (170 g)", "grams": 170 }, { "label": "100 g", "grams": 100 }],
+  "per_100g": { "energy_kcal": 59, "protein_g": 10.2, "carbs_g": 3.6, "fat_g": 0.4 },
+  "attribution": null, "revision": null, "archived": false
+}
+```
+
+`source` is `usda`, `open_food_facts`, or `own`. Nullable keys are always
+present. `servings` always includes `100 g`. `attribution` is set only for Open
+Food Facts (`{ "name": "Open Food Facts", "url": "https://world.openfoodfacts.org/product/<code>", "license": "ODbL" }`)
+and must be shown wherever that food is displayed. `revision` and `archived`
+are set only for `own` foods. `barcode` is the 13-digit form when the GTIN fits
+it, otherwise 14 digits.
+
+### `GET /api/v1/nutrition/foods/search?q=<text>&limit=25`
+
+`q` is 2–100 characters; `limit` is 1–25 (default 25). Response `200`:
+`{ "foods": [Food], "incomplete": false }`. The athlete's own foods come first,
+then USDA matches in source order, then catalog foods, de-duplicated. `foods`
+is `[]` when nothing matches. `incomplete: true` means USDA could not be asked
+(no key, timeout, `429`, `5xx`) and only stored foods are listed.
+
+### `GET /api/v1/nutrition/foods/barcode/{code}`
+
+`code` is 8, 12, 13, or 14 digits (spaces and hyphens allowed) with a valid GS1
+check digit, otherwise `422` on `code`. Equivalent forms match the same product.
+Order: the athlete's own food with that barcode → catalog → USDA (Branded,
+exact GTIN match) → Open Food Facts. Response `200 Food`. `404 NOT_FOUND` when
+no source has a usable product; a miss is remembered for seven days. When the
+Open Food Facts budget (shared by every athlete, 12 reads a minute) is spent
+before the code could be asked, the `404` carries
+`details.retry_after_seconds` and nothing is remembered.
+
+### `GET /api/v1/nutrition/foods/recent`
+
+Response `200`: `{ "foods": [RecentFood] }`, up to 20 foods logged in the last
+30 days, most often then most recently first, `[]` when none. Quick adds are
+excluded.
+
+```json
+{ "food": { "...": "Food" }, "last_serving": { "label": "1 container (170 g)", "grams": 170 }, "last_amount": 1.5, "times_logged": 6, "last_logged_at": "<RFC3339>" }
+```
+
+### `POST /api/v1/nutrition/foods` → `201 Food`
+
+Creates a private food from a label, typed per serving.
+
+```json
+{
+  "name": "Whey isolate", "brand": "Acme", "barcode": "096619123452",
+  "serving": { "label": "1 scoop", "grams": 30 },
+  "energy_kcal": 120, "protein_g": 24, "carbs_g": 3, "fat_g": 1.5,
+  "operation_key": "user-food:<uuid>"
+}
+```
+
+`name` 1–200, `brand` ≤ 120 (optional), `barcode` optional (same rules as the
+lookup; `422` on `barcode`), serving label 1–60, serving grams 0–5,000 with one
+decimal, `energy_kcal` 0–20,000, macros 0–2,000 with one decimal. The response
+is a `Food` with `source: "own"`, `revision: 1`, the typed serving plus `100 g`,
+and `per_100g` derived from the label.
+
+### `PUT /api/v1/nutrition/foods/{id}` → `200 Food`
+
+Same body plus `expected_revision` (the food's current revision, ≥ 1). Stale →
+`409 REVISION_CONFLICT` with the food under `resource`. Existing entries keep
+the values they were logged with.
+
+### `DELETE /api/v1/nutrition/foods/{id}?expected_revision=<n>` → `204`
+
+Archives the food (`Idempotency-Key` header is the operation key). An archived
+food no longer appears in search or barcode lookups and cannot start a new
+entry, but existing entries and recents still resolve it. Unknown, foreign, and
+malformed ids are the shared `404`.
+
+### `GET /api/v1/nutrition/days/{date}/entries`
+
+Response `200`: `{ "day": NutritionDay | null, "entries": [FoodEntry] }`,
+entries oldest first, `[]` when none.
+
+```json
+{
+  "id": "<uuid>", "date": "2026-10-27", "kind": "food",
+  "food": { "id": "<uuid>", "source": "usda", "name": "Greek yogurt, plain, nonfat", "brand": "Kirkland Signature" },
+  "serving": { "label": "1 container (170 g)", "grams": 170 }, "amount": 1.5,
+  "energy_kcal": 150, "protein_g": 26, "carbs_g": 9.2, "fat_g": 1,
+  "revision": 1, "logged_at": "<RFC3339>", "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+A `quick_add` entry has `food`, `serving`, and `amount` null and omits absent
+values. Entry values are `per_100g × grams × amount / 100`, energy rounded to a
+whole kcal and macros to one decimal.
+
+### `POST /api/v1/nutrition/days/{date}/entries` → `201`
+
+```json
+{ "food": { "id": "<uuid>" }, "serving": { "label": "1 container (170 g)", "grams": 170 }, "amount": 1.5, "operation_key": "food-entry:<uuid>" }
+```
+
+or `{ "quick_add": { "energy_kcal": 600, "protein_g": 40 }, "operation_key": "..." }`.
+Exactly one of `food` or `quick_add`. With `food`, `serving` must be one of the
+food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`, and
+`amount` is 0.1–50 with at most two decimals. `quick_add` needs at least one
+value and follows the day-total bounds. `logged_at` is optional (default now).
+An unknown, foreign, or archived food is the shared `404`.
+
+Response: `{ "entry": FoodEntry, "day": NutritionDay, "converted": [FoodEntry] }`.
+When the date already held typed totals (`manual` or `apple_health`) and no
+entries, those totals become one `quick_add` entry, returned under `converted`,
+so nothing the athlete saved disappears. `day.source` is `foods` from then on
+and its `revision` advances on every entry change.
+
+### `PUT /api/v1/nutrition/entries/{id}` → `200`
+
+`{ "serving": {...}, "amount": 2, "expected_revision": 1, "operation_key": "..." }`
+for a food entry (values are recomputed from the food's current facts), or
+`{ "quick_add": {...}, "expected_revision": 1, "operation_key": "..." }` for a
+quick add. Mixing the shapes is `422`. Stale → `409 REVISION_CONFLICT` with the
+entry under `resource`. Response `{ "entry": FoodEntry, "day": NutritionDay }`.
+
+### `DELETE /api/v1/nutrition/entries/{id}?expected_revision=<n>` → `200`
+
+`Idempotency-Key` header is the operation key. Response `{ "day": NutritionDay | null }`;
+`day` is `null` when the last entry was removed and the day's totals with it.
+
+### Codes
+
+`VALIDATION_ERROR` (`details.field` ∈ `q`, `limit`, `code`, `date`, `name`,
+`brand`, `barcode`, `serving`, `amount`, `food`, `quick_add`, `energy_kcal`,
+`protein_g`, `carbs_g`, `fat_g`, `expected_revision`, `operation_key`,
+`Idempotency-Key`), `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`, `REVISION_CONFLICT`,
+`DAY_HAS_FOOD_ENTRIES` (on `PUT /days/{date}` only), `RATE_LIMITED`.
+
+### Configuration
+
+`USDA_FDC_API_KEY` (free key from FoodData Central; empty means degraded,
+catalog-only search and a startup warning in staging and production),
+`FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
+to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
+(test and staging overrides). Keys never appear in logs or responses.
 
 ## Account
 

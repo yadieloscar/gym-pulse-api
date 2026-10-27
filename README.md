@@ -79,3 +79,7 @@ generated documentation are operational surfaces outside the authenticated appli
 | `ALLOWED_ORIGINS` | Staging/production | `*` in development/test | Explicit HTTPS CORS origins (comma-separated) |
 | `ENVIRONMENT` | Yes | Binary: —; production image: `production` | Explicitly select `development`, `test`, `staging`, or `production`; blank values fail startup |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
+| `USDA_FDC_API_KEY` | No (warned in staging/production) | — | USDA FoodData Central key for live food search and barcode lookup; empty means catalog-only search (`incomplete: true`) |
+| `FOOD_SOURCE_USER_AGENT` | No | `GymPulse/1.0 (...)` | Identifying `User-Agent` Open Food Facts requires on product reads |
+| `USDA_FDC_BASE_URL` | No | `https://api.nal.usda.gov` | Override for tests and staging |
+| `OPEN_FOOD_FACTS_BASE_URL` | No | `https://world.openfoodfacts.org` | Override for tests and staging (`https://world.openfoodfacts.net` is their staging host) |
