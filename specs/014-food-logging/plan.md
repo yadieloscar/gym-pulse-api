@@ -57,7 +57,7 @@ Open Food Facts allows 15 product reads per minute per IP, so the server holds a
 caches misses; USDA allows 1,000 requests per hour per key
 
 **Scale/Scope**: One migration (four tables, one constraint change), two source adapters, one
-model file, two DAOs, one service, one handler, nine routes, contract and schema documentation, one
+model file, two DAOs, one service, one handler, ten routes, contract and schema documentation, one
 smoke step
 
 ## Constitution Check
@@ -100,7 +100,7 @@ specs/014-food-logging/
 cmd/server/main.go                                   # wire config, adapters, DAOs, service, handler
 docs/CONTRACTS.md                                    # "Food logging" section; amended PUT /days/{date}
 docs/DATABASE_DESIGN.md                              # four table sections, index rows, counts
-migrations/0NN_create_food_logging.{up,down}.sql     # NN = next free number at implementation time
+migrations/030_create_food_logging.{up,down}.sql     # nutrition renumbers to 029 after PR #36 took 027–028
 internal/
 ├── config/config.go                                 # USDA_FDC_API_KEY, FOOD_SOURCE_USER_AGENT, base URL overrides
 ├── dao/{food_dao.go,food_dao_test.go}               # catalog, private foods, barcode misses, recents
@@ -114,6 +114,7 @@ internal/
 ├── router/router.go                                 # routes under /api/v1/nutrition
 └── service/{food_svc.go,food_svc_test.go}           # search merge, barcode chain, validation, day rollup rules
     service/{foodsource.go,foodsource_usda.go,foodsource_off.go,foodsource_test.go}
+internal/service/testdata/{usda_search.json,usda_barcode.json,off_product.json,gtin_sample.txt}
 scripts/smoke.sh                                     # step 14: private food → entry → day → refused PUT
 ```
 

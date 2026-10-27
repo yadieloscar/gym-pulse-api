@@ -36,8 +36,8 @@ description: "Implementation tasks for food search, barcode lookup, and food ent
 
 ## Phase 1: Setup
 
-- [ ] T001 Rebase `spec/014-food-logging` on the merged nutrition branch; record `git status --short`; pick the next free migration number against `origin/main` (027 is claimed by both PR #35 and PR #36; this feature follows both) and replace `0NN` in plan.md and data-model.md
-- [ ] T002 [P] Draft the "Food logging" section in `docs/CONTRACTS.md` after "Nutrition" from `contracts/food-logging.openapi.yaml` (nine routes, bodies, envelopes, barcode rules, budget 404, rate limit) and amend `PUT /api/v1/nutrition/days/{date}` (`foods` source, `DAY_HAS_FOOD_ENTRIES`)
+- [ ] T001 Rebase `spec/014-food-logging` on the rebased nutrition branch once PR #35 lands; record `git status --short`; the migration is `030_create_food_logging` (PR #36 merged on 2026-10-27 holding 027–028, so nutrition becomes 029 and this feature 030); confirm against `origin/main` and update plan.md and data-model.md if the number moved
+- [ ] T002 [P] Draft the "Food logging" section in `docs/CONTRACTS.md` after "Nutrition" from `contracts/food-logging.openapi.yaml` (ten routes, bodies, envelopes, barcode rules, budget 404, rate limit) and amend `PUT /api/v1/nutrition/days/{date}` (`foods` source, `DAY_HAS_FOOD_ENTRIES`)
 - [ ] T003 [P] Add `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses` sections, checks, index rows, and the `nutrition_days.source` change to `docs/DATABASE_DESIGN.md`; update the table and column counts
 
 ## Phase 2: Foundational
@@ -53,7 +53,7 @@ description: "Implementation tasks for food search, barcode lookup, and food ent
 
 - [ ] T010 [P] [US1] Add `internal/service/foodsource_usda_test.go` with `httptest` fixtures: search maps `fdcId`, `description`, `dataType`, `brandOwner`/`brandName`, `gtinUpc`, `servingSize`+`servingSizeUnit`+`householdServingFullText`, nutrients `208/203/205/204`; `429` and `503` → `ErrSourceUnavailable`; 3 s timeout; key only in the query string
 - [ ] T011 [US1] Implement `internal/service/foodsource_usda.go`: search (`dataType` Foundation, SR Legacy, Branded; `pageSize`), barcode via Branded search with exact `gtinUpc` match, plausibility filter, 100 g serving, `http.Client{Timeout: 3s}`
-- [ ] T012 [P] [US1] Add `internal/dao/food_dao_test.go`: catalog upsert by `(source, source_id)` keeps `id`; `SearchCatalog` uses `websearch_to_tsquery('simple', $1)` ranked by `ts_rank`; `FindCatalogByGTIN`; refresh only when `fetched_at` older than 90 days; `user_id` absent from catalog statements and present in every private-food and entry statement
+- [ ] T012 [P] [US1] Add `internal/dao/food_dao_test.go`: catalog upsert by `(source, source_id)` keeps `id`; `SearchCatalog` uses `websearch_to_tsquery('simple', $1)` ranked by `ts_rank`; `FindCatalogByGTIN` is one statement filtered on `gtin` so `ix_food_catalog_gtin` serves it (SC-002); refresh only when `fetched_at` older than 90 days; `user_id` absent from catalog statements and present in every private-food and entry statement
 - [ ] T013 [US1] Implement `internal/dao/food_dao.go`: `UpsertCatalogFoods`, `SearchCatalog`, `FindCatalogByGTIN`, `GetFood` (catalog or own by id for the athlete)
 - [ ] T014 [P] [US1] Add `internal/service/food_svc_test.go`: `q` bounds; search merge order (own first, then USDA order, de-duplicated by `(source, source_id)`, 25 cap); `incomplete:true` on `ErrSourceUnavailable`, timeout, or empty key; create-entry validation (exactly one of `food` or `quick_add`; serving must be one of the food's servings or grams-only; amount 0.1–50 two decimals; quick add needs a value; date not after local today; `logged_at` default); hash covers path params plus client body only
 - [ ] T015 [US1] Implement `internal/service/food_svc.go` `Search` and `CreateEntry` (profile timezone like `nutrition_svc.go`, snapshot via `EntryValues`, hashing, scopes `food-entries/post`)

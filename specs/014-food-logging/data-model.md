@@ -1,6 +1,6 @@
 # Data Model: Food search, barcode lookup, and food entries
 
-Migration `0NN_create_food_logging` (number fixed at implementation; see `research.md`).
+Migration `030_create_food_logging` (PR #36 merged holding 027–028; nutrition renumbers to 029; see `research.md`).
 
 ## `food_catalog` (shared; no owner)
 
@@ -66,8 +66,8 @@ Indexes: `ix_user_foods_user_active(user_id) WHERE archived_at IS NULL`;
 | `created_at`, `updated_at` | TIMESTAMPTZ | Server generated |
 
 Checks: `ck_food_entries_kind`: `kind = 'food'` requires exactly one of `catalog_food_id`,
-`user_food_id`, plus `serving_label`, `serving_g`, `amount` not null; `kind = 'quick_add'` requires
-both references and the serving fields null and at least one value not null. Index
+`user_food_id`, plus `serving_label`, `serving_g`, `amount`, and all four values not null; `kind =
+'quick_add'` requires both references and the serving fields null and at least one value not null. Index
 `ix_food_entries_user_date(user_id, date, logged_at)`; `ix_food_entries_user_logged(user_id,
 logged_at DESC)` for recents. Same RLS and role provisioning.
 

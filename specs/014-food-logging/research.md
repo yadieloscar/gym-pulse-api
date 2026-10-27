@@ -171,8 +171,9 @@ FatSecret and Nutritionix (paid or attribution-heavy; decision recorded in `docs
   entry writes and day saves never interleave for one athlete.
 - Hashing: hash the request as sent plus the path parameters, not server-computed snapshot values.
 - Dates: local today from the training profile as in `nutrition_svc.go`; future dates `422`.
-- Migration number: the next free number when this branch is rebased. `spec/012` holds 027 and PR
-  #36 holds 027–028; whichever merges second renumbers, and this feature follows both.
+- Migration number: `030`. PR #36 merged on 2026-10-27 holding 027–028, so the nutrition branch
+  renumbers to 029 during its rebase and this feature takes 030. Re-check against `origin/main`
+  before the final rebase.
 - `DATABASE_DESIGN.md`: four table sections and index rows; `scripts/validate-database-design.sh`.
 - Account deletion: `DELETE FROM food_entries` and `DELETE FROM user_foods` join `account_dao.go`;
   `food_catalog` and `food_barcode_misses` hold no personal data.
