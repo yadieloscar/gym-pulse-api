@@ -790,6 +790,589 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nutrition/days/{date}/entries": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "A day's totals and its food entries, oldest first",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local calendar date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.DayEntries"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Typed totals already on the day are converted into one quick_add entry (converted).",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Log a food or a quick add; the day's totals become the sum of its entries",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local calendar date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "food+serving+amount, or quick_add",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.CreateFoodEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.FoodEntryCreated"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/entries/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Change an entry's serving and amount, or its quick-add values",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Change with expected_revision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateFoodEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.FoodEntryUpdated"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Remove an entry; removing the last one removes the day's totals",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Current revision",
+                        "name": "expected_revision",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.FoodEntryDeleted"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/foods": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Create a private food from a label",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Label values per serving",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveUserFoodRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.Food"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/foods/barcode/{code}": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Private food → catalog → USDA → Open Food Facts. 404 NOT_FOUND carries details.retry_after_seconds when the fallback budget was spent.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Look up one product by retail barcode",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "8, 12, 13, or 14 digits",
+                        "name": "code",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Food"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/foods/recent": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Foods logged in the last 30 days, most often and most recently first",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.RecentFoods"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/foods/search": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Private foods first, then USDA FoodData Central; catalog only (incomplete=true) when USDA cannot be asked.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Search foods by text",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "2–100 characters",
+                        "name": "q",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "1–25, default 25",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.FoodSearchResult"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/foods/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Change a private food; existing entries keep their snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Food id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Label values with expected_revision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveUserFoodRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Food"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Archive a private food",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Food id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Current revision",
+                        "name": "expected_revision",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nutrition/target": {
             "get": {
                 "security": [
@@ -2922,6 +3505,20 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Attribution": {
+            "type": "object",
+            "properties": {
+                "license": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "url": {
+                    "type": "string"
+                }
+            }
+        },
         "model.BodyWeight": {
             "type": "object",
             "properties": {
@@ -3090,6 +3687,29 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CreateFoodEntryRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "food": {
+                    "$ref": "#/definitions/model.FoodRef"
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "quick_add": {
+                    "$ref": "#/definitions/model.QuickAdd"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
+                }
+            }
+        },
         "model.CreateOverrideRequest": {
             "type": "object",
             "required": [
@@ -3236,6 +3856,20 @@ const docTemplate = `{
                 },
                 "scheduled_workout_id": {
                     "type": "string"
+                }
+            }
+        },
+        "model.DayEntries": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "$ref": "#/definitions/model.NutritionDay"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.FoodEntry"
+                    }
                 }
             }
         },
@@ -3515,6 +4149,190 @@ const docTemplate = `{
                 }
             }
         },
+        "model.Food": {
+            "type": "object",
+            "properties": {
+                "archived": {
+                    "type": "boolean"
+                },
+                "attribution": {
+                    "$ref": "#/definitions/model.Attribution"
+                },
+                "barcode": {
+                    "type": "string"
+                },
+                "brand": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "per_100g": {
+                    "$ref": "#/definitions/model.Per100g"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "servings": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Serving"
+                    }
+                },
+                "source": {
+                    "$ref": "#/definitions/model.FoodSource"
+                }
+            }
+        },
+        "model.FoodEntry": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "carbs_g": {
+                    "type": "number"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "food": {
+                    "$ref": "#/definitions/model.FoodSummary"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.FoodEntryKind"
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.FoodEntryCreated": {
+            "type": "object",
+            "properties": {
+                "converted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.FoodEntry"
+                    }
+                },
+                "day": {
+                    "$ref": "#/definitions/model.NutritionDay"
+                },
+                "entry": {
+                    "$ref": "#/definitions/model.FoodEntry"
+                }
+            }
+        },
+        "model.FoodEntryDeleted": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "$ref": "#/definitions/model.NutritionDay"
+                }
+            }
+        },
+        "model.FoodEntryKind": {
+            "type": "string",
+            "enum": [
+                "food",
+                "quick_add"
+            ],
+            "x-enum-varnames": [
+                "FoodEntryKindFood",
+                "FoodEntryKindQuickAdd"
+            ]
+        },
+        "model.FoodEntryUpdated": {
+            "type": "object",
+            "properties": {
+                "day": {
+                    "$ref": "#/definitions/model.NutritionDay"
+                },
+                "entry": {
+                    "$ref": "#/definitions/model.FoodEntry"
+                }
+            }
+        },
+        "model.FoodRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.FoodSearchResult": {
+            "type": "object",
+            "properties": {
+                "foods": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.Food"
+                    }
+                },
+                "incomplete": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.FoodSource": {
+            "type": "string",
+            "enum": [
+                "usda",
+                "open_food_facts",
+                "own"
+            ],
+            "x-enum-varnames": [
+                "FoodSourceUSDA",
+                "FoodSourceOpenFoodFacts",
+                "FoodSourceOwn"
+            ]
+        },
+        "model.FoodSummary": {
+            "type": "object",
+            "properties": {
+                "brand": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/model.FoodSource"
+                }
+            }
+        },
         "model.MaterializeScheduleRequest": {
             "type": "object",
             "required": [
@@ -3602,11 +4420,13 @@ const docTemplate = `{
             "type": "string",
             "enum": [
                 "manual",
-                "apple_health"
+                "apple_health",
+                "foods"
             ],
             "x-enum-varnames": [
                 "NutritionSourceManual",
-                "NutritionSourceAppleHealth"
+                "NutritionSourceAppleHealth",
+                "NutritionSourceFoods"
             ]
         },
         "model.NutritionTarget": {
@@ -3719,6 +4539,23 @@ const docTemplate = `{
                 },
                 "status": {
                     "type": "string"
+                }
+            }
+        },
+        "model.Per100g": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "number"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "protein_g": {
+                    "type": "number"
                 }
             }
         },
@@ -3946,6 +4783,54 @@ const docTemplate = `{
                 }
             }
         },
+        "model.QuickAdd": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "protein_g": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.RecentFood": {
+            "type": "object",
+            "properties": {
+                "food": {
+                    "$ref": "#/definitions/model.Food"
+                },
+                "last_amount": {
+                    "type": "number"
+                },
+                "last_logged_at": {
+                    "type": "string"
+                },
+                "last_serving": {
+                    "$ref": "#/definitions/model.Serving"
+                },
+                "times_logged": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.RecentFoods": {
+            "type": "object",
+            "properties": {
+                "foods": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.RecentFood"
+                    }
+                }
+            }
+        },
         "model.RecoverScheduledWorkoutRequest": {
             "type": "object",
             "required": [
@@ -4086,6 +4971,41 @@ const docTemplate = `{
                 },
                 "protein_g": {
                     "type": "number"
+                }
+            }
+        },
+        "model.SaveUserFoodRequest": {
+            "type": "object",
+            "properties": {
+                "barcode": {
+                    "type": "string"
+                },
+                "brand": {
+                    "type": "string"
+                },
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
                 }
             }
         },
@@ -4236,6 +5156,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.Serving": {
+            "type": "object",
+            "properties": {
+                "grams": {
+                    "type": "number"
+                },
+                "label": {
                     "type": "string"
                 }
             }
@@ -4541,6 +5472,26 @@ const docTemplate = `{
                 },
                 "type_id": {
                     "type": "string"
+                }
+            }
+        },
+        "model.UpdateFoodEntryRequest": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "quick_add": {
+                    "$ref": "#/definitions/model.QuickAdd"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
                 }
             }
         },

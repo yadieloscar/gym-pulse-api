@@ -39,15 +39,7 @@ const (
 // localToday returns the athlete's current calendar date in their saved
 // training-profile timezone as YYYY-MM-DD, as sport activities do.
 func (s *nutritionService) localToday(ctx context.Context, userID uuid.UUID) (string, error) {
-	profile, err := s.profiles.Get(ctx, userID)
-	if err != nil {
-		return "", err
-	}
-	location, err := time.LoadLocation(profile.Timezone)
-	if err != nil {
-		return "", &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
-	}
-	return s.now().In(location).Format("2006-01-02"), nil
+	return localTodayFromProfile(ctx, s.profiles, userID, s.now())
 }
 
 func (s *nutritionService) SaveDay(ctx context.Context, userID uuid.UUID, date string, req model.SaveNutritionDayRequest) (*model.NutritionDay, model.NutritionDayOutcome, error) {

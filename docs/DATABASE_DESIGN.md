@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **33 tables and 328 supported columns**. For the Supabase-managed
+The current inventory contains **37 tables and 378 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -964,7 +964,7 @@ policies and existing Data API roles have table privileges revoked.
 
 ### Table: `public.nutrition_days`
 
-**Purpose**: One set of daily nutrition totals per athlete and calendar date. GymPulse stores totals only; there is no food, meal, or portion data.
+**Purpose**: One set of daily nutrition totals per athlete and calendar date, typed, imported from Health, or (since 030) the sum of the date's food entries.
 
 | Column | Type | Null/default | Meaning | Sensitivity |
 |---|---|---|---|---|
@@ -975,7 +975,7 @@ policies and existing Data API roles have table privileges revoked.
 | `protein_g` | `numeric(6,1)` | nullable | Protein in grams | Health |
 | `carbs_g` | `numeric(6,1)` | nullable | Carbohydrate in grams | Health |
 | `fat_g` | `numeric(6,1)` | nullable | Fat in grams | Health |
-| `source` | `text` | not null | `manual` (athlete) or `apple_health` (import) | Health |
+| `source` | `text` | not null | `manual` (athlete), `apple_health` (import), or `foods` (sum of food entries) | Health |
 | `revision` | `bigint` | not null; `1` | Optimistic revision for athlete saves | Operational |
 | `logged_at` | `timestamptz` | not null | Last athlete or device save | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
@@ -985,9 +985,10 @@ policies and existing Data API roles have table privileges revoked.
 
 - PK `id`; UUID is application-generated.
 - FK `user_id → auth.users(id) ON DELETE CASCADE`.
-- Checks: `energy_kcal` 0–20,000; each macro 0–2,000; `source IN ('manual', 'apple_health')`; `revision > 0`; `ck_nutrition_days_has_value` requires at least one of the four values.
+- Checks: `energy_kcal` 0–20,000; each macro 0–2,000; `source IN ('manual', 'apple_health', 'foods')` (widened in 030); `revision > 0`; `ck_nutrition_days_has_value` requires at least one of the four values.
 - Unique `ux_nutrition_days_user_date(user_id, date)` is the identity and serves the oldest-first range read.
 - The save transaction enforces: athlete saves carry the current revision; a Health save never overwrites a `manual` row (it returns the stored row and writes only the idempotency ledger); an athlete save over an `apple_health` row converts it to `manual`.
+- A `foods` row is the sum of the date's `food_entries`, rewritten by the entry transaction; typed saves and removes on it are refused (`DAY_HAS_FOOD_ENTRIES`) and Health saves are ignored.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API role privileges are revoked, and the `gym_pulse_api` runtime role holds DML plus the `gym_pulse_api_access` policy.
 
@@ -1021,6 +1022,126 @@ policies and existing Data API roles have table privileges revoked.
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS, Data API revocation, and runtime-role provisioning as for `nutrition_days`.
 
 **Migration source**: 029.
+
+### Table: `public.food_catalog`
+
+**Purpose**: Shared copy of every outside food the API has returned, from USDA FoodData Central or Open Food Facts, with values per 100 g. Filled lazily by lookups; refreshed when older than 90 days and the source answers; never edited by clients and never deleted. Open Food Facts rows are tagged by `source` so the ODbL-derived subset can be exported.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Catalog identity | Operational |
+| `source` | `text` | not null | `usda` or `open_food_facts` | Operational |
+| `source_id` | `text` | not null | `fdcId` or OFF product code | Operational |
+| `data_type` | `text` | nullable | `foundation`, `sr_legacy`, `branded`, `off_product` | Operational |
+| `gtin` | `text` | nullable | Zero-padded GTIN-14 | Operational |
+| `name` | `text` | not null | Food name, 1–200 chars | Operational |
+| `brand` | `text` | nullable | Brand, ≤ 120 chars | Operational |
+| `energy_kcal_100g` | `numeric(6,1)` | not null | Energy per 100 g | Operational |
+| `protein_g_100g` | `numeric(6,1)` | not null | Protein per 100 g | Operational |
+| `carbs_g_100g` | `numeric(6,1)` | not null | Carbohydrate per 100 g | Operational |
+| `fat_g_100g` | `numeric(6,1)` | not null | Fat per 100 g | Operational |
+| `servings` | `jsonb` | not null | List of `{label, grams}`; always includes `100 g` | Operational |
+| `search_vector` | `tsvector` | generated | `to_tsvector('simple', name || ' ' || brand)` stored | Operational |
+| `fetched_at` | `timestamptz` | not null | Last successful source read | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Operational |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Operational |
+
+**Current constraints and indexes**
+
+- PK `id`; UUID is application-generated.
+- Checks: `source IN ('usda', 'open_food_facts')`; `source_id` 1–64 chars; `data_type` in its four values; `gtin ~ '^[0-9]{14}$'`; `name` 1–200; `brand` ≤ 120; energy 0–900 and each macro 0–100 per 100 g; `servings` is a non-empty JSON array.
+- Unique `ux_food_catalog_source_id(source, source_id)` is the identity for upserts.
+- `ix_food_catalog_gtin(gtin) WHERE gtin IS NOT NULL` serves barcode lookups in one indexed read.
+- `ix_food_catalog_search USING GIN (search_vector)` serves `websearch_to_tsquery` search when the outside source is unavailable.
+
+**Ownership/lifecycle**: Shared; no `user_id` and no personal data. Account deletion leaves it untouched. RLS is enabled without direct-client policies, Data API role privileges are revoked, and the `gym_pulse_api` runtime role holds DML plus the `gym_pulse_api_access` policy.
+
+**Migration source**: 030.
+
+### Table: `public.user_foods`
+
+**Purpose**: A food the athlete typed from a label, stored per serving as read. Private to its owner; archived rather than deleted so existing entries keep their reference.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Food identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `name` | `text` | not null | Food name, 1–200 chars | Health |
+| `brand` | `text` | nullable | Brand, ≤ 120 chars | Health |
+| `gtin` | `text` | nullable | Zero-padded GTIN-14 | Health |
+| `serving_label` | `text` | not null | Serving as labelled, 1–60 chars | Health |
+| `serving_g` | `numeric(7,1)` | not null | Serving weight in grams | Health |
+| `energy_kcal` | `integer` | not null | Energy per serving | Health |
+| `protein_g` | `numeric(6,1)` | not null | Protein per serving | Health |
+| `carbs_g` | `numeric(6,1)` | not null | Carbohydrate per serving | Health |
+| `fat_g` | `numeric(6,1)` | not null | Fat per serving | Health |
+| `archived_at` | `timestamptz` | nullable | Set when archived | Operational |
+| `revision` | `bigint` | not null; `1` | Optimistic revision | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: `name` 1–200; `brand` ≤ 120; `gtin ~ '^[0-9]{14}$'`; `serving_label` 1–60; `serving_g` 0–5,000 exclusive of zero; `energy_kcal` 0–20,000; each macro 0–2,000; `revision > 0`.
+- `ix_user_foods_user_active(user_id) WHERE archived_at IS NULL` serves own-food search.
+- `ix_user_foods_user_gtin(user_id, gtin) WHERE gtin IS NOT NULL` serves the owner-first barcode lookup.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows after `food_entries`. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
+
+**Migration source**: 030.
+
+### Table: `public.food_entries`
+
+**Purpose**: One logged item on an athlete's day with the values it was logged with, either a food (catalog or own) with a serving and amount, or a quick add of raw totals. The sum of a date's entries is written into `nutrition_days` (`source = 'foods'`) in the same transaction as every change.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Entry identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `date` | `date` | not null | Athlete's local calendar date | Health |
+| `kind` | `text` | not null | `food` or `quick_add` | Health |
+| `catalog_food_id` | `uuid` | nullable | Catalog food logged | Health |
+| `user_food_id` | `uuid` | nullable | Own food logged | Health |
+| `serving_label` | `text` | nullable | Serving used, 1–60 chars | Health |
+| `serving_g` | `numeric(7,1)` | nullable | Serving weight in grams | Health |
+| `amount` | `numeric(5,2)` | nullable | Servings logged, 0.1–50 | Health |
+| `energy_kcal` | `integer` | nullable | Snapshot energy | Health |
+| `protein_g` | `numeric(6,1)` | nullable | Snapshot protein | Health |
+| `carbs_g` | `numeric(6,1)` | nullable | Snapshot carbohydrate | Health |
+| `fat_g` | `numeric(6,1)` | nullable | Snapshot fat | Health |
+| `revision` | `bigint` | not null; `1` | Optimistic revision | Operational |
+| `logged_at` | `timestamptz` | not null | When the athlete logged it | Health |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`; FK `catalog_food_id → food_catalog(id) ON DELETE RESTRICT`; FK `user_food_id → user_foods(id) ON DELETE RESTRICT`.
+- Checks: `kind IN ('food', 'quick_add')`; `ck_food_entries_kind` requires a `food` entry to reference exactly one food with serving, amount, and all four values, and a `quick_add` entry to reference none with at least one value; value bounds as on `nutrition_days`; `amount` 0.1–50; `revision > 0`.
+- `ix_food_entries_user_date(user_id, date, logged_at)` serves the day list oldest first and the rollup sum.
+- `ix_food_entries_user_logged(user_id, logged_at DESC)` serves the 30-day recents query.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows first among the food tables. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
+
+**Migration source**: 030.
+
+### Table: `public.food_barcode_misses`
+
+**Purpose**: Barcodes no source could answer, remembered for seven days so a retried scan does not spend the shared Open Food Facts budget. Written only when every source was reachable and said no.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `gtin` | `text` | not null | Zero-padded GTIN-14 | Operational |
+| `checked_at` | `timestamptz` | not null | Last time every source said no | Operational |
+
+**Current constraints and indexes**
+
+- PK `gtin`; check `gtin ~ '^[0-9]{14}$'`.
+
+**Ownership/lifecycle**: Shared; no personal data. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
+
+**Migration source**: 030.
 
 ### Table: `public.criteria_training_blocks`
 
@@ -1157,11 +1278,11 @@ columns:
 | Scheduled execution/history/workflow | 6 | 72 |
 | Sport activity | 1 | 16 |
 | Health exports | 1 | 8 |
-| Nutrition | 2 | 22 |
+| Nutrition and food logging | 6 | 72 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **33** | **328** |
+| **Total** | **37** | **378** |
 
-The count is derived from the final state after migration 029, not the sum of every historical
+The count is derived from the final state after migration 030, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1170,7 +1291,9 @@ The count is derived from the final state after migration 029, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `criteria_training_blocks` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
+| `food_catalog` | `food_entries` | Restrict | Catalog rows are never deleted; entries keep their reference |
+| `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `workout_templates` | `exercises` | Cascade | Removes mutable template composition |
 | `workout_templates` | `day_logs`, `weekly_plans`, `plan_overrides` | Set null | Keeps log/plan row but loses template provenance |
 | `exercises` | `exercise_overrides` | Cascade | Removes legacy aggregate detail |
@@ -1247,6 +1370,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Body weight | `body_weights` | Measurements ordered by date | Authoritative health series |
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
+| Food logging | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`, `nutrition_days` | Search and barcode lookups, recents, day entries with the day as their sum | Shared published facts; owner-scoped entries with snapshot values; same-transaction rollup |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
 | Account deletion | All user-owned roots, avatar storage, then auth provider | None | Retryable destructive workflow |
 
@@ -1292,6 +1416,13 @@ snapshot; `set_logs` is the preferred per-set history.
 | `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
 | `nutrition_days` | `ux_nutrition_days_user_date(user_id, date)` unique | One day per athlete and date; oldest-first range read |
 | `nutrition_targets` | `ux_nutrition_targets_user_effective(user_id, effective_from)` unique | One target per effective date; current-target lookup and range read |
+| `food_catalog` | `ux_food_catalog_source_id(source, source_id)` unique | One row per outside food; upsert identity |
+| `food_catalog` | `ix_food_catalog_gtin(gtin)` partial | Barcode lookup from the catalog |
+| `food_catalog` | `ix_food_catalog_search` GIN | Catalog text search when the outside source is unavailable |
+| `user_foods` | `ix_user_foods_user_active(user_id)` partial | Owner's active foods for search |
+| `user_foods` | `ix_user_foods_user_gtin(user_id, gtin)` partial | Owner-first barcode lookup |
+| `food_entries` | `ix_food_entries_user_date(user_id, date, logged_at)` | Day entries oldest first; rollup sum |
+| `food_entries` | `ix_food_entries_user_logged(user_id, logged_at DESC)` | 30-day recents |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_program` | Nullable program association/set-null |
 | `criteria_training_exposures` | `idx_criteria_training_exposures_block_created` | Latest exposure history |
@@ -1426,6 +1557,10 @@ activity updates `scheduled_workouts`; it never takes `program:`.
 
 Every new workflow touching both domains must preserve that order. Single-session set changes lock
 the owned session row directly. Avoid waiting on network I/O inside a transaction.
+
+Nutrition day saves and food-entry writes share the `nutrition:<user UUID>` lock, so an entry
+rollup and a typed save for the same athlete never interleave. Outside food sources are called
+before any transaction opens.
 
 ### Optimistic revisions
 
@@ -1916,7 +2051,7 @@ Report one of:
 
 ### Definition of complete
 
-- All 33 current tables and 314 supported columns are cataloged.
+- All 37 current tables and 378 supported columns are cataloged.
 - All current named indexes, keys, checks, and delete actions are described.
 - Every API persistence surface is traceable.
 - Every user-owned root has a current and target ownership/deletion outcome.
@@ -1953,6 +2088,7 @@ Report one of:
 | 027 | Planned sport sessions: `kind` and sport snapshot columns on `program_workouts` and `scheduled_workouts`, `sport_activities.scheduled_workout_id` link with partial unique index |
 | 028 | `sport_activities.perceived_effort` (1–10, optional) |
 | 029 | `nutrition_days` and `nutrition_targets`, RLS and role revocation, runtime-role grant and policy |
+| 030 | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`; `nutrition_days.source` gains `foods`; RLS and role revocation, runtime-role grants and policies |
 
 ## 19. Decision summary
 
