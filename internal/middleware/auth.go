@@ -74,6 +74,10 @@ type keyCache struct {
 }
 
 const (
+	// Clock skew tolerated between the token issuer and this server when
+	// checking exp, nbf, and iat. A phone or host a few seconds off must not
+	// get a 401 and a forced sign-out.
+	jwtClockSkewLeeway = 30 * time.Second
 	// Supabase's JWKS edge cache is ten minutes. Do not retain keys longer
 	// locally or a revoked signing key can remain trusted after Supabase has
 	// stopped advertising it.
@@ -248,20 +252,20 @@ func AuthMiddlewareWithConfig(cfg AuthConfig) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				writeAuthError(w, "missing authorization header")
+				writeAuthError(w, "missing authorization header", false)
 				return
 			}
 
 			tokenStr := strings.TrimPrefix(authHeader, "Bearer ")
 			if tokenStr == authHeader {
-				writeAuthError(w, "invalid authorization format")
+				writeAuthError(w, "invalid authorization format", false)
 				return
 			}
 
 			// jwt.Parse's keyFunc signature doesn't accept context, so we
 			// rely on the captured r.Context() below. contextcheck can't
 			// see through the closure — silence the false positive.
-			options := []jwt.ParserOption{jwt.WithExpirationRequired()}
+			options := []jwt.ParserOption{jwt.WithExpirationRequired(), jwt.WithLeeway(jwtClockSkewLeeway)}
 			if cfg.Issuer != "" {
 				options = append(options, jwt.WithIssuer(cfg.Issuer))
 			}
@@ -301,23 +305,23 @@ func AuthMiddlewareWithConfig(cfg AuthConfig) func(http.Handler) http.Handler {
 				return []byte(cfg.JWTSecret), nil
 			}, options...)
 			if err != nil || !token.Valid {
-				writeAuthError(w, "invalid or expired token")
+				writeAuthError(w, "invalid or expired token", true)
 				return
 			}
 
 			claims, ok := token.Claims.(jwt.MapClaims)
 			if !ok {
-				writeAuthError(w, "invalid token claims")
+				writeAuthError(w, "invalid token claims", true)
 				return
 			}
 
 			userID, ok := claims["sub"].(string)
 			if !ok || userID == "" {
-				writeAuthError(w, "missing user id in token")
+				writeAuthError(w, "missing user id in token", true)
 				return
 			}
 			if _, err := uuid.Parse(userID); err != nil {
-				writeAuthError(w, "invalid user id in token")
+				writeAuthError(w, "invalid user id in token", true)
 				return
 			}
 
@@ -338,10 +342,23 @@ func MustGetUserID(ctx context.Context) uuid.UUID {
 	return id
 }
 
-func writeAuthError(w http.ResponseWriter, message string) {
+// authErrorCode is the stable 401 code for every authentication failure, as
+// documented in docs/CONTRACTS.md. Clients branch on it, never on the message.
+const authErrorCode = "AUTHENTICATION_REQUIRED"
+
+// writeAuthError answers a failed bearer check per RFC 6750. A request that
+// carried no usable credentials gets a bare challenge; one that presented a
+// token that failed validation gets error="invalid_token" so clients can tell
+// "sign in" apart from "refresh or re-authenticate".
+func writeAuthError(w http.ResponseWriter, message string, tokenPresented bool) {
+	challenge := `Bearer realm="gym-pulse"`
+	if tokenPresented {
+		challenge += `, error="invalid_token"`
+	}
+	w.Header().Set("WWW-Authenticate", challenge)
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusUnauthorized)
-	if err := json.NewEncoder(w).Encode(map[string]string{"error": message}); err != nil {
+	if err := json.NewEncoder(w).Encode(map[string]string{"error": message, "code": authErrorCode}); err != nil {
 		http.Error(w, message, http.StatusUnauthorized)
 	}
 }
