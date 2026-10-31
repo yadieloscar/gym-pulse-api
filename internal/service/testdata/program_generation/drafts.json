@@ -1,0 +1,3248 @@
+[
+ {
+  "goal": "general_health",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "General Health 1-day",
+   "rationale": "A 1-day plan for general health.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Back Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Chin-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Treadmill Run",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "general_health",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "General Health 3-day",
+   "rationale": "A 3-day plan for general health.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Treadmill Run",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Pull-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Treadmill Walk",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Goblet Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Outdoor Run",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "general_health",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "General Health 6-day",
+   "rationale": "A 6-day plan for general health.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Treadmill Run",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Pull-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Chin-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Treadmill Walk",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Goblet Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Outdoor Run",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Stationary Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Assault Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "strength",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "Strength 1-day",
+   "rationale": "A 1-day plan for strength.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Front Squat",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "strength",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "Strength 3-day",
+   "rationale": "A 3-day plan for strength.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Incline Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Chin-Up",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Romanian Deadlift",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "strength",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "Strength 6-day",
+   "rationale": "A 6-day plan for strength.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Incline Barbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Chin-Up",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Romanian Deadlift",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lying Leg Curl",
+       "target_sets": 3,
+       "target_reps": 5,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "hypertrophy",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "Hypertrophy 1-day",
+   "rationale": "A 1-day plan for hypertrophy.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Goblet Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "hypertrophy",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "Hypertrophy 3-day",
+   "rationale": "A 3-day plan for hypertrophy.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "hypertrophy",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "Hypertrophy 6-day",
+   "rationale": "A 6-day plan for hypertrophy.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Dumbbell Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Lat Pulldown",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      },
+      {
+       "name": "Standing Calf Raise",
+       "target_sets": 3,
+       "target_reps": 10,
+       "target_duration_seconds": null,
+       "rest_seconds": 90,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "conditioning",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "Conditioning 1-day",
+   "rationale": "A 1-day plan for conditioning.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Romanian Deadlift",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stationary Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "conditioning",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "Conditioning 3-day",
+   "rationale": "A 3-day plan for conditioning.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stationary Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Assault Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "conditioning",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "Conditioning 6-day",
+   "rationale": "A 6-day plan for conditioning.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Incline Dumbbell Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stationary Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Barbell Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Assault Bike",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Fly",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Elliptical",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Curl",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stairmaster",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Lying Leg Curl",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Calf Raise",
+       "target_sets": 3,
+       "target_reps": 15,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Jump Rope",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "power",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "Power 1-day",
+   "rationale": "A 1-day plan for power.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Leg Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "power",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "Power 3-day",
+   "rationale": "A 3-day plan for power.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lying Leg Curl",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "power",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "Power 6-day",
+   "rationale": "A 6-day plan for power.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Overhead Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Dumbbell Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Bulgarian Split Squat",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Step-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lying Leg Curl",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Lateral Raise",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Curl",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hammer Curl",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Standing Calf Raise",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Cable Crunch",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      },
+      {
+       "name": "Hip Abduction",
+       "target_sets": 3,
+       "target_reps": 3,
+       "target_duration_seconds": null,
+       "rest_seconds": 180,
+       "notes": null
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "body_composition",
+  "available_days": [
+   1
+  ],
+  "draft": {
+   "name": "Body Composition 1-day",
+   "rationale": "A 1-day plan for body composition.",
+   "workouts": [
+    {
+     "name": "Full body",
+     "exercises": [
+      {
+       "name": "Walking Lunge",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "body_composition",
+  "available_days": [
+   1,
+   2,
+   3
+  ],
+  "draft": {
+   "name": "Body Composition 3-day",
+   "rationale": "A 3-day plan for body composition.",
+   "workouts": [
+    {
+     "name": "Push",
+     "exercises": [
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dead Bug",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull",
+     "exercises": [
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Bicycle Crunch",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Side Plank",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Elliptical",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs",
+     "exercises": [
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Standing Calf Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stairmaster",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "goal": "body_composition",
+  "available_days": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "draft": {
+   "name": "Body Composition 6-day",
+   "rationale": "A 6-day plan for body composition.",
+   "workouts": [
+    {
+     "name": "Push A",
+     "exercises": [
+      {
+       "name": "Seated Dumbbell Shoulder Press",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Close-Grip Bench Press",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dips",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rowing Machine",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull A",
+     "exercises": [
+      {
+       "name": "Seated Cable Row",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "T-Bar Row",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Face Pull",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Elliptical",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs A",
+     "exercises": [
+      {
+       "name": "Hip Thrust",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Plank",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Leg Extension",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hanging Leg Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Standing Calf Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Stairmaster",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Push B",
+     "exercises": [
+      {
+       "name": "Push-Up",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Cable Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Lateral Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Triceps Pushdown",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Jump Rope",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Pull B",
+     "exercises": [
+      {
+       "name": "Rear Delt Fly",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Barbell Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Dumbbell Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Hammer Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Preacher Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Swimming",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    },
+    {
+     "name": "Legs B",
+     "exercises": [
+      {
+       "name": "Lying Leg Curl",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Ab Wheel Rollout",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Seated Calf Raise",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Russian Twist",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "Back Squat",
+       "target_sets": 3,
+       "target_reps": 12,
+       "target_duration_seconds": null,
+       "rest_seconds": 60,
+       "notes": null
+      },
+      {
+       "name": "HIIT Circuit",
+       "target_sets": 1,
+       "target_reps": null,
+       "target_duration_seconds": 900,
+       "rest_seconds": 0,
+       "notes": "Easy pace"
+      }
+     ]
+    }
+   ]
+  }
+ }
+]

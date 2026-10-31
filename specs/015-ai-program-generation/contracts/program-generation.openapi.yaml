@@ -6,7 +6,7 @@ paths:
       summary: Report whether program generation is available and how many drafts remain today
       description: >
         Read-only. enabled is false when the API has no provider key. remaining_today counts
-        succeeded drafts in the athlete's local day against the limit; resets_at is the next local
+        succeeded and in-progress drafts in the athlete's local day against the limit; resets_at is the next local
         midnight in the saved training-profile timezone. Without a training profile, remaining_today
         equals limit and resets_at is null.
       responses:

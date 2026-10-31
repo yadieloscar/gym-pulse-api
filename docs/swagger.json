@@ -1885,6 +1885,83 @@
                 }
             }
         },
+        "/api/v1/program-generation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Program generation status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerationStatus"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Generate a program draft",
+                "parameters": [
+                    {
+                        "description": "Optional one-line request",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerateProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerateProgramResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/programs": {
             "get": {
                 "security": [
@@ -3973,6 +4050,67 @@
                 }
             }
         },
+        "model.DraftExercise": {
+            "type": "object",
+            "properties": {
+                "catalog_id": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "exercise_order": {
+                    "type": "integer"
+                },
+                "modality": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "rest_seconds": {
+                    "type": "integer"
+                },
+                "target_duration_seconds": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_sets": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.DraftWorkout": {
+            "type": "object",
+            "properties": {
+                "exercises": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DraftExercise"
+                    }
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "preferred_weekday": {
+                    "type": "integer"
+                },
+                "sequence_position": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Exercise": {
             "type": "object",
             "required": [
@@ -4327,6 +4465,51 @@
                 }
             }
         },
+        "model.GenerateProgramRequest": {
+            "type": "object",
+            "properties": {
+                "request": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.GenerateProgramResponse": {
+            "type": "object",
+            "properties": {
+                "draft": {
+                    "$ref": "#/definitions/model.ProgramDraft"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "remaining_today": {
+                    "type": "integer"
+                },
+                "request": {
+                    "type": "string"
+                },
+                "resets_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.GenerationStatus": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "remaining_today": {
+                    "type": "integer"
+                },
+                "resets_at": {
+                    "type": "string"
+                }
+            }
+        },
         "model.MaterializeScheduleRequest": {
             "type": "object",
             "required": [
@@ -4678,6 +4861,27 @@
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/model.ProgramWorkout"
+                    }
+                }
+            }
+        },
+        "model.ProgramDraft": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DraftWorkout"
                     }
                 }
             }

@@ -349,6 +349,46 @@ definitions:
       timezone:
         type: string
     type: object
+  model.DraftExercise:
+    properties:
+      catalog_id:
+        type: string
+      category:
+        type: string
+      exercise_order:
+        type: integer
+      modality:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      rest_seconds:
+        type: integer
+      target_duration_seconds:
+        type: integer
+      target_reps:
+        type: integer
+      target_sets:
+        type: integer
+      target_weight:
+        type: number
+    type: object
+  model.DraftWorkout:
+    properties:
+      exercises:
+        items:
+          $ref: '#/definitions/model.DraftExercise'
+        type: array
+      kind:
+        $ref: '#/definitions/model.UnitKind'
+      name:
+        type: string
+      preferred_weekday:
+        type: integer
+      sequence_position:
+        type: integer
+    type: object
   model.Exercise:
     properties:
       catalog_id:
@@ -586,6 +626,35 @@ definitions:
       source:
         $ref: '#/definitions/model.FoodSource'
     type: object
+  model.GenerateProgramRequest:
+    properties:
+      request:
+        type: string
+    type: object
+  model.GenerateProgramResponse:
+    properties:
+      draft:
+        $ref: '#/definitions/model.ProgramDraft'
+      rationale:
+        type: string
+      remaining_today:
+        type: integer
+      request:
+        type: string
+      resets_at:
+        type: string
+    type: object
+  model.GenerationStatus:
+    properties:
+      enabled:
+        type: boolean
+      limit:
+        type: integer
+      remaining_today:
+        type: integer
+      resets_at:
+        type: string
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -822,6 +891,20 @@ definitions:
       workouts:
         items:
           $ref: '#/definitions/model.ProgramWorkout'
+        type: array
+    type: object
+  model.ProgramDraft:
+    properties:
+      name:
+        type: string
+      primary_goal:
+        type: string
+      roadmap:
+        additionalProperties: {}
+        type: object
+      workouts:
+        items:
+          $ref: '#/definitions/model.DraftWorkout'
         type: array
     type: object
   model.ProgramExercise:
@@ -2799,6 +2882,53 @@ paths:
       summary: Upload profile avatar
       tags:
       - profile
+  /api/v1/program-generation:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.GenerationStatus'
+      security:
+      - BearerAuth: []
+      summary: Program generation status
+      tags:
+      - goal-training
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Optional one-line request
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/model.GenerateProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.GenerateProgramResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      summary: Generate a program draft
+      tags:
+      - goal-training
   /api/v1/programs:
     get:
       produces:

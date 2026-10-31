@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **37 tables and 378 supported columns**. For the Supabase-managed
+The current inventory contains **38 tables and 385 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -962,6 +962,31 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 025.
 
+### Table: `public.program_generations`
+
+**Purpose**: Per-athlete ledger of program-draft generation attempts, used only to enforce the daily limit; it stores no draft content.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Attempt identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `local_date` | `date` | not null | Athlete's civil date in the profile timezone when reserved | Operational |
+| `status` | `text` | not null; `'pending'` | `pending`, `succeeded`, or `failed` | Operational |
+| `model` | `text` | not null | Configured provider model id at request time | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Reservation instant | Operational |
+| `completed_at` | `timestamptz` | null | When the provider answered | Operational |
+
+**Current constraints and indexes**
+
+- FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Check: `status IN ('pending', 'succeeded', 'failed')`.
+- Index `idx_program_generations_user_date(user_id, local_date, status)` serves the daily count.
+- Reservation runs under a per-athlete advisory lock: count `succeeded` rows plus `pending` rows younger than two minutes for the local date; insert `pending` when below the limit. The provider call happens outside the transaction; the row is then set to `succeeded` or `failed`. Failed and stale pending rows never count.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API roles have table privileges revoked, and the runtime role holds the `gym_pulse_api_access` policy.
+
+**Migration source**: 031.
+
 ### Table: `public.nutrition_days`
 
 **Purpose**: One set of daily nutrition totals per athlete and calendar date, typed, imported from Health, or (since 030) the sum of the date's food entries.
@@ -1414,6 +1439,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | `sport_activities` | `ux_sport_activities_scheduled_workout(scheduled_workout_id)` partial unique | One activity per scheduled sport session; schedule-side link lookup |
 | `health_exports` | `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` unique | One Health export per finished workout and origin |
 | `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
+| `program_generations` | `idx_program_generations_user_date(user_id, local_date, status)` | Daily program-draft count per athlete |
 | `nutrition_days` | `ux_nutrition_days_user_date(user_id, date)` unique | One day per athlete and date; oldest-first range read |
 | `nutrition_targets` | `ux_nutrition_targets_user_effective(user_id, effective_from)` unique | One target per effective date; current-target lookup and range read |
 | `food_catalog` | `ux_food_catalog_source_id(source, source_id)` unique | One row per outside food; upsert identity |
@@ -2089,6 +2115,7 @@ Report one of:
 | 028 | `sport_activities.perceived_effort` (1–10, optional) |
 | 029 | `nutrition_days` and `nutrition_targets`, RLS and role revocation, runtime-role grant and policy |
 | 030 | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`; `nutrition_days.source` gains `foods`; RLS and role revocation, runtime-role grants and policies |
+| 031 | `program_generations` daily-limit ledger, RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary
 

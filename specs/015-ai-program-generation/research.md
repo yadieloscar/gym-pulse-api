@@ -82,7 +82,8 @@
   user_id))`, counts rows for the athlete's local date with `status = 'succeeded'` or `status =
   'pending' AND created_at > now() - interval '2 minutes'`, and inserts a `pending` row when the
   count is below the limit, otherwise returns `GenerationLimitError{ResetsAt}`. After the provider
-  answers, the row is set to `succeeded` or `failed`. Only `succeeded` counts after two minutes, so
+  answers, the row is set to `succeeded` or `failed`. A pending row counts only for the generation
+  timeout plus a ten-second margin (the server write timeout is raised to the same bound), so
   crashes and failures never charge the athlete (FR-009).
 - **Rationale**: The lock serializes concurrent requests from one athlete so two in-flight calls
   cannot both pass a count of four (edge case "never undercounts"). The transaction holds no

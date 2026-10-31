@@ -366,6 +366,97 @@ corrected workouts therefore reflect their current revisions. Each operation's
 subsequent same-key retries still return its own exact committed response,
 including when those resources have changed again.
 
+### Program generation
+
+GymPulse can build one unsaved program draft from the saved training profile.
+Generation is read-only with respect to programs, schedules, and the profile:
+nothing is stored except a per-athlete daily count, and the draft exists only
+in the response. The athlete reviews it in the app and saves it, unchanged,
+through `POST /api/v1/programs`. The feature is off when the API has no
+provider key; the app hides its entry points when `enabled` is false.
+
+#### `GET /api/v1/program-generation`
+
+Response 200:
+```json
+{ "enabled": true, "limit": 5, "remaining_today": 4, "resets_at": "<RFC3339|null>" }
+```
+`remaining_today` counts succeeded and in-progress drafts in the athlete's
+current local day (saved training-profile timezone) against `limit`; `resets_at` is the next
+local midnight. Without a training profile `remaining_today` equals `limit`
+and `resets_at` is `null`.
+
+#### `POST /api/v1/program-generation`
+
+Optional body:
+```json
+{ "request": "no deadlifts" }
+```
+`request` is one optional steer, trimmed, 1..200 characters; a blank or longer
+value returns `422 VALIDATION_ERROR` with `details.field = "request"`. The
+body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
+draft is not deterministic. It is rate limited to 5 requests per minute per
+athlete (`429 RATE_LIMITED`).
+
+Response 200:
+```json
+{
+  "draft": {
+    "name": "Three-day upper lower", "primary_goal": "hypertrophy",
+    "roadmap": { "origin": "generated", "model": "claude-opus-5-5", "request": null },
+    "workouts": [{
+      "kind": "exercises", "name": "Upper A", "preferred_weekday": 1, "sequence_position": 1,
+      "exercises": [{
+        "catalog_id": "<uuid>", "name": "Barbell Bench Press", "category": "push",
+        "modality": "strength", "exercise_order": 1, "target_sets": 4, "target_reps": 8,
+        "target_weight": null, "target_duration_seconds": null, "rest_seconds": 120, "notes": null
+      }]
+    }]
+  },
+  "rationale": "string, at most 500 characters",
+  "request": "no deadlifts|null",
+  "remaining_today": 3,
+  "resets_at": "<RFC3339>"
+}
+```
+`draft` is the `POST /api/v1/programs` body without `operation_key` and
+without server ids. Every draft the API returns satisfies: 1 to
+`min(available_days, 6)` workouts, each `kind: exercises` with 3 to 8
+exercises; every `catalog_id` resolves to an exercise-catalog entry and is
+unique within its workout, with `name`, `category`, and `modality` copied from
+the catalog; strength exercises carry `target_reps` (1..50) and a null
+duration, cardio exercises carry `target_duration_seconds` (30..3600) and null
+reps; `target_sets` 1..10; `rest_seconds` 0..600; `target_weight` always null;
+`primary_goal` equals the profile's; `name` 1..80 characters; `preferred_weekday`
+is assigned from the profile's sorted available days. A generated answer that
+cannot be repaired into that shape is never returned.
+
+Errors:
+
+- `422 VALIDATION_ERROR` with `details.field = "training_profile"` when no
+  profile is saved; no provider call is made.
+- `429 GENERATION_LIMIT_REACHED` when the athlete already received `limit`
+  drafts in the current local day:
+  ```json
+  { "error": "daily program generation limit reached", "code": "GENERATION_LIMIT_REACHED",
+    "details": { "limit": 5, "resets_at": "<RFC3339>" } }
+  ```
+  No provider call is made.
+- `503 GENERATION_UNAVAILABLE` with `details.reason` `"disabled"` (no provider
+  key configured) or `"unavailable"` (provider error, timeout after 45 seconds,
+  refusal, or a draft that failed validation):
+  ```json
+  { "error": "program generation is unavailable", "code": "GENERATION_UNAVAILABLE",
+    "details": { "reason": "unavailable" } }
+  ```
+  The attempt does not count toward the daily limit and nothing is stored.
+
+Only the training-profile fields (`primary_goal`, `available_days`,
+`usual_activity`, `experience`, `equipment`, `session_duration_minutes`), the
+exercise catalog, and `request` are sent to the provider. The athlete's
+identity, timezone, history, body metrics, nutrition, and health data never
+leave the API.
+
 ### Schedule and scheduled workouts
 
 #### `GET /api/v1/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD`
