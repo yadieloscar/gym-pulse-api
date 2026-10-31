@@ -22,7 +22,11 @@ const (
 	// FoodLookupLimit bounds food search and barcode lookups per minute so one
 	// athlete cannot spend the shared outside-source quotas.
 	FoodLookupLimit = 60
-	rateLimitWindow = time.Minute
+	// ProgramGenerationLimit bounds program-draft generation per minute; each
+	// call spends provider credit and can take up to the configured timeout.
+	// The daily ledger bounds the longer window.
+	ProgramGenerationLimit = 5
+	rateLimitWindow        = time.Minute
 )
 
 // RateLimitPerUser returns a middleware that allows requestLimit requests per

@@ -816,6 +816,23 @@ else
   bad "food logging acceptance failed (food=$fl_food_status bad_code=$fl_bad_code_status barcode=$fl_barcode_status search=$fl_search_status short_q=$fl_short_q_status entry=$fl_entry_status replay=$fl_replay_status mismatch=$fl_mismatch_status quick=$fl_quick_status typed=$fl_typed_status health=$fl_health_status update=$fl_update_status stale=$fl_stale_status list=$fl_list_status recent=$fl_recent_status del_quick=$fl_del_quick_status del=$fl_del_status archive=$fl_archive_status after_archive=$fl_after_archive_status unknown_food=$fl_unknown_food_status after_delete=$fl_after_delete_status)" "$(echo "$fl_entry_body $fl_typed_body" | head -c 500)"
 fi
 
+# ---------- 13h. program generation (no provider key in the smoke stack) ----------
+step "13h. GET /api/v1/program-generation reports disabled; POST answers 503 GENERATION_UNAVAILABLE reason disabled"
+pg_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/program-generation" "${auth[@]}")
+pg_body=$(cat /tmp/smoke.body)
+pg_post_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts"}')
+pg_post_body=$(cat /tmp/smoke.body)
+pg_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"   "}')
+pg_bad_body=$(cat /tmp/smoke.body)
+if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "503" ] && [ "$pg_bad_status" = "503" ] && \
+  python3 -c "import json,sys; s,p=[json.loads(x) for x in sys.argv[1:]]; assert s['enabled'] is False and s['limit']==5 and s['remaining_today']==5; assert p['code']=='GENERATION_UNAVAILABLE' and p['details']['reason']=='disabled'" "$pg_body" "$pg_post_body" 2>/dev/null; then
+  ok "generation reports enabled false with limit 5, and POST answers 503 disabled before validating the body"
+else
+  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
+fi
+
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")

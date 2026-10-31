@@ -83,3 +83,8 @@ generated documentation are operational surfaces outside the authenticated appli
 | `FOOD_SOURCE_USER_AGENT` | No | `GymPulse/1.0 (...)` | Identifying `User-Agent` Open Food Facts requires on product reads |
 | `USDA_FDC_BASE_URL` | No | `https://api.nal.usda.gov` | Override for tests and staging |
 | `OPEN_FOOD_FACTS_BASE_URL` | No | `https://world.openfoodfacts.org` | Override for tests and staging (`https://world.openfoodfacts.net` is their staging host) |
+| `ANTHROPIC_API_KEY` | No (warned in staging/production) | — | Server-only key for program-draft generation; empty turns the feature off (`GET /api/v1/program-generation` reports `enabled: false`) |
+| `PROGRAM_GENERATION_MODEL` | No | `claude-opus-5-5` | Claude model id used for program drafts |
+| `PROGRAM_GENERATION_DAILY_LIMIT` | No | `5` | Succeeded drafts per athlete per local day |
+| `PROGRAM_GENERATION_TIMEOUT` | No | `45s` | Wall-clock bound for one generation call; the API answers `503 GENERATION_UNAVAILABLE` past it |
+| `ANTHROPIC_BASE_URL` | No | SDK default | Override for tests and staging only |

@@ -1,0 +1,123 @@
+openapi: 3.0.3
+info: {title: GymPulse Program Generation Contract, version: 1.0.0}
+paths:
+  /api/v1/program-generation:
+    get:
+      summary: Report whether program generation is available and how many drafts remain today
+      description: >
+        Read-only. enabled is false when the API has no provider key. remaining_today counts
+        succeeded and in-progress drafts in the athlete's local day against the limit; resets_at is the next local
+        midnight in the saved training-profile timezone. Without a training profile, remaining_today
+        equals limit and resets_at is null.
+      responses:
+        '200':
+          description: Generation status
+          content: {application/json: {schema: {$ref: '#/components/schemas/GenerationStatus'}}}
+    post:
+      summary: Build one unsaved program draft from the athlete's training profile
+      description: >
+        Read-only with respect to programs, schedules, and the profile. Not idempotent and takes no
+        Idempotency-Key. Succeeds within 45 seconds or answers 503 GENERATION_UNAVAILABLE. The
+        draft is accepted unchanged by POST /api/v1/programs once operation_key is added. The route
+        is limited to 5 requests per minute per athlete (429 RATE_LIMITED) and 5 succeeded drafts per
+        local day (429 GENERATION_LIMIT_REACHED).
+      requestBody:
+        required: false
+        content: {application/json: {schema: {$ref: '#/components/schemas/GenerateProgramRequest'}}}
+      responses:
+        '200': {description: A validated draft, content: {application/json: {schema: {$ref: '#/components/schemas/GenerateProgramResponse'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+        '429': {$ref: '#/components/responses/LimitError'}
+        '503': {$ref: '#/components/responses/UnavailableError'}
+components:
+  schemas:
+    GenerationStatus:
+      type: object
+      required: [enabled, limit, remaining_today, resets_at]
+      properties:
+        enabled: {type: boolean}
+        limit: {type: integer, example: 5}
+        remaining_today: {type: integer, minimum: 0}
+        resets_at: {type: string, format: date-time, nullable: true}
+    GenerateProgramRequest:
+      type: object
+      properties:
+        request: {type: string, minLength: 1, maxLength: 200, nullable: true, description: One optional steer such as "no deadlifts"; trimmed; blank is a validation error}
+    GenerateProgramResponse:
+      type: object
+      required: [draft, rationale, request, remaining_today, resets_at]
+      properties:
+        draft: {$ref: '#/components/schemas/ProgramDraft'}
+        rationale: {type: string, maxLength: 500}
+        request: {type: string, nullable: true, description: The trimmed request text echoed back, or null}
+        remaining_today: {type: integer, minimum: 0}
+        resets_at: {type: string, format: date-time}
+    ProgramDraft:
+      type: object
+      description: The POST /api/v1/programs body without operation_key; ids are absent
+      required: [name, primary_goal, roadmap, workouts]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 80}
+        primary_goal: {type: string, enum: [general_health, strength, hypertrophy, conditioning, power, body_composition]}
+        roadmap:
+          type: object
+          required: [origin, model, request]
+          properties:
+            origin: {type: string, enum: [generated]}
+            model: {type: string}
+            request: {type: string, nullable: true}
+        workouts:
+          type: array
+          minItems: 1
+          maxItems: 6
+          items: {$ref: '#/components/schemas/DraftWorkout'}
+    DraftWorkout:
+      type: object
+      required: [kind, name, preferred_weekday, sequence_position, exercises]
+      properties:
+        kind: {type: string, enum: [exercises]}
+        name: {type: string, minLength: 1, maxLength: 80}
+        preferred_weekday: {type: integer, minimum: 1, maximum: 7, description: Assigned from the profile's sorted available days}
+        sequence_position: {type: integer, minimum: 1}
+        exercises:
+          type: array
+          minItems: 3
+          maxItems: 8
+          items: {$ref: '#/components/schemas/DraftExercise'}
+    DraftExercise:
+      type: object
+      required: [catalog_id, name, category, modality, exercise_order, target_sets, target_reps, target_weight, target_duration_seconds, rest_seconds, notes]
+      properties:
+        catalog_id: {type: string, format: uuid, description: Always resolves to exercise_catalog; unique within the workout}
+        name: {type: string}
+        category: {type: string}
+        modality: {type: string, enum: [strength, cardio]}
+        exercise_order: {type: integer, minimum: 1}
+        target_sets: {type: integer, minimum: 1, maximum: 10}
+        target_reps: {type: integer, minimum: 1, maximum: 50, nullable: true, description: Present for strength, null for cardio}
+        target_weight: {type: number, nullable: true, description: Always null in a draft}
+        target_duration_seconds: {type: integer, minimum: 30, maximum: 3600, nullable: true, description: Present for cardio, null for strength}
+        rest_seconds: {type: integer, minimum: 0, maximum: 600}
+        notes: {type: string, nullable: true, maxLength: 200}
+    Error:
+      type: object
+      required: [error, code, details]
+      properties:
+        error: {type: string}
+        code: {type: string, enum: [VALIDATION_ERROR, RATE_LIMITED, GENERATION_LIMIT_REACHED, GENERATION_UNAVAILABLE]}
+        details: {type: object, nullable: true}
+  responses:
+    ValidationError:
+      description: details.field is training_profile (none saved) or request (blank or over 200 characters)
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    LimitError:
+      description: >
+        RATE_LIMITED is the per-minute guard (existing shape). GENERATION_LIMIT_REACHED carries
+        details.limit and details.resets_at (RFC3339) and means no provider call was made.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    UnavailableError:
+      description: >
+        details.reason is "disabled" (no provider key configured; the app hides the entry) or
+        "unavailable" (provider error, timeout, refusal, or a draft that failed validation). The
+        attempt does not count toward the daily limit and nothing is stored.
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}

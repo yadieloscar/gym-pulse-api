@@ -61,6 +61,20 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	var generationLimit *model.GenerationLimitError
+	if errors.As(err, &generationLimit) {
+		writeError(w, http.StatusTooManyRequests, generationLimit.Error(), "GENERATION_LIMIT_REACHED", map[string]any{
+			"limit": generationLimit.Limit, "resets_at": generationLimit.ResetsAt,
+		})
+		return
+	}
+
+	var generationUnavailable *model.GenerationUnavailableError
+	if errors.As(err, &generationUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, generationUnavailable.Error(), "GENERATION_UNAVAILABLE", map[string]string{"reason": generationUnavailable.Reason})
+		return
+	}
+
 	var resolution *model.ResolutionConflictError
 	if errors.As(err, &resolution) {
 		details := map[string]any{"status": resolution.Status, "resolution": resolution.Resolution}
