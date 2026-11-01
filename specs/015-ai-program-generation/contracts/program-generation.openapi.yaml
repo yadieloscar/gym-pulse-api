@@ -43,6 +43,21 @@ components:
       type: object
       properties:
         request: {type: string, minLength: 1, maxLength: 200, nullable: true, description: One optional steer such as "no deadlifts"; trimmed; blank is a validation error}
+        proposed_profile:
+          $ref: '#/components/schemas/ProposedTrainingProfile'
+    ProposedTrainingProfile:
+      type: object
+      description: The plan-transition preview profile shape; replaces the saved profile for this request only and is never stored
+      required: [primary_goal, available_days, usual_activity, experience, equipment, session_duration_minutes, timezone]
+      properties:
+        primary_goal: {type: string, enum: [general_health, strength, hypertrophy, conditioning, power, body_composition]}
+        available_days: {type: array, minItems: 1, maxItems: 7, uniqueItems: true, items: {type: integer, minimum: 1, maximum: 7}}
+        usual_activity: {type: string}
+        experience: {type: string}
+        equipment: {type: array, uniqueItems: true, items: {type: string}}
+        session_duration_minutes: {type: integer, minimum: 20, maximum: 120}
+        timezone: {type: string, description: IANA timezone}
+        preferences: {type: object, additionalProperties: true}
     GenerateProgramResponse:
       type: object
       required: [draft, rationale, request, remaining_today, resets_at]
@@ -108,7 +123,7 @@ components:
         details: {type: object, nullable: true}
   responses:
     ValidationError:
-      description: details.field is training_profile (none saved) or request (blank or over 200 characters)
+      description: details.field is training_profile (none saved and none proposed), proposed_profile.<field> (invalid proposed profile), or request (blank or over 200 characters)
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
     LimitError:
       description: >

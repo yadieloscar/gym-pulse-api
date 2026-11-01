@@ -64,8 +64,18 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	if svc.got.Request == nil || *svc.got.Request != "no deadlifts" {
 		t.Fatalf("request text not passed through: %+v", svc.got)
 	}
-	var out map[string]any
+	if svc.got.ProposedProfile != nil {
+		t.Fatalf("proposed_profile must be nil when absent: %+v", svc.got.ProposedProfile)
+	}
 	rec := httptest.NewRecorder()
+	proposed := map[string]any{"proposed_profile": map[string]any{"primary_goal": "strength", "available_days": []int{1, 3}, "usual_activity": "moderate",
+		"experience": "beginner", "equipment": []string{"barbell"}, "session_duration_minutes": 45, "timezone": "America/New_York"}}
+	h.Generate(rec, newReq(t, http.MethodPost, "/api/v1/program-generation", proposed, uuid.New()))
+	if rec.Code != http.StatusOK || svc.got.ProposedProfile == nil || svc.got.ProposedProfile.SessionDurationMinutes != 45 || svc.got.ProposedProfile.Timezone != "America/New_York" {
+		t.Fatalf("proposed_profile not passed through: %d %+v", rec.Code, svc.got.ProposedProfile)
+	}
+	var out map[string]any
+	rec = httptest.NewRecorder()
 	h.Generate(rec, newReq(t, http.MethodPost, "/api/v1/program-generation", nil, uuid.New()))
 	decodeBody(t, rec, &out)
 	for _, key := range []string{"draft", "rationale", "request", "remaining_today", "resets_at"} {
@@ -93,6 +103,7 @@ func TestProgramGenerationHandlerErrorMapping(t *testing.T) {
 		want   []string
 	}{
 		{"no profile", &model.ValidationError{Message: "save a training profile before building a program", Field: "training_profile"}, 422, []string{`"code":"VALIDATION_ERROR"`, `"field":"training_profile"`}},
+		{"bad proposed profile", &model.ValidationError{Message: "unknown training goal", Field: "proposed_profile.primary_goal"}, 422, []string{`"code":"VALIDATION_ERROR"`, `"field":"proposed_profile.primary_goal"`}},
 		{"limit", &model.GenerationLimitError{Limit: 5, ResetsAt: resets}, 429, []string{`"code":"GENERATION_LIMIT_REACHED"`, `"limit":5`, `"resets_at":"2026-10-31T04:00:00Z"`}},
 		{"disabled", &model.GenerationUnavailableError{Reason: model.GenerationDisabled}, 503, []string{`"code":"GENERATION_UNAVAILABLE"`, `"reason":"disabled"`}},
 		{"unavailable", &model.GenerationUnavailableError{Reason: model.GenerationUnavailable}, 503, []string{`"code":"GENERATION_UNAVAILABLE"`, `"reason":"unavailable"`}},

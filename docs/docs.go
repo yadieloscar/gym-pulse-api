@@ -1932,7 +1932,7 @@ const docTemplate = `{
                 "summary": "Generate a program draft",
                 "parameters": [
                     {
-                        "description": "Optional one-line request",
+                        "description": "Optional one-line request and proposed profile",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -4474,6 +4474,14 @@ const docTemplate = `{
         "model.GenerateProgramRequest": {
             "type": "object",
             "properties": {
+                "proposed_profile": {
+                    "description": "ProposedProfile lets onboarding build a draft before the profile is\nsaved. It is validated like a saved profile and is never stored.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ProposedTrainingProfile"
+                        }
+                    ]
+                },
                 "request": {
                     "type": "string"
                 }
@@ -4962,6 +4970,42 @@ const docTemplate = `{
                 },
                 "sport": {
                     "$ref": "#/definitions/model.SportTarget"
+                }
+            }
+        },
+        "model.ProposedTrainingProfile": {
+            "type": "object",
+            "properties": {
+                "available_days": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "experience": {
+                    "type": "string"
+                },
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "session_duration_minutes": {
+                    "type": "integer"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "usual_activity": {
+                    "type": "string"
                 }
             }
         },

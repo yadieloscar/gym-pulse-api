@@ -40,13 +40,14 @@ func (h *ProgramGenerationHandler) Status(w http.ResponseWriter, r *http.Request
 	respond(w, status, err, http.StatusOK)
 }
 
-// Generate builds one unsaved program draft from the training profile. The
-// body is optional; nothing but the daily count is stored.
+// Generate builds one unsaved program draft from the saved training profile,
+// or from an optional proposed profile sent in the body so onboarding can build
+// before saving. Nothing but the daily count is stored.
 // @Summary Generate a program draft
 // @Tags goal-training
 // @Accept json
 // @Produce json
-// @Param body body model.GenerateProgramRequest false "Optional one-line request"
+// @Param body body model.GenerateProgramRequest false "Optional one-line request and proposed profile"
 // @Success 200 {object} model.GenerateProgramResponse
 // @Failure 422 {object} apiError
 // @Failure 429 {object} apiError

@@ -195,6 +195,42 @@ func TestProgramGenerationGenerateHappyPath(t *testing.T) {
 	}
 }
 
+func TestProgramGenerationGenerateUsesTheProposedProfile(t *testing.T) {
+	// Onboarding has no saved profile yet; the proposed one drives the draft.
+	f := newGenFixture(t, nil, &fakeGenerator{raw: genRaw()})
+	saved := genProfile()
+	proposed := &model.ProposedTrainingProfile{PrimaryGoal: saved.PrimaryGoal, AvailableDays: []int{1, 4}, UsualActivity: saved.UsualActivity,
+		Experience: saved.Experience, Equipment: saved.Equipment, SessionDurationMinutes: 45, Timezone: saved.Timezone}
+	resp, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{ProposedProfile: proposed})
+	if err != nil {
+		t.Fatalf("generate with proposed profile: %v", err)
+	}
+	for _, call := range f.calls {
+		if call == "profile" || call == "profile-write" {
+			t.Fatalf("a proposed profile must neither read nor write the saved profile: %v", f.calls)
+		}
+	}
+	if in := f.generator.input; in.WorkoutCap != 2 || in.SessionDurationMinutes != 45 {
+		t.Fatalf("proposed profile not used for generation: %+v", in)
+	}
+	if !resp.ResetsAt.Equal(newYorkMidnight) {
+		t.Fatalf("resets_at must use the proposed timezone: %v", resp.ResetsAt)
+	}
+
+	// A proposed profile overrides a saved one and is validated like a saved one.
+	withSaved := newGenFixture(t, genProfile(), &fakeGenerator{raw: genRaw()})
+	bad := *proposed
+	bad.SessionDurationMinutes = 5
+	_, err = withSaved.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{ProposedProfile: &bad})
+	var validation *model.ValidationError
+	if !errors.As(err, &validation) || validation.Field != "proposed_profile.session_duration_minutes" {
+		t.Fatalf("invalid proposed profile must be a validation error naming the field: %v", err)
+	}
+	if len(withSaved.calls) != 0 {
+		t.Fatalf("an invalid proposed profile must not reserve or generate: %v", withSaved.calls)
+	}
+}
+
 func TestProgramGenerationGenerateRejectsBeforeReserving(t *testing.T) {
 	disabled := newGenFixture(t, genProfile(), nil)
 	_, err := disabled.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{})

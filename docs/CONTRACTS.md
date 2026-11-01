@@ -390,11 +390,22 @@ and `resets_at` is `null`.
 
 Optional body:
 ```json
-{ "request": "no deadlifts" }
+{
+  "request": "no deadlifts",
+  "proposed_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "intermediate",
+    "equipment": ["barbell"], "session_duration_minutes": 60,
+    "timezone": "America/New_York", "preferences": {}
+  }
+}
 ```
 `request` is one optional steer, trimmed, 1..200 characters; a blank or longer
-value returns `422 VALIDATION_ERROR` with `details.field = "request"`. The
-body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
+value returns `422 VALIDATION_ERROR` with `details.field = "request"`.
+`proposed_profile` is optional and uses the plan-transition preview shape; when
+present it replaces the saved profile for this request only (onboarding builds a
+draft before the profile is saved), is validated like `PUT /training-profile`,
+and is never stored. The body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
 draft is not deterministic. It is rate limited to 5 requests per minute per
 athlete (`429 RATE_LIMITED`).
 
@@ -434,7 +445,9 @@ cannot be repaired into that shape is never returned.
 Errors:
 
 - `422 VALIDATION_ERROR` with `details.field = "training_profile"` when no
-  profile is saved; no provider call is made.
+  profile is saved and none is proposed, or `details.field =
+  "proposed_profile.<field>"` when the proposed profile is invalid; no provider
+  call is made.
 - `429 GENERATION_LIMIT_REACHED` when the athlete already received `limit`
   drafts in the current local day:
   ```json

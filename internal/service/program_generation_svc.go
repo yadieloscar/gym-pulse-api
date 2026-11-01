@@ -67,11 +67,7 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return nil, err
 	}
-	profile, err := s.profiles.Get(ctx, userID)
-	var notFound *model.NotFoundError
-	if errors.As(err, &notFound) {
-		return nil, &model.ValidationError{Message: "save a training profile before building a program", Field: "training_profile"}
-	}
+	profile, err := s.resolveProfile(ctx, userID, req.ProposedProfile)
 	if err != nil {
 		return nil, err
 	}
@@ -119,6 +115,32 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 		Draft: generated.Draft, Rationale: generated.Rationale, Request: request,
 		RemainingToday: max(0, s.limit-reservation.Used), ResetsAt: resetsAt,
 	}, nil
+}
+
+// resolveProfile uses the proposed profile when one is sent (onboarding builds
+// before the profile is saved), otherwise the saved profile. A proposed profile
+// is validated exactly like a saved one and is never written.
+func (s *programGenerationService) resolveProfile(ctx context.Context, userID uuid.UUID, proposed *model.ProposedTrainingProfile) (*model.TrainingProfile, error) {
+	if proposed != nil {
+		profile := proposed.TrainingProfile()
+		if err := profile.Validate(); err != nil {
+			var validation *model.ValidationError
+			if errors.As(err, &validation) {
+				return nil, &model.ValidationError{Message: validation.Message, Field: "proposed_profile." + validation.Field}
+			}
+			return nil, err
+		}
+		return &profile, nil
+	}
+	profile, err := s.profiles.Get(ctx, userID)
+	var notFound *model.NotFoundError
+	if errors.As(err, &notFound) {
+		return nil, &model.ValidationError{Message: "save a training profile before building a program", Field: "training_profile"}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return profile, nil
 }
 
 // complete records the outcome even when the request context was cancelled,

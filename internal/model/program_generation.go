@@ -67,6 +67,9 @@ type GenerationStatus struct {
 // GenerateProgramRequest is the optional POST body.
 type GenerateProgramRequest struct {
 	Request *string `json:"request"`
+	// ProposedProfile lets onboarding build a draft before the profile is
+	// saved. It is validated like a saved profile and is never stored.
+	ProposedProfile *ProposedTrainingProfile `json:"proposed_profile,omitempty"`
 }
 
 // GenerateProgramResponse carries the unsaved draft.

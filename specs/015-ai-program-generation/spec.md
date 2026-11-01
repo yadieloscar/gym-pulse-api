@@ -163,6 +163,9 @@ documented limit answer; disable generation and verify the request receives the 
 
 - **FR-001**: An authenticated athlete with a saved training profile MUST be able to request a
   program draft built from that profile, optionally with one request text of 1 to 200 characters.
+  An athlete without a saved profile (onboarding) MUST be able to send a proposed profile in the
+  same request instead; it is validated exactly like a saved profile, drives the draft and the
+  daily-limit day, and is never stored.
 - **FR-002**: The draft MUST use the custom-program create shape (name, primary goal, workouts with
   ordered exercises) so it can be submitted unchanged, plus a rationale of at most 500 characters
   and the request text echoed back when one was sent.
@@ -186,8 +189,9 @@ documented limit answer; disable generation and verify the request receives the 
 - **FR-009**: When generation is not configured, the provider fails, the draft fails validation, or
   the provider does not answer within 45 seconds, the request MUST receive a stable "unavailable"
   answer, the attempt MUST NOT count toward FR-008, and nothing MUST be stored for it.
-- **FR-010**: A missing training profile MUST produce the documented validation answer naming the
-  profile; no provider call is made.
+- **FR-010**: A missing training profile with no proposed profile MUST produce the documented
+  validation answer naming the profile, and an invalid proposed profile MUST produce the documented
+  validation answer naming the offending proposed field; in both cases no provider call is made.
 - **FR-011**: The provider key MUST live only in API configuration; it MUST NOT appear in
   responses, logs, fixtures, documentation, or the app.
 - **FR-012**: Generation records needed for FR-008 MUST be scoped to the athlete and MUST be

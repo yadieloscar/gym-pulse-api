@@ -628,6 +628,12 @@ definitions:
     type: object
   model.GenerateProgramRequest:
     properties:
+      proposed_profile:
+        allOf:
+        - $ref: '#/definitions/model.ProposedTrainingProfile'
+        description: |-
+          ProposedProfile lets onboarding build a draft before the profile is
+          saved. It is validated like a saved profile and is never stored.
       request:
         type: string
     type: object
@@ -954,6 +960,30 @@ definitions:
         type: integer
       sport:
         $ref: '#/definitions/model.SportTarget'
+    type: object
+  model.ProposedTrainingProfile:
+    properties:
+      available_days:
+        items:
+          type: integer
+        type: array
+      equipment:
+        items:
+          type: string
+        type: array
+      experience:
+        type: string
+      preferences:
+        additionalProperties: {}
+        type: object
+      primary_goal:
+        type: string
+      session_duration_minutes:
+        type: integer
+      timezone:
+        type: string
+      usual_activity:
+        type: string
     type: object
   model.PutPlanOverrideRequest:
     properties:
@@ -2900,7 +2930,7 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Optional one-line request
+      - description: Optional one-line request and proposed profile
         in: body
         name: body
         schema:
