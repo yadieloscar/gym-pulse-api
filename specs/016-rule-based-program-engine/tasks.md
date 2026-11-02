@@ -37,7 +37,7 @@ description: "Implementation tasks for the rule-based program engine"
 
 ## Phase 1: Setup
 
-- [ ] T001 Rebase `spec/016-rule-based-program-engine` on `main` after gym-pulse-api#39 merges; confirm `032` is the next migration number; confirm with the owner the equipment assumptions in data-model.md (bar-dependent entries `full_gym`; swings, carries, goblet squats `dumbbells`; swimming and sled `full_gym`) and update the seed mapping if they change
+- [ ] T001 Rebase `spec/016-rule-based-program-engine` on `main` after gym-pulse-api#39 merges (done 2026-11-02: #39 squash-merged as 2735c75, branch rebased, `032` confirmed as the next migration number); confirm with the owner the equipment assumptions in data-model.md (bar-dependent entries `full_gym`; swings, carries, goblet squats `dumbbells`; swimming and sled `full_gym`) and update the seed mapping if they change
 - [ ] T002 [P] Draft the `docs/CONTRACTS.md` amendments from `contracts/program-generation-engine.openapi.yaml`: "Exercise catalog" gains the four fields; "Program generation" gains `provider` on status and response, `avoid`, `focus`, `variant` on the request with their 422s, the too-constrained answer, and the provider rule (rules default, model opt-in, ledger applies to model only)
 
 ## Phase 2: Foundational
