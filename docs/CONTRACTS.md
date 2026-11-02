@@ -392,6 +392,7 @@ Optional body:
 ```json
 {
   "request": "no deadlifts",
+  "secondary_goals": ["conditioning"],
   "proposed_profile": {
     "primary_goal": "strength", "available_days": [1, 3, 5],
     "usual_activity": "moderate", "experience": "intermediate",
@@ -402,7 +403,11 @@ Optional body:
 ```
 `request` is one optional steer, trimmed, 1..200 characters; a blank or longer
 value returns `422 VALIDATION_ERROR` with `details.field = "request"`.
-`proposed_profile` is optional and uses the plan-transition preview shape; when
+`secondary_goals` is optional: up to two valid training goals other than the
+primary (duplicates collapse; the primary itself, an unknown goal, or a third
+goal returns `422 VALIDATION_ERROR` with `details.field = "secondary_goals"`).
+The primary goal sets the draft's structure; a secondary goal steers at most
+about a third of it. `proposed_profile` is optional and uses the plan-transition preview shape; when
 present it replaces the saved profile for this request only (onboarding builds a
 draft before the profile is saved), is validated like `PUT /training-profile`,
 and is never stored. The body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
@@ -426,6 +431,7 @@ Response 200:
   },
   "rationale": "string, at most 500 characters",
   "request": "no deadlifts|null",
+  "secondary_goals": ["conditioning"],
   "remaining_today": 3,
   "resets_at": "<RFC3339>"
 }

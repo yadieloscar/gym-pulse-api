@@ -31,6 +31,7 @@ const (
 	maxDraftRationaleRunes   = 500
 	maxDraftNotesRunes       = 200
 	maxGenerationRequestLen  = 200
+	maxSecondaryGoals        = 2
 	defaultDraftReps         = 10
 	defaultDraftDurationSecs = 600
 	defaultDraftRestSecs     = 90
@@ -67,6 +68,9 @@ type GenerationStatus struct {
 // GenerateProgramRequest is the optional POST body.
 type GenerateProgramRequest struct {
 	Request *string `json:"request"`
+	// SecondaryGoals are up to two further goals the draft should also serve.
+	// The profile's primary goal sets the structure; these steer part of it.
+	SecondaryGoals []string `json:"secondary_goals,omitempty"`
 	// ProposedProfile lets onboarding build a draft before the profile is
 	// saved. It is validated like a saved profile and is never stored.
 	ProposedProfile *ProposedTrainingProfile `json:"proposed_profile,omitempty"`
@@ -77,6 +81,7 @@ type GenerateProgramResponse struct {
 	Draft          ProgramDraft `json:"draft"`
 	Rationale      string       `json:"rationale"`
 	Request        *string      `json:"request"`
+	SecondaryGoals []string     `json:"secondary_goals"`
 	RemainingToday int          `json:"remaining_today"`
 	ResetsAt       time.Time    `json:"resets_at"`
 }
@@ -171,6 +176,30 @@ func NormalizeGenerationRequest(request *string) (*string, error) {
 		return nil, &ValidationError{Message: "request must be between 1 and 200 characters", Field: "request"}
 	}
 	return &trimmed, nil
+}
+
+// NormalizeSecondaryGoals validates the optional secondary goals against the
+// primary goal: each must be a valid training goal, distinct, not the primary,
+// and at most two. An absent or empty list normalizes to an empty slice.
+func NormalizeSecondaryGoals(primary string, goals []string) ([]string, error) {
+	out := make([]string, 0, len(goals))
+	for _, goal := range goals {
+		goal = strings.TrimSpace(goal)
+		if !IsValidTrainingGoal(goal) {
+			return nil, &ValidationError{Message: "secondary_goals must contain valid training goals", Field: "secondary_goals"}
+		}
+		if goal == primary {
+			return nil, &ValidationError{Message: "secondary_goals must differ from the primary goal", Field: "secondary_goals"}
+		}
+		if slices.Contains(out, goal) {
+			continue
+		}
+		out = append(out, goal)
+	}
+	if len(out) > maxSecondaryGoals {
+		return nil, &ValidationError{Message: "secondary_goals holds at most 2 goals", Field: "secondary_goals"}
+	}
+	return out, nil
 }
 
 // DraftWorkoutCap is how many workouts a draft may hold for the profile.

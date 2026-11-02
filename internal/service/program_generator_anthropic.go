@@ -83,10 +83,13 @@ func buildGenerationRequest(input GenerationInput) anthropic.MessageNewParams {
 		}
 		fmt.Fprintf(&catalog, "%s | %s | %s | %s | %s\n", entry.ID, entry.Name, entry.Category, entry.Modality, mechanic)
 	}
-	system := systemRules + "\n\nExercise catalog (id | name | category | modality | mechanic):\n" + catalog.String()
+	system := systemRules + "\n\n" + goalGuide + "\n\nExercise catalog (id | name | category | modality | mechanic):\n" + catalog.String()
 
 	var user strings.Builder
 	fmt.Fprintf(&user, "Primary goal: %s\n", input.PrimaryGoal)
+	if len(input.SecondaryGoals) > 0 {
+		fmt.Fprintf(&user, "Secondary goals: %s\n", strings.Join(input.SecondaryGoals, ", "))
+	}
 	fmt.Fprintf(&user, "Training days per week: %d (ISO weekdays %v)\n", len(input.AvailableDays), input.AvailableDays)
 	fmt.Fprintf(&user, "Maximum workouts in the draft: %d\n", input.WorkoutCap)
 	fmt.Fprintf(&user, "Usual daily activity: %s\n", input.UsualActivity)
@@ -122,6 +125,18 @@ Rules:
 - Fit the equipment listed. bodyweight means no external load; bands means elastic bands only; dumbbells, barbell, machines, cardio_machine, and full_gym allow their equipment. Prefer compound movements first.
 - Fit the session length: about 8 to 10 minutes per strength exercise including rest, less for isolation work. A 20-minute session holds 3 exercises; a 60-minute session holds 5 to 7.
 - Strength exercises carry target_sets and target_reps (reps between 1 and 50) and null target_duration_seconds. Cardio exercises carry target_sets and target_duration_seconds (30 to 3600) and null target_reps. rest_seconds between 0 and 600. Never give a weight.
-- Match the goal: strength favors 3 to 6 reps with longer rest; hypertrophy 6 to 12; conditioning and general_health moderate reps and cardio; power low reps with full rest; body_composition a mix with some cardio. Beginners get fewer exercises and simpler movements.
+- Follow the goal guide below for the primary goal: it sets the split, exercise order, rep ranges, sets, and rest. Beginners get fewer exercises and simpler movements whatever the goal.
+- Secondary goals, when given, take at most about one third of the exercises or one of the days and are placed so they do not blunt the primary goal (see the guide).
 - Name the program (at most 80 characters) and each workout plainly. Write a rationale of at most 500 characters in plain language addressed to the athlete, with no medical claims.
 - Answer only with JSON matching the schema.`
+
+// goalGuide is the evidence-based programming default per goal. Sources are
+// recorded in specs/015-ai-program-generation/research.md ("Goal guide").
+const goalGuide = `Goal guide (defaults from the resistance-training and physical-activity position stands; experience, equipment, and session length still override):
+- strength: multi-joint lifts first (squat, hinge, press, pull). Main lifts 3 to 6 reps for intermediate and advanced athletes, 6 to 8 for beginners, 3 to 5 sets, rest 120 to 300 s. Train each main pattern about twice a week across 2 to 4 days. Accessory work 6 to 10 reps with 60 to 120 s rest. Little or no cardio.
+- hypertrophy: 6 to 12 reps as the main range, 12 to 20 for isolation work, 3 to 4 sets per exercise, aiming at 10 or more weekly sets per major muscle group. Rest 90 to 180 s on compounds, 60 to 90 s on isolation. Train each muscle group twice a week when the days allow (full body on 2 to 3 days, upper/lower on 4, push/pull/legs on 5 or 6). Compounds before isolation.
+- power: needs a strength base. Beginners get a strength-style program with one or two jump or throw movements per session. Otherwise explosive movements first while fresh (jumps, throws, kettlebell swings, Olympic-lift variants when in the catalog): 2 to 5 sets of 1 to 5 fast reps, rest 120 to 300 s, then heavy strength work of 2 to 5 reps. Low total volume. No cardio inside the session.
+- conditioning: 2 to 3 cardio-led days using cardio catalog entries for 10 to 30 minutes, intervals on at most two of them (work bouts of 1 to 4 minutes with equal or shorter rest), plus 1 to 2 full-body resistance days as circuits of compound movements at 10 to 15 reps with 30 to 60 s rest.
+- general_health: 2 to 3 full-body resistance days of 6 to 10 exercises covering every major muscle group, 1 to 3 sets of 8 to 12 reps, rest 60 to 120 s, with 15 to 30 minutes of moderate cardio at the end of a session or on the other days.
+- body_composition: resistance training leads (up to 3 days) with compound movements at 8 to 15 reps, 3 sets, rest 60 to 90 s, because it keeps lean mass. Add 10 to 20 minutes of cardio after lifting or on separate days, intervals on one of them when a cardio machine or bodyweight allows. The rationale never mentions diet, deficits, or weight loss.
+- secondary goals: the primary goal keeps the structure, split, and rep ranges. A secondary goal gets up to about one third of the exercises or one of the days. Cardio secondary to strength, hypertrophy, or power goes after lifting or on separate days, kept short and low-impact; strength secondary to conditioning or general_health means one heavier compound at 4 to 6 reps per session rather than a new day.`

@@ -89,6 +89,7 @@ description: "Implementation tasks for generating a program draft from the train
 - [x] T033 Run `./scripts/validate-supabase-security.sh` against the migrated database (inside the db container per `api-smoke-against-worktree` notes); record results in the evidence table
 - [ ] T034 (not run: no provider key available in this environment) With a real `ANTHROPIC_API_KEY` locally, run the manual acceptance in quickstart.md once (three-workout draft, `POST /programs` 201, "no deadlifts", sixth call 429); record latency and token usage in the evidence table; never commit the key or the responses
 - [x] T036 Amendment: accept an optional `proposed_profile` on `POST /api/v1/program-generation` (model, `resolveProfile` in the service, handler doc, service and handler tests, FR-001/FR-010, CONTRACTS.md, OpenAPI, Swagger) so onboarding can build before the profile is saved
+- [x] T037 Amendment 2026-11-02: `secondary_goals` on the request (model `NormalizeSecondaryGoals`, service, `GenerationInput`, response echo), the evidence-based `goalGuide` in the system prompt with sources in research.md, FR-001/FR-014, CONTRACTS.md, OpenAPI, Swagger; model, service, generator, and handler tests. Passed: `go vet`, `golangci-lint` 0 issues, `go test ./internal/...`
 - [x] T035 Fill the Result column of the evidence table; update `research.md` if the observed latency argues for streaming or a different effort
 
 ## Dependencies & Execution Order

@@ -43,6 +43,11 @@ components:
       type: object
       properties:
         request: {type: string, minLength: 1, maxLength: 200, nullable: true, description: One optional steer such as "no deadlifts"; trimmed; blank is a validation error}
+        secondary_goals:
+          type: array
+          maxItems: 2
+          items: {type: string, enum: [general_health, strength, hypertrophy, conditioning, power, body_composition]}
+          description: Up to two further goals other than the primary; the primary sets the structure
         proposed_profile:
           $ref: '#/components/schemas/ProposedTrainingProfile'
     ProposedTrainingProfile:
@@ -65,6 +70,7 @@ components:
         draft: {$ref: '#/components/schemas/ProgramDraft'}
         rationale: {type: string, maxLength: 500}
         request: {type: string, nullable: true, description: The trimmed request text echoed back, or null}
+        secondary_goals: {type: array, items: {type: string}, description: The normalized secondary goals, empty when none}
         remaining_today: {type: integer, minimum: 0}
         resets_at: {type: string, format: date-time}
     ProgramDraft:

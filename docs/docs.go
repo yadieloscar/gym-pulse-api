@@ -4484,6 +4484,13 @@ const docTemplate = `{
                 },
                 "request": {
                     "type": "string"
+                },
+                "secondary_goals": {
+                    "description": "SecondaryGoals are up to two further goals the draft should also serve.\nThe profile's primary goal sets the structure; these steer part of it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -4504,6 +4511,12 @@ const docTemplate = `{
                 },
                 "resets_at": {
                     "type": "string"
+                },
+                "secondary_goals": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

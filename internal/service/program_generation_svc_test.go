@@ -164,7 +164,7 @@ func TestProgramGenerationStatus(t *testing.T) {
 func TestProgramGenerationGenerateHappyPath(t *testing.T) {
 	f := newGenFixture(t, genProfile(), &fakeGenerator{raw: genRaw()})
 	request := "  no deadlifts "
-	resp, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Request: &request})
+	resp, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Request: &request, SecondaryGoals: []string{"conditioning"}})
 	if err != nil {
 		t.Fatalf("generate: %v", err)
 	}
@@ -186,6 +186,9 @@ func TestProgramGenerationGenerateHappyPath(t *testing.T) {
 	in := f.generator.input
 	if in.WorkoutCap != 3 || in.Model != "claude-opus-5-5" || len(in.Catalog) != 3 || *in.Request != "no deadlifts" || in.SessionDurationMinutes != 60 {
 		t.Fatalf("generation input wrong: %+v", in)
+	}
+	if len(in.SecondaryGoals) != 1 || in.SecondaryGoals[0] != "conditioning" || len(resp.SecondaryGoals) != 1 || resp.SecondaryGoals[0] != "conditioning" {
+		t.Fatalf("secondary goals must reach the generator and echo in the response: %v %v", in.SecondaryGoals, resp.SecondaryGoals)
 	}
 	// Nothing but the ledger is written.
 	for _, call := range f.calls {
@@ -228,6 +231,27 @@ func TestProgramGenerationGenerateUsesTheProposedProfile(t *testing.T) {
 	}
 	if len(withSaved.calls) != 0 {
 		t.Fatalf("an invalid proposed profile must not reserve or generate: %v", withSaved.calls)
+	}
+}
+
+func TestProgramGenerationSecondaryGoalsAreValidatedAgainstTheResolvedPrimary(t *testing.T) {
+	// The saved profile's goal is hypertrophy, so hypertrophy cannot also be secondary.
+	f := newGenFixture(t, genProfile(), &fakeGenerator{raw: genRaw()})
+	_, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{SecondaryGoals: []string{"hypertrophy"}})
+	var validation *model.ValidationError
+	if !errors.As(err, &validation) || validation.Field != "secondary_goals" {
+		t.Fatalf("want a secondary_goals validation error, got %v", err)
+	}
+	for _, call := range f.calls {
+		if call != "profile" {
+			t.Fatalf("invalid secondary goals must not reserve or generate: %v", f.calls)
+		}
+	}
+	// With no secondary goals the response carries an empty list, never null.
+	ok := newGenFixture(t, genProfile(), &fakeGenerator{raw: genRaw()})
+	resp, err := ok.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{})
+	if err != nil || resp.SecondaryGoals == nil || len(resp.SecondaryGoals) != 0 {
+		t.Fatalf("secondary_goals must be an empty list: %v %v", resp, err)
 	}
 }
 

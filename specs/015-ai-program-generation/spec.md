@@ -162,7 +162,9 @@ documented limit answer; disable generation and verify the request receives the 
 ### Functional Requirements
 
 - **FR-001**: An authenticated athlete with a saved training profile MUST be able to request a
-  program draft built from that profile, optionally with one request text of 1 to 200 characters.
+  program draft built from that profile, optionally with one request text of 1 to 200 characters
+  and up to two secondary goals (valid training goals other than the primary; duplicates are
+  collapsed; anything else is `422 VALIDATION_ERROR` on `secondary_goals`).
   An athlete without a saved profile (onboarding) MUST be able to send a proposed profile in the
   same request instead; it is validated exactly like a saved profile, drives the draft and the
   daily-limit day, and is never stored.
@@ -198,6 +200,10 @@ documented limit answer; disable generation and verify the request receives the 
   removed by account deletion.
 - **FR-013**: `docs/CONTRACTS.md` MUST describe the request, response, and each stable answer in
   the same change as the implementation.
+- **FR-014**: The provider instructions MUST carry an evidence-based programming default per goal
+  (split, exercise order, rep range, sets, rest, cardio share), sourced in research.md, and a rule
+  that the primary goal sets the structure while a secondary goal takes at most about one third of
+  the work. The response MUST echo the normalized `secondary_goals`.
 
 ### Key Entities
 

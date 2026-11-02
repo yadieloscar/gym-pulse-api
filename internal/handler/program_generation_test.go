@@ -50,7 +50,7 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	svc := &fakeGenerationService{resp: &model.GenerateProgramResponse{Draft: draft, Rationale: "r", RemainingToday: 4, ResetsAt: time.Date(2026, 10, 31, 4, 0, 0, 0, time.UTC)}}
 	h := NewProgramGenerationHandler(svc, 45*time.Second)
 
-	for _, body := range []any{nil, "{}", map[string]any{"request": "no deadlifts"}} {
+	for _, body := range []any{nil, "{}", map[string]any{"request": "no deadlifts", "secondary_goals": []string{"conditioning"}}} {
 		rec := httptest.NewRecorder()
 		req := newReq(t, http.MethodPost, "/api/v1/program-generation", body, uuid.New())
 		if body != nil {
@@ -67,6 +67,9 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	if svc.got.ProposedProfile != nil {
 		t.Fatalf("proposed_profile must be nil when absent: %+v", svc.got.ProposedProfile)
 	}
+	if len(svc.got.SecondaryGoals) != 1 || svc.got.SecondaryGoals[0] != "conditioning" {
+		t.Fatalf("secondary_goals not passed through: %+v", svc.got.SecondaryGoals)
+	}
 	rec := httptest.NewRecorder()
 	proposed := map[string]any{"proposed_profile": map[string]any{"primary_goal": "strength", "available_days": []int{1, 3}, "usual_activity": "moderate",
 		"experience": "beginner", "equipment": []string{"barbell"}, "session_duration_minutes": 45, "timezone": "America/New_York"}}
@@ -78,7 +81,7 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.Generate(rec, newReq(t, http.MethodPost, "/api/v1/program-generation", nil, uuid.New()))
 	decodeBody(t, rec, &out)
-	for _, key := range []string{"draft", "rationale", "request", "remaining_today", "resets_at"} {
+	for _, key := range []string{"draft", "rationale", "request", "secondary_goals", "remaining_today", "resets_at"} {
 		if _, ok := out[key]; !ok {
 			t.Errorf("response missing %s", key)
 		}

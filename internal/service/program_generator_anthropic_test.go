@@ -20,7 +20,7 @@ func testGenerationInput() GenerationInput {
 	compound := "compound"
 	request := "no deadlifts"
 	return GenerationInput{
-		PrimaryGoal: "hypertrophy", AvailableDays: []int{1, 3, 5}, UsualActivity: "moderate", Experience: "intermediate",
+		PrimaryGoal: "hypertrophy", SecondaryGoals: []string{"conditioning"}, AvailableDays: []int{1, 3, 5}, UsualActivity: "moderate", Experience: "intermediate",
 		Equipment: []string{"barbell", "dumbbells"}, SessionDurationMinutes: 60, WorkoutCap: 3, Request: &request,
 		Catalog: []model.CatalogExercise{
 			{ID: uuid.MustParse("00000000-0000-0000-0000-000000000001"), Name: "Barbell Bench Press", Category: "push", Modality: "strength", Mechanic: &compound},
@@ -136,7 +136,7 @@ func TestAnthropicGeneratorParsesDraftAndSendsOnlyAllowedFields(t *testing.T) {
 			t.Errorf("request body leaks %q", forbidden)
 		}
 	}
-	for _, want := range []string{"Primary goal: hypertrophy", "ISO weekdays [1 3 5]", "Maximum workouts in the draft: 3", "Equipment available: barbell, dumbbells", "Session length: 60 minutes", "Athlete request: no deadlifts", "could not be honored"} {
+	for _, want := range []string{"Primary goal: hypertrophy", "Secondary goals: conditioning", "Goal guide", "- hypertrophy: 6 to 12 reps", "- secondary goals:", "ISO weekdays [1 3 5]", "Maximum workouts in the draft: 3", "Equipment available: barbell, dumbbells", "Session length: 60 minutes", "Athlete request: no deadlifts", "could not be honored"} {
 		if !strings.Contains(recorded.raw, want) {
 			t.Errorf("request body missing %q", want)
 		}

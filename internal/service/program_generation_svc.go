@@ -71,6 +71,10 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return nil, err
 	}
+	secondary, err := model.NormalizeSecondaryGoals(profile.PrimaryGoal, req.SecondaryGoals)
+	if err != nil {
+		return nil, err
+	}
 	localDate, resetsAt, err := s.localDay(profile)
 	if err != nil {
 		return nil, err
@@ -91,7 +95,7 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 		return nil, err
 	}
 	input := GenerationInput{
-		PrimaryGoal: profile.PrimaryGoal, AvailableDays: profile.AvailableDays, UsualActivity: profile.UsualActivity,
+		PrimaryGoal: profile.PrimaryGoal, SecondaryGoals: secondary, AvailableDays: profile.AvailableDays, UsualActivity: profile.UsualActivity,
 		Experience: profile.Experience, Equipment: profile.Equipment, SessionDurationMinutes: profile.SessionDurationMinutes,
 		Catalog: catalog, Request: request, Model: s.model, WorkoutCap: model.DraftWorkoutCap(profile.AvailableDays),
 	}
@@ -112,7 +116,7 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 	slog.InfoContext(ctx, "program generation succeeded", "model", s.model, "duration_ms", s.now().Sub(started).Milliseconds(),
 		"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens, "workouts", len(generated.Draft.Workouts))
 	return &model.GenerateProgramResponse{
-		Draft: generated.Draft, Rationale: generated.Rationale, Request: request,
+		Draft: generated.Draft, Rationale: generated.Rationale, Request: request, SecondaryGoals: secondary,
 		RemainingToday: max(0, s.limit-reservation.Used), ResetsAt: resetsAt,
 	}, nil
 }

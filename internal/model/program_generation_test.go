@@ -275,3 +275,21 @@ func TestLocalDateAndNextLocalMidnight(t *testing.T) {
 		t.Fatal("bad timezone must error")
 	}
 }
+
+func TestNormalizeSecondaryGoals(t *testing.T) {
+	got, err := NormalizeSecondaryGoals("strength", nil)
+	if err != nil || len(got) != 0 {
+		t.Fatalf("absent secondary goals must normalize to empty: %v %v", got, err)
+	}
+	got, err = NormalizeSecondaryGoals("strength", []string{" conditioning ", "conditioning", "hypertrophy"})
+	if err != nil || len(got) != 2 || got[0] != "conditioning" || got[1] != "hypertrophy" {
+		t.Fatalf("secondary goals must be trimmed and deduplicated in order: %v %v", got, err)
+	}
+	for _, bad := range [][]string{{"strength"}, {"yoga"}, {"conditioning", "hypertrophy", "power"}} {
+		_, err := NormalizeSecondaryGoals("strength", bad)
+		var validation *ValidationError
+		if !errors.As(err, &validation) || validation.Field != "secondary_goals" {
+			t.Fatalf("%v must be a validation error on secondary_goals: %v", bad, err)
+		}
+	}
+}

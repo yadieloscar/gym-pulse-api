@@ -636,6 +636,13 @@ definitions:
           saved. It is validated like a saved profile and is never stored.
       request:
         type: string
+      secondary_goals:
+        description: |-
+          SecondaryGoals are up to two further goals the draft should also serve.
+          The profile's primary goal sets the structure; these steer part of it.
+        items:
+          type: string
+        type: array
     type: object
   model.GenerateProgramResponse:
     properties:
@@ -649,6 +656,10 @@ definitions:
         type: string
       resets_at:
         type: string
+      secondary_goals:
+        items:
+          type: string
+        type: array
     type: object
   model.GenerationStatus:
     properties:

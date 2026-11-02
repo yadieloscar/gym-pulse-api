@@ -125,6 +125,63 @@ exists only so the app can hide the entry when the feature is off.
   fields named in FR-007, the catalog, the request text, and the schema. Logs record outcome,
   duration, model, and token counts, never the prompt, the draft, or the request text.
 
+### Goal guide (amendment 2026-11-02)
+
+- **Decision**: the system prompt carries an evidence-based default per goal (split, exercise
+  order, rep range, sets, rest, cardio share) plus a rule for secondary goals, instead of the
+  earlier one-line hint. Up to two `secondary_goals` may accompany the primary goal; the primary
+  sets the structure and a secondary takes at most about one third of the exercises or one day.
+- **Sources** (the numbers in `goalGuide` come from these; none is quoted on screen):
+  - Strength and general loading: American College of Sports Medicine, "Progression Models in
+    Resistance Training for Healthy Adults" (position stand), *Med Sci Sports Exerc* 41(3):687–708,
+    2009 — novice 60–70% 1RM for 8–12 reps, advanced 80–100% for 1–6 reps, 2–3 min rest on core
+    lifts, 2–3 days/week per muscle group; multi-joint lifts first.
+  - Load and strength: Schoenfeld, Grgic, Ogborn, Krieger, "Strength and hypertrophy adaptations
+    between low- vs. high-load resistance training: a systematic review and meta-analysis",
+    *J Strength Cond Res* 31(12):3508–3523, 2017 — strength gains favor loads above ~60% 1RM;
+    hypertrophy is similar across loads when sets approach failure.
+  - Hypertrophy volume: Schoenfeld, Ogborn, Krieger, "Dose-response relationship between weekly
+    resistance training volume and increases in muscle mass", *J Sports Sci* 35(11):1073–1082,
+    2017 — graded gains up to and beyond 10 weekly sets per muscle group.
+  - Hypertrophy frequency: Schoenfeld, Ogborn, Krieger, "Effects of resistance training frequency
+    on measures of muscle hypertrophy", *Sports Med* 46(11):1689–1697, 2016 — twice a week per
+    muscle group beats once at matched volume.
+  - Rest intervals: Schoenfeld et al., "Longer interset rest periods enhance muscle strength and
+    hypertrophy in resistance-trained men", *J Strength Cond Res* 30(7):1805–1812, 2016; Grgic et
+    al., "Effects of rest interval duration in resistance training on measures of muscular
+    strength", *Sports Med* 48(1):137–151, 2018 — 2 min or more on compounds; 60–90 s acceptable
+    on isolation work.
+  - Power: Cormie, McGuigan, Newton, "Developing maximal neuromuscular power" parts 1 and 2,
+    *Sports Med* 41(1):17–38 and 41(2):125–146, 2011; Haff & Triplett (eds.), *Essentials of
+    Strength Training and Conditioning*, 4th ed., NSCA, 2016 — a strength base first, then
+    explosive work of 1–5 reps at 3–5 sets with 2–5 min rest, done early in the session.
+  - Conditioning: Garber et al., ACSM position stand "Quantity and Quality of Exercise for
+    Developing and Maintaining Cardiorespiratory, Musculoskeletal, and Neuromotor Fitness in
+    Apparently Healthy Adults", *Med Sci Sports Exerc* 43(7):1334–1359, 2011; Milanović, Sporiš,
+    Weston, "Effectiveness of high-intensity interval training and continuous endurance training
+    for VO2max improvements", *Sports Med* 45(10):1469–1481, 2015 — 150 min/week moderate or 75
+    vigorous; intervals improve VO2max at least as much as continuous work.
+  - General health: Bull et al., "World Health Organization 2020 guidelines on physical activity
+    and sedentary behaviour", *Br J Sports Med* 54(24):1451–1462, 2020 — 150–300 min moderate
+    aerobic activity plus muscle-strengthening work on 2 or more days covering all major muscle
+    groups; Garber 2011 for 8–12 reps, 1–3 sets, 8–10 exercises.
+  - Body composition: Donnelly et al., ACSM position stand "Appropriate Physical Activity
+    Intervention Strategies for Weight Loss and Prevention of Weight Regain for Adults",
+    *Med Sci Sports Exerc* 41(2):459–471, 2009; Willis et al., "Effects of aerobic and/or
+    resistance training on body mass and fat mass in overweight or obese adults", *J Appl Physiol*
+    113(12):1831–1837, 2012; Clark, "Diet, exercise or diet with exercise: comparing the
+    effectiveness of treatment options for weight-loss and changes in fitness for adults",
+    *J Diabetes Metab Disord* 14:31, 2015 — resistance training preserves lean mass; aerobic work
+    adds to fat-mass change; GymPulse states none of this as an outcome (PRODUCT.md).
+  - Concurrent training (secondary goals): Wilson et al., "Concurrent training: a meta-analysis
+    examining interference of aerobic and resistance exercises", *J Strength Cond Res*
+    26(8):2293–2307, 2012; Schumann et al., "Compatibility of concurrent aerobic and strength
+    training for skeletal muscle size and function: an updated systematic review and
+    meta-analysis", *Sports Med* 52(3):601–612, 2022 — interference is small when aerobic volume is
+    modest, cycling or low impact, and separated from lifting.
+- **Why not more**: periodization, progression rules, and adaptive changes from logged history are
+  out of scope (static like a starter, PRODUCT.md); the guide shapes one static draft.
+
 ## Resolved Technical Questions
 
 - Migration number: `031`; main is at `030` (food logging).

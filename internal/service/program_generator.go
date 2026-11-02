@@ -17,6 +17,7 @@ type DraftGenerator interface {
 // athlete leaves the API (spec FR-007).
 type GenerationInput struct {
 	PrimaryGoal            string
+	SecondaryGoals         []string
 	AvailableDays          []int
 	UsualActivity          string
 	Experience             string
