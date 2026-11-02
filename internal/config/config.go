@@ -25,6 +25,13 @@ var (
 	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
 )
 
+// Defaults for the food sources; see docs/CONTRACTS.md "Food logging".
+const (
+	DefaultUSDAFDCBaseURL       = "https://api.nal.usda.gov"
+	DefaultOpenFoodFactsBaseURL = "https://world.openfoodfacts.org"
+	DefaultFoodSourceUserAgent  = "GymPulse/1.0 (https://github.com/yadieloscar/gym-pulse-api)"
+)
+
 // Config holds the application configuration.
 type Config struct {
 	Port            string
@@ -41,9 +48,16 @@ type Config struct {
 	SupabaseJWTAudience string
 	// Optional in development/test. Staging and production require these so
 	// account deletion can remove the auth identity and avatar object.
-	SupabaseURL               string
-	SupabaseServiceRoleKey    string
-	SupabaseAvatarBucket      string
+	SupabaseURL            string
+	SupabaseServiceRoleKey string
+	SupabaseAvatarBucket   string
+	// Food logging reads USDA FoodData Central (key required for live search;
+	// empty means degraded, catalog-only search) and Open Food Facts (no key,
+	// identifying User-Agent required). Base URLs are overridable for tests.
+	USDAFDCAPIKey             string
+	USDAFDCBaseURL            string
+	OpenFoodFactsBaseURL      string
+	FoodSourceUserAgent       string
 	AllowedOrigins            []string
 	Environment               string
 	LogLevel                  string
@@ -158,6 +172,20 @@ func Load() (*Config, error) {
 		avatarBucket = "avatars"
 	}
 
+	usdaKey := strings.TrimSpace(os.Getenv("USDA_FDC_API_KEY"))
+	usdaBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("USDA_FDC_BASE_URL")), "/")
+	if usdaBaseURL == "" {
+		usdaBaseURL = DefaultUSDAFDCBaseURL
+	}
+	offBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("OPEN_FOOD_FACTS_BASE_URL")), "/")
+	if offBaseURL == "" {
+		offBaseURL = DefaultOpenFoodFactsBaseURL
+	}
+	foodUserAgent := strings.TrimSpace(os.Getenv("FOOD_SOURCE_USER_AGENT"))
+	if foodUserAgent == "" {
+		foodUserAgent = DefaultFoodSourceUserAgent
+	}
+
 	maxConns, err := positiveInt32Env("DATABASE_MAX_CONNS", 10)
 	if err != nil {
 		return nil, err
@@ -198,6 +226,10 @@ func Load() (*Config, error) {
 		SupabaseURL:               supabaseURL,
 		SupabaseServiceRoleKey:    serviceRoleKey,
 		SupabaseAvatarBucket:      avatarBucket,
+		USDAFDCAPIKey:             usdaKey,
+		USDAFDCBaseURL:            usdaBaseURL,
+		OpenFoodFactsBaseURL:      offBaseURL,
+		FoodSourceUserAgent:       foodUserAgent,
 		AllowedOrigins:            origins,
 		Environment:               env,
 		LogLevel:                  logLevel,

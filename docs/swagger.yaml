@@ -29,6 +29,15 @@ definitions:
           $ref: '#/definitions/model.ScheduledWorkout'
         type: array
     type: object
+  model.Attribution:
+    properties:
+      license:
+        type: string
+      name:
+        type: string
+      url:
+        type: string
+    type: object
   model.BodyWeight:
     properties:
       date:
@@ -143,6 +152,21 @@ definitions:
     required:
     - name
     type: object
+  model.CreateFoodEntryRequest:
+    properties:
+      amount:
+        type: number
+      food:
+        $ref: '#/definitions/model.FoodRef'
+      logged_at:
+        type: string
+      operation_key:
+        type: string
+      quick_add:
+        $ref: '#/definitions/model.QuickAdd'
+      serving:
+        $ref: '#/definitions/model.Serving'
+    type: object
   model.CreateOverrideRequest:
     properties:
       actual_reps:
@@ -245,6 +269,15 @@ definitions:
     - date
     - name
     - operation_key
+    type: object
+  model.DayEntries:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entries:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
     type: object
   model.DayLog:
     properties:
@@ -431,6 +464,128 @@ definitions:
     - operation_key
     - set_index
     type: object
+  model.Food:
+    properties:
+      archived:
+        type: boolean
+      attribution:
+        $ref: '#/definitions/model.Attribution'
+      barcode:
+        type: string
+      brand:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      per_100g:
+        $ref: '#/definitions/model.Per100g'
+      revision:
+        type: integer
+      servings:
+        items:
+          $ref: '#/definitions/model.Serving'
+        type: array
+      source:
+        $ref: '#/definitions/model.FoodSource'
+    type: object
+  model.FoodEntry:
+    properties:
+      amount:
+        type: number
+      carbs_g:
+        type: number
+      created_at:
+        type: string
+      date:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      food:
+        $ref: '#/definitions/model.FoodSummary'
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/model.FoodEntryKind'
+      logged_at:
+        type: string
+      protein_g:
+        type: number
+      revision:
+        type: integer
+      serving:
+        $ref: '#/definitions/model.Serving'
+      updated_at:
+        type: string
+    type: object
+  model.FoodEntryCreated:
+    properties:
+      converted:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entry:
+        $ref: '#/definitions/model.FoodEntry'
+    type: object
+  model.FoodEntryDeleted:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+    type: object
+  model.FoodEntryKind:
+    enum:
+    - food
+    - quick_add
+    type: string
+    x-enum-varnames:
+    - FoodEntryKindFood
+    - FoodEntryKindQuickAdd
+  model.FoodEntryUpdated:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entry:
+        $ref: '#/definitions/model.FoodEntry'
+    type: object
+  model.FoodRef:
+    properties:
+      id:
+        type: string
+    type: object
+  model.FoodSearchResult:
+    properties:
+      foods:
+        items:
+          $ref: '#/definitions/model.Food'
+        type: array
+      incomplete:
+        type: boolean
+    type: object
+  model.FoodSource:
+    enum:
+    - usda
+    - open_food_facts
+    - own
+    type: string
+    x-enum-varnames:
+    - FoodSourceUSDA
+    - FoodSourceOpenFoodFacts
+    - FoodSourceOwn
+  model.FoodSummary:
+    properties:
+      brand:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      source:
+        $ref: '#/definitions/model.FoodSource'
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -491,10 +646,12 @@ definitions:
     enum:
     - manual
     - apple_health
+    - foods
     type: string
     x-enum-varnames:
     - NutritionSourceManual
     - NutritionSourceAppleHealth
+    - NutritionSourceFoods
   model.NutritionTarget:
     properties:
       carbs_g:
@@ -570,6 +727,17 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.Per100g:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: number
+      fat_g:
+        type: number
+      protein_g:
+        type: number
     type: object
   model.PerformedSet:
     properties:
@@ -718,6 +886,37 @@ definitions:
           $ref: '#/definitions/model.WeeklyPlanDay'
         type: array
     type: object
+  model.QuickAdd:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
+    type: object
+  model.RecentFood:
+    properties:
+      food:
+        $ref: '#/definitions/model.Food'
+      last_amount:
+        type: number
+      last_logged_at:
+        type: string
+      last_serving:
+        $ref: '#/definitions/model.Serving'
+      times_logged:
+        type: integer
+    type: object
+  model.RecentFoods:
+    properties:
+      foods:
+        items:
+          $ref: '#/definitions/model.RecentFood'
+        type: array
+    type: object
   model.RecoverScheduledWorkoutRequest:
     properties:
       date:
@@ -813,6 +1012,29 @@ definitions:
         type: string
       protein_g:
         type: number
+    type: object
+  model.SaveUserFoodRequest:
+    properties:
+      barcode:
+        type: string
+      brand:
+        type: string
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      expected_revision:
+        type: integer
+      fat_g:
+        type: number
+      name:
+        type: string
+      operation_key:
+        type: string
+      protein_g:
+        type: number
+      serving:
+        $ref: '#/definitions/model.Serving'
     type: object
   model.ScheduledSet:
     properties:
@@ -912,6 +1134,13 @@ definitions:
       status:
         type: string
       updated_at:
+        type: string
+    type: object
+  model.Serving:
+    properties:
+      grams:
+        type: number
+      label:
         type: string
     type: object
   model.SetLog:
@@ -1115,6 +1344,19 @@ definitions:
         type: string
       type_id:
         type: string
+    type: object
+  model.UpdateFoodEntryRequest:
+    properties:
+      amount:
+        type: number
+      expected_revision:
+        type: integer
+      operation_key:
+        type: string
+      quick_add:
+        $ref: '#/definitions/model.QuickAdd'
+      serving:
+        $ref: '#/definitions/model.Serving'
     type: object
   model.UpdateProfileRequest:
     properties:
@@ -1842,6 +2084,382 @@ paths:
       security:
       - BearerAuth: []
       summary: Save, replace, or remove one day's nutrition totals
+      tags:
+      - nutrition
+  /api/v1/nutrition/days/{date}/entries:
+    get:
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DayEntries'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: A day's totals and its food entries, oldest first
+      tags:
+      - nutrition
+    post:
+      description: Typed totals already on the day are converted into one quick_add
+        entry (converted).
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: food+serving+amount, or quick_add
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateFoodEntryRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.FoodEntryCreated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a food or a quick add; the day's totals become the sum of its entries
+      tags:
+      - nutrition
+  /api/v1/nutrition/entries/{id}:
+    delete:
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current revision
+        in: query
+        name: expected_revision
+        required: true
+        type: integer
+      - description: Operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryDeleted'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove an entry; removing the last one removes the day's totals
+      tags:
+      - nutrition
+    put:
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Change with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateFoodEntryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryUpdated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change an entry's serving and amount, or its quick-add values
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods:
+    post:
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Label values per serving
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveUserFoodRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Food'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a private food from a label
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/{id}:
+    delete:
+      parameters:
+      - description: Food id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current revision
+        in: query
+        name: expected_revision
+        required: true
+        type: integer
+      - description: Operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Archive a private food
+      tags:
+      - nutrition
+    put:
+      parameters:
+      - description: Food id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Label values with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveUserFoodRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Food'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change a private food; existing entries keep their snapshot
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/barcode/{code}:
+    get:
+      description: Private food → catalog → USDA → Open Food Facts. 404 NOT_FOUND
+        carries details.retry_after_seconds when the fallback budget was spent.
+      parameters:
+      - description: 8, 12, 13, or 14 digits
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Food'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Look up one product by retail barcode
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/recent:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.RecentFoods'
+      security:
+      - BearerAuth: []
+      summary: Foods logged in the last 30 days, most often and most recently first
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/search:
+    get:
+      description: Private foods first, then USDA FoodData Central; catalog only (incomplete=true)
+        when USDA cannot be asked.
+      parameters:
+      - description: 2–100 characters
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 1–25, default 25
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodSearchResult'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search foods by text
       tags:
       - nutrition
   /api/v1/nutrition/target:

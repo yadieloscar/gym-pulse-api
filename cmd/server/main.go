@@ -148,6 +148,8 @@ func main() {
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
 	healthExportRepo := dao.NewHealthExportDAO(pool)
 	nutritionRepo := dao.NewNutritionDAO(pool)
+	foodRepo := dao.NewFoodDAO(pool)
+	foodEntryRepo := dao.NewFoodEntryDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
 	trainingMutationRepo := dao.NewTrainingMutationDAO(pool)
@@ -178,6 +180,12 @@ func main() {
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
 	healthExportSvc := service.NewHealthExportService(healthExportRepo)
 	nutritionSvc := service.NewNutritionService(nutritionRepo, trainingProfileRepo)
+	if cfg.USDAFDCAPIKey == "" && (cfg.Environment == "staging" || cfg.Environment == "production") {
+		logger.Warn("USDA_FDC_API_KEY is empty; food search answers from the catalog only")
+	}
+	usdaSource := service.NewUSDAFoodSource(cfg.USDAFDCBaseURL, cfg.USDAFDCAPIKey, nil)
+	openFoodFactsSource := service.NewOpenFoodFactsSource(cfg.OpenFoodFactsBaseURL, cfg.FoodSourceUserAgent, nil)
+	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
 
@@ -206,11 +214,12 @@ func main() {
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
+	foodHandler := handler.NewFoodHandler(foodSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, trainingBlockHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler)
 
 	// Start server with graceful shutdown.
 	srv := &http.Server{

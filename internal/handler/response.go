@@ -49,6 +49,18 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	var foodsDay *model.DayHasFoodEntriesError
+	if errors.As(err, &foodsDay) {
+		writeJSON(w, http.StatusConflict, apiError{Error: foodsDay.Error(), Code: "DAY_HAS_FOOD_ENTRIES", Resource: foodsDay.Day})
+		return
+	}
+
+	var budget *model.FoodLookupBudgetError
+	if errors.As(err, &budget) {
+		writeError(w, http.StatusNotFound, "food not found", "NOT_FOUND", map[string]int{"retry_after_seconds": budget.RetryAfterSeconds})
+		return
+	}
+
 	var resolution *model.ResolutionConflictError
 	if errors.As(err, &resolution) {
 		details := map[string]any{"status": resolution.Status, "resolution": resolution.Resolution}

@@ -36,6 +36,7 @@ func New(
 	sportActivityHandler *handler.SportActivityHandler,
 	healthExportHandler *handler.HealthExportHandler,
 	nutritionHandler *handler.NutritionHandler,
+	foodHandler *handler.FoodHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -126,6 +127,17 @@ func New(
 					r.Put("/days/{date}", nutritionHandler.SaveDay)
 					r.Get("/target", nutritionHandler.GetTarget)
 					r.Put("/target", nutritionHandler.SaveTarget)
+					lookup := middleware.RateLimitPerUser(middleware.FoodLookupLimit)
+					r.With(lookup).Get("/foods/search", foodHandler.Search)
+					r.With(lookup).Get("/foods/barcode/{code}", foodHandler.LookupBarcode)
+					r.Get("/foods/recent", foodHandler.ListRecent)
+					r.Post("/foods", foodHandler.CreateUserFood)
+					r.Put("/foods/{id}", foodHandler.UpdateUserFood)
+					r.Delete("/foods/{id}", foodHandler.ArchiveUserFood)
+					r.Get("/days/{date}/entries", foodHandler.ListDayEntries)
+					r.Post("/days/{date}/entries", foodHandler.CreateEntry)
+					r.Put("/entries/{id}", foodHandler.UpdateEntry)
+					r.Delete("/entries/{id}", foodHandler.DeleteEntry)
 				})
 				r.Route("/training-blocks", func(r chi.Router) {
 					r.Get("/", trainingBlockHandler.List)

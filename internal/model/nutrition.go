@@ -16,6 +16,9 @@ const (
 	NutritionSourceManual NutritionSource = "manual"
 	// NutritionSourceAppleHealth is a day's totals read from Apple Health.
 	NutritionSourceAppleHealth NutritionSource = "apple_health"
+	// NutritionSourceFoods is a day whose totals are the sum of its food
+	// entries. Typed saves are refused on such a day; Health saves are ignored.
+	NutritionSourceFoods NutritionSource = "foods"
 )
 
 // NutritionDay is one athlete's totals for one calendar date. Any of the four
