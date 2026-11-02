@@ -45,7 +45,15 @@ func MaterializeProgramForWeekdays(p *Program, weekdays []int, from, to string) 
 		pw := &workouts[occurrence%len(workouts)]
 		occurrence++
 		programID, workoutID, sequence := p.ID, pw.ID, pw.SequencePosition
-		result = append(result, ScheduledWorkout{ProgramID: &programID, ProgramWorkoutID: &workoutID, Date: date.Format(time.DateOnly), Name: pw.Name, SequencePosition: &sequence, Status: WorkoutStatusPlanned, RequiredSets: SnapshotScheduledSets(pw.Exercises), ExtraSets: []PerformedSet{}})
+		scheduled := ScheduledWorkout{Kind: NormalizeUnitKind(pw.Kind), ProgramID: &programID, ProgramWorkoutID: &workoutID, Date: date.Format(time.DateOnly), Name: pw.Name, SequencePosition: &sequence, Status: WorkoutStatusPlanned, RequiredSets: []ScheduledSet{}, ExtraSets: []PerformedSet{}}
+		if pw.IsSport() && pw.Sport != nil {
+			// A sport session snapshots its target and has no sets; a linked
+			// sport activity completes it.
+			scheduled.Sport = &ScheduledSport{SportTarget: pw.Sport.Copy()}
+		} else {
+			scheduled.RequiredSets = SnapshotScheduledSets(pw.Exercises)
+		}
+		result = append(result, scheduled)
 	}
 	return result, nil
 }

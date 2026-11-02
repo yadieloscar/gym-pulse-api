@@ -3,6 +3,7 @@ package model
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -182,5 +183,95 @@ func TestValidateDateRangeInclusiveLimit(t *testing.T) {
 				t.Fatalf("field = %q, want %q", validationErr.Field, tc.wantField)
 			}
 		})
+	}
+}
+
+func TestUnitKindDefaultsToExercisesForLegacyJSON(t *testing.T) {
+	var workout ProgramWorkout
+	if err := json.Unmarshal([]byte(`{"name":"Full Body A","sequence_position":1,"exercises":[]}`), &workout); err != nil {
+		t.Fatal(err)
+	}
+	if workout.Kind != "" || NormalizeUnitKind(workout.Kind) != UnitKindExercises || workout.IsSport() {
+		t.Fatalf("legacy program workout must normalize to exercises: %+v", workout)
+	}
+	var scheduled ScheduledWorkout
+	if err := json.Unmarshal([]byte(`{"date":"2026-10-31","name":"Full Body A","status":"planned","revision":1,"required_sets":[],"extra_sets":[]}`), &scheduled); err != nil {
+		t.Fatal(err)
+	}
+	if scheduled.IsSport() || scheduled.Sport != nil {
+		t.Fatalf("legacy scheduled workout must not be a sport: %+v", scheduled)
+	}
+	encoded, err := json.Marshal(ProgramWorkout{Kind: UnitKindExercises, Name: "Full Body A", SequencePosition: 1, Exercises: []ProgramExercise{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"kind":"exercises"`) || strings.Contains(string(encoded), `"sport"`) {
+		t.Fatalf("exercises unit must encode kind and omit sport: %s", encoded)
+	}
+}
+
+func TestSportUnitJSONShape(t *testing.T) {
+	distance := 40000
+	unit := ProgramWorkout{Kind: UnitKindSport, Name: "Long ride", SequencePosition: 3, Sport: &SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance}, Exercises: []ProgramExercise{}}
+	encoded, err := json.Marshal(unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"kind":"sport"`, `"sport":{"sport_id":"cycling","sport_name":"Cycling","target_duration_minutes":90,"target_distance_meters":40000}`, `"exercises":[]`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("sport unit JSON missing %s: %s", want, encoded)
+		}
+	}
+	open := ScheduledWorkout{Kind: UnitKindSport, Status: WorkoutStatusPlanned, Sport: &ScheduledSport{SportTarget: unit.Sport.Copy()}, RequiredSets: []ScheduledSet{}, ExtraSets: []PerformedSet{}}
+	if err := open.Validate(); err != nil {
+		t.Fatalf("open sport session must validate: %v", err)
+	}
+	encodedOpen, err := json.Marshal(open)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, absent := range []string{"sport_activity_id", "performed_date"} {
+		if strings.Contains(string(encodedOpen), absent) {
+			t.Errorf("open sport session must omit %s: %s", absent, encodedOpen)
+		}
+	}
+	activityID, performed := uuid.New(), "2026-10-31"
+	done := open
+	done.Status = WorkoutStatusCompleted
+	done.Sport = &ScheduledSport{SportTarget: unit.Sport.Copy(), SportActivityID: &activityID, PerformedDate: &performed}
+	encodedDone, err := json.Marshal(done)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encodedDone), `"performed_date":"2026-10-31"`) || !strings.Contains(string(encodedDone), `"sport_activity_id":"`+activityID.String()+`"`) {
+		t.Fatalf("completed sport session must carry the link: %s", encodedDone)
+	}
+}
+
+func TestSportSessionValidationRejectsSetsAndLiveStatuses(t *testing.T) {
+	sport := &ScheduledSport{SportTarget: SportTarget{SportID: "volleyball", SportName: "Volleyball", TargetDurationMinutes: 120}}
+	cases := []struct {
+		name  string
+		w     ScheduledWorkout
+		field string
+	}{
+		{name: "missing snapshot", w: ScheduledWorkout{Kind: UnitKindSport, Status: WorkoutStatusPlanned}, field: "sport"},
+		{name: "required sets", w: ScheduledWorkout{Kind: UnitKindSport, Status: WorkoutStatusPlanned, Sport: sport, RequiredSets: []ScheduledSet{{ExerciseName: "x", ExerciseCategory: "y", ExerciseModality: "strength", ExerciseOrder: 1, SetIndex: 1}}}, field: "kind"},
+		{name: "in progress", w: ScheduledWorkout{Kind: UnitKindSport, Status: WorkoutStatusInProgress, Sport: sport}, field: "status"},
+		{name: "incomplete", w: ScheduledWorkout{Kind: UnitKindSport, Status: WorkoutStatusIncomplete, Sport: sport}, field: "status"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.w.Validate()
+			var ve *ValidationError
+			if !errors.As(err, &ve) || ve.Field != tc.field {
+				t.Fatalf("want validation error on %s, got %v", tc.field, err)
+			}
+		})
+	}
+	for _, status := range []string{WorkoutStatusPlanned, WorkoutStatusCompleted, WorkoutStatusMissed} {
+		if err := (ScheduledWorkout{Kind: UnitKindSport, Status: status, Sport: sport}).Validate(); err != nil {
+			t.Errorf("status %s must validate: %v", status, err)
+		}
 	}
 }

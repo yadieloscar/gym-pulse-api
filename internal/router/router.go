@@ -35,7 +35,10 @@ func New(
 	participationHandler *handler.ParticipationHandler,
 	sportActivityHandler *handler.SportActivityHandler,
 	healthExportHandler *handler.HealthExportHandler,
+	nutritionHandler *handler.NutritionHandler,
+	foodHandler *handler.FoodHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
+	programGenerationHandler *handler.ProgramGenerationHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -72,6 +75,10 @@ func New(
 				r.Get("/training-profile", trainingProfileHandler.Get)
 				r.Put("/training-profile", trainingProfileHandler.Update)
 				r.Get("/starter-programs", programHandler.ListStarters)
+				// Program-draft generation: read-only, provider-backed, bounded per minute
+				// here and per local day in the ledger.
+				r.Get("/program-generation", programGenerationHandler.Status)
+				r.With(middleware.RateLimitPerUser(middleware.ProgramGenerationLimit)).Post("/program-generation", programGenerationHandler.Generate)
 				r.Route("/programs", func(r chi.Router) {
 					r.Get("/", programHandler.List)
 					r.Post("/", programHandler.Create)
@@ -113,10 +120,29 @@ func New(
 					r.Get("/", sportActivityHandler.List)
 					r.Post("/", sportActivityHandler.Create)
 					r.Get("/{id}", sportActivityHandler.Get)
+					r.Post("/{id}/link", sportActivityHandler.Link)
+					r.Post("/{id}/unlink", sportActivityHandler.Unlink)
 				})
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)
 					r.Put("/{workout_kind}/{workout_id}", healthExportHandler.Record)
+				})
+				r.Route("/nutrition", func(r chi.Router) {
+					r.Get("/days", nutritionHandler.ListDays)
+					r.Put("/days/{date}", nutritionHandler.SaveDay)
+					r.Get("/target", nutritionHandler.GetTarget)
+					r.Put("/target", nutritionHandler.SaveTarget)
+					lookup := middleware.RateLimitPerUser(middleware.FoodLookupLimit)
+					r.With(lookup).Get("/foods/search", foodHandler.Search)
+					r.With(lookup).Get("/foods/barcode/{code}", foodHandler.LookupBarcode)
+					r.Get("/foods/recent", foodHandler.ListRecent)
+					r.Post("/foods", foodHandler.CreateUserFood)
+					r.Put("/foods/{id}", foodHandler.UpdateUserFood)
+					r.Delete("/foods/{id}", foodHandler.ArchiveUserFood)
+					r.Get("/days/{date}/entries", foodHandler.ListDayEntries)
+					r.Post("/days/{date}/entries", foodHandler.CreateEntry)
+					r.Put("/entries/{id}", foodHandler.UpdateEntry)
+					r.Delete("/entries/{id}", foodHandler.DeleteEntry)
 				})
 				r.Route("/training-blocks", func(r chi.Router) {
 					r.Get("/", trainingBlockHandler.List)

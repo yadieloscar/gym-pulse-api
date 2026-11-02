@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -32,12 +34,29 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/plan-transitions/preview", "POST /api/v1/plan-transitions/apply",
 		"POST /api/v1/schedule/recover", "PATCH /api/v1/scheduled-workouts/{id}/sets/{set_id}/target",
 		"GET /api/v1/sport-activities/", "POST /api/v1/sport-activities/", "GET /api/v1/sport-activities/{id}",
+		"POST /api/v1/sport-activities/{id}/link", "POST /api/v1/sport-activities/{id}/unlink",
+		"GET /api/v1/nutrition/days", "PUT /api/v1/nutrition/days/{date}", "GET /api/v1/nutrition/target", "PUT /api/v1/nutrition/target",
+		"GET /api/v1/nutrition/foods/search", "GET /api/v1/nutrition/foods/barcode/{code}", "GET /api/v1/nutrition/foods/recent",
+		"POST /api/v1/nutrition/foods", "PUT /api/v1/nutrition/foods/{id}", "DELETE /api/v1/nutrition/foods/{id}",
+		"GET /api/v1/nutrition/days/{date}/entries", "POST /api/v1/nutrition/days/{date}/entries",
+		"PUT /api/v1/nutrition/entries/{id}", "DELETE /api/v1/nutrition/entries/{id}",
 		"GET /api/v1/training-blocks/", "POST /api/v1/training-blocks/", "GET /api/v1/training-blocks/{block_id}/",
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",
+		"GET /api/v1/program-generation", "POST /api/v1/program-generation",
 	} {
 		if !found[route] {
 			t.Errorf("missing route %s", route)
 		}
+	}
+}
+
+func TestProgramGenerationPostIsRateLimitedPerUser(t *testing.T) {
+	body, err := os.ReadFile("router.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `r.With(middleware.RateLimitPerUser(middleware.ProgramGenerationLimit)).Post("/program-generation"`) {
+		t.Fatal("POST /program-generation must carry the per-user generation limit")
 	}
 }

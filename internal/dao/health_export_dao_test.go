@@ -85,3 +85,13 @@ func TestAccountCleanupIncludesHealthExports(t *testing.T) {
 		t.Fatal("account cleanup does not delete owned health exports")
 	}
 }
+
+func TestHealthExportDAOExcludesSportSessions(t *testing.T) {
+	body, err := os.ReadFile("health_export_dao.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "AND kind = 'exercises'") {
+		t.Fatal("a completed sport session must not be exportable; its activity is the health record")
+	}
+}

@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info: {title: GymPulse Nutrition Contract, version: 1.0.0}
+paths:
+  /api/v1/nutrition/days:
+    get:
+      summary: List owned nutrition days in an inclusive range with the targets that applied
+      parameters:
+        - {name: from, in: query, required: true, schema: {type: string, format: date}}
+        - {name: to, in: query, required: true, schema: {type: string, format: date}}
+      responses:
+        '200':
+          description: days oldest first; targets is the one in effect on from (if any) plus every target starting inside the range, oldest first; both are [] when empty
+          content: {application/json: {schema: {type: object, required: [days, targets], properties: {days: {type: array, items: {$ref: '#/components/schemas/NutritionDay'}}, targets: {type: array, items: {$ref: '#/components/schemas/NutritionTarget'}}}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nutrition/days/{date}:
+    put:
+      summary: Save, replace, or remove the athlete's totals for one local date
+      description: >
+        Requires Idempotency-Key equal to operation_key; a verbatim retry replays the original status
+        and body. An athlete save (source omitted or manual) carries expected_revision: 0 when no entry
+        exists, otherwise the current revision; a stale value is 409 REVISION_CONFLICT with the stored
+        day as resource. A Health save (source apple_health) carries no expected_revision; it creates or
+        replaces only an apple_health row, and over a manual row returns the stored day with 200 and
+        writes nothing. A save with all four values absent removes the day (204) or does nothing (204); it carries expected_revision like any athlete save.
+        A date after the athlete's local today is 422 on date.
+      parameters:
+        - {name: date, in: path, required: true, schema: {type: string, format: date}}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SaveNutritionDayRequest'}}}
+      responses:
+        '201': {description: Created, or verbatim replay of a create, content: {application/json: {schema: {$ref: '#/components/schemas/NutritionDay'}}}}
+        '200': {description: Replaced, or a Health save ignored over an athlete day, content: {application/json: {schema: {$ref: '#/components/schemas/NutritionDay'}}}}
+        '204': {description: Removed, or nothing to remove}
+        '404': {description: No training profile for the athlete}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nutrition/target:
+    get:
+      summary: Read the target in effect today
+      responses:
+        '200': {description: Current target, content: {application/json: {schema: {$ref: '#/components/schemas/NutritionTarget'}}}}
+        '404': {description: No target saved yet (shared NOT_FOUND shape)}
+    put:
+      summary: Save the athlete's chosen target effective from a date
+      description: >
+        Requires Idempotency-Key equal to operation_key. expected_revision is the current target's
+        revision, 0 when none exists; stale is 409 REVISION_CONFLICT with the current target as
+        resource. effective_from defaults to the athlete's local today and may not be in the future.
+        Saving for an effective_from that already has a target replaces that row; a different date adds
+        one and earlier targets are kept. Values identical to the current target return it unchanged.
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SaveNutritionTargetRequest'}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/NutritionTarget'}}}}
+        '200': {description: Replaced or unchanged, content: {application/json: {schema: {$ref: '#/components/schemas/NutritionTarget'}}}}
+        '404': {description: No training profile for the athlete}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+components:
+  schemas:
+    SaveNutritionDayRequest:
+      type: object
+      required: [operation_key]
+      properties:
+        energy_kcal: {type: integer, minimum: 0, maximum: 20000, nullable: true}
+        protein_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1, nullable: true}
+        carbs_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1, nullable: true}
+        fat_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1, nullable: true}
+        source: {type: string, enum: [manual, apple_health], default: manual}
+        expected_revision: {type: integer, minimum: 0, description: Required for manual saves; ignored for apple_health}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    NutritionDay:
+      type: object
+      required: [id, date, source, revision, logged_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        date: {type: string, format: date}
+        energy_kcal: {type: integer}
+        protein_g: {type: number}
+        carbs_g: {type: number}
+        fat_g: {type: number}
+        source: {type: string, enum: [manual, apple_health]}
+        revision: {type: integer, minimum: 1}
+        logged_at: {type: string, format: date-time}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    SaveNutritionTargetRequest:
+      type: object
+      required: [protein_g, expected_revision, operation_key]
+      properties:
+        effective_from: {type: string, format: date, description: Defaults to local today; future is 422}
+        protein_g: {type: number, exclusiveMinimum: 0, maximum: 2000, multipleOf: 0.1}
+        energy_kcal: {type: integer, minimum: 1, maximum: 20000, nullable: true}
+        carbs_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1, nullable: true}
+        fat_g: {type: number, minimum: 0, maximum: 2000, multipleOf: 0.1, nullable: true}
+        expected_revision: {type: integer, minimum: 0}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    NutritionTarget:
+      type: object
+      required: [id, effective_from, protein_g, energy_kcal, carbs_g, fat_g, revision, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        effective_from: {type: string, format: date}
+        protein_g: {type: number}
+        energy_kcal: {type: integer, nullable: true}
+        carbs_g: {type: number, nullable: true}
+        fat_g: {type: number, nullable: true}
+        revision: {type: integer, minimum: 1}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    Error:
+      type: object
+      required: [error, code]
+      properties:
+        error: {type: string}
+        code: {type: string, enum: [VALIDATION_ERROR, NOT_FOUND, IDEMPOTENCY_CONFLICT, REVISION_CONFLICT]}
+        details: {type: object, nullable: true}
+        resource: {description: The stored day or current target on REVISION_CONFLICT}
+  responses:
+    ValidationError:
+      description: details.field names the offending field (date, energy_kcal, protein_g, carbs_g, fat_g, source, expected_revision, operation_key, effective_from, from, to, range)
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ConflictError:
+      description: Reused operation_key with a different payload, or a stale expected_revision
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}

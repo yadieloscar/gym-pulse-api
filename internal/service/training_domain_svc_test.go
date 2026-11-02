@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -262,5 +263,111 @@ func TestProgramServiceAdoptsLegacyPlanThroughAtomicMutation(t *testing.T) {
 	}
 	if _, err := svc.AdoptLegacy(context.Background(), userID, model.AdoptLegacyProgramRequest{}); err == nil {
 		t.Fatal("adoption without an operation key was accepted")
+	}
+}
+
+func TestValidateProgramShapeSportUnits(t *testing.T) {
+	distance := 40000
+	sportUnit := func(mutate func(*model.ProgramWorkout)) []model.ProgramWorkout {
+		unit := model.ProgramWorkout{Kind: model.UnitKindSport, Name: "Long ride", SequencePosition: 1, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance}}
+		mutate(&unit)
+		return []model.ProgramWorkout{unit}
+	}
+	exercise := model.ProgramExercise{Name: "Back Squat", Category: "legs", Modality: "strength", ExerciseOrder: 1, TargetSets: 3}
+	longNotes := strings.Repeat("n", 2001)
+	bad := 0
+	huge := 1000001
+	cases := []struct {
+		name     string
+		workouts []model.ProgramWorkout
+		wantErr  bool
+	}{
+		{name: "sport unit accepted", workouts: sportUnit(func(*model.ProgramWorkout) {})},
+		{name: "kind omitted defaults to exercises", workouts: []model.ProgramWorkout{{Name: "A", SequencePosition: 1, Exercises: []model.ProgramExercise{exercise}}}},
+		{name: "exercises unit without exercises", workouts: []model.ProgramWorkout{{Kind: model.UnitKindExercises, Name: "A", SequencePosition: 1}}, wantErr: true},
+		{name: "exercises unit with sport target", workouts: []model.ProgramWorkout{{Name: "A", SequencePosition: 1, Exercises: []model.ProgramExercise{exercise}, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 1}}}, wantErr: true},
+		{name: "sport unit with exercises", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Exercises = []model.ProgramExercise{exercise} }), wantErr: true},
+		{name: "sport unit without target", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport = nil }), wantErr: true},
+		{name: "unknown kind", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Kind = "rest" }), wantErr: true},
+		{name: "bad slug", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.SportID = "Road Cycling" }), wantErr: true},
+		{name: "empty name", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.SportName = "  " }), wantErr: true},
+		{name: "other needs custom name", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.SportID, w.Sport.SportName = "other", "Other" }), wantErr: true},
+		{name: "duration zero", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.TargetDurationMinutes = 0 }), wantErr: true},
+		{name: "duration 1441", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.TargetDurationMinutes = 1441 }), wantErr: true},
+		{name: "distance zero", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.TargetDistanceMeters = &bad }), wantErr: true},
+		{name: "distance too far", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.TargetDistanceMeters = &huge }), wantErr: true},
+		{name: "distance on volleyball", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.SportID, w.Sport.SportName = "volleyball", "Volleyball" }), wantErr: true},
+		{name: "volleyball without distance", workouts: sportUnit(func(w *model.ProgramWorkout) {
+			w.Sport.SportID, w.Sport.SportName, w.Sport.TargetDistanceMeters = "volleyball", "Volleyball", nil
+		})},
+		{name: "notes too long", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.Notes = &longNotes }), wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateProgramShape(model.GoalStrength, tc.workouts)
+			if tc.wantErr {
+				var ve *model.ValidationError
+				if !errors.As(err, &ve) || ve.Field != "workouts" {
+					t.Fatalf("want validation error on workouts, got %v", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if tc.workouts[0].Kind == "" {
+				t.Fatal("kind must be normalized in place")
+			}
+		})
+	}
+	blank := "   "
+	trimmed := sportUnit(func(w *model.ProgramWorkout) {
+		w.Sport.SportID, w.Sport.SportName, w.Sport.Notes = " cycling ", " Cycling ", &blank
+	})
+	if err := validateProgramShape(model.GoalStrength, trimmed); err != nil {
+		t.Fatal(err)
+	}
+	if trimmed[0].Sport.SportID != "cycling" || trimmed[0].Sport.SportName != "Cycling" || trimmed[0].Sport.Notes != nil || trimmed[0].Exercises == nil {
+		t.Fatalf("sport target must be trimmed and exercises non-nil: %+v", trimmed[0])
+	}
+}
+
+func TestMaterializeSportUnitSnapshotsTargetWithoutSets(t *testing.T) {
+	distance := 40000
+	note := "Easy pace"
+	program := &model.Program{
+		ID: uuid.New(), Name: "Mixed", PrimaryGoal: model.GoalStrength,
+		Workouts: []model.ProgramWorkout{
+			{ID: uuid.New(), Name: "Full Body", SequencePosition: 1, Exercises: []model.ProgramExercise{{ID: uuid.New(), Name: "Back Squat", Category: "legs", Modality: "strength", ExerciseOrder: 1, TargetSets: 2}}},
+			{ID: uuid.New(), Kind: model.UnitKindSport, Name: "Long ride", SequencePosition: 2, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance, Notes: &note}},
+		},
+	}
+	workouts, err := model.MaterializeProgramForWeekdays(program, []int{1, 3}, "2026-10-26", "2026-11-01")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(workouts) != 2 {
+		t.Fatalf("want 2 scheduled units, got %d", len(workouts))
+	}
+	gym, ride := workouts[0], workouts[1]
+	if gym.Kind != model.UnitKindExercises || gym.Sport != nil || len(gym.RequiredSets) != 2 {
+		t.Fatalf("exercise unit changed: %+v", gym)
+	}
+	if ride.Kind != model.UnitKindSport || ride.Status != model.WorkoutStatusPlanned || len(ride.RequiredSets) != 0 || ride.Sport == nil {
+		t.Fatalf("sport unit not materialized as a planned session: %+v", ride)
+	}
+	if ride.Sport.SportID != "cycling" || ride.Sport.TargetDurationMinutes != 90 || *ride.Sport.TargetDistanceMeters != 40000 || *ride.Sport.Notes != "Easy pace" || ride.Sport.SportActivityID != nil {
+		t.Fatalf("sport snapshot wrong: %+v", ride.Sport)
+	}
+	if ride.ProgramWorkoutID == nil || *ride.ProgramWorkoutID != program.Workouts[1].ID || ride.Date != "2026-10-28" {
+		t.Fatalf("provenance or date wrong: %+v", ride)
+	}
+	program.Workouts[1].Sport.SportName = "Renamed"
+	*program.Workouts[1].Sport.TargetDistanceMeters = 1
+	if ride.Sport.SportName != "Cycling" || *ride.Sport.TargetDistanceMeters != 40000 {
+		t.Fatal("scheduled sport snapshot must not alias the program target")
+	}
+	if err := ride.Validate(); err != nil {
+		t.Fatal(err)
 	}
 }

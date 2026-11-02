@@ -119,6 +119,17 @@ found no critical or high defects; every DAO query on a user-owned table is scop
   required; the server then serves `/health` and `/ready`, and keeps serving with a repair warning
   when the schema is dirty at 27.
 
+### Merge with main — 2026-11-02
+
+- [x] Keep main's food-logging and program-generation config alongside `MigrateOnStart`;
+  `.railway/railway.ts` preserves the new `ANTHROPIC_API_KEY` and `USDA_FDC_API_KEY` secrets and the
+  runbook lists them.
+- Evidence: lint 0 issues; `go test -race ./...` passes; coverage service 90.1%, middleware 91.3%,
+  handler 90.8%, router 100%, config 99.3%; database-design gate (38 tables), Swagger drift, and
+  actionlint clean; integration `./internal/dao ./internal/migration` pass. CI layout as
+  `gym_pulse_api`: `smoke.sh` 28/28 and `validate-supabase-security.sh` pass. `ENVIRONMENT=staging`
+  with TLS: server exits ("want 31"), `./migrate` reaches 31, server serves `/health` and `/ready`.
+
 ## Phase 1: Convergence
 
 - [x] T001 CRITICAL: take `context.Context` first in `migration.Up` (connection via `postgres.WithConnection`, graceful stop between migrations on cancel) and cancel `cmd/migrate` on SIGINT/SIGTERM per Constitution V (contradicts)

@@ -93,8 +93,18 @@ func TestReleaseMigration020BackfillsOnlyRecoveredSources(t *testing.T) {
 	reps := 8
 	program.Workouts = append(program.Workouts, model.ProgramWorkout{Name: "B", SequencePosition: 2,
 		Exercises: []model.ProgramExercise{{Name: "Bench", Category: "push", Modality: "strength", ExerciseOrder: 1, TargetSets: 1, TargetReps: &reps}}})
-	if err := (&programDAO{pool: pool}).Create(ctx, userID, program); err != nil {
+	// The schema is at version 19 here, before the program unit kind columns,
+	// so the fixture program is inserted with the columns of that era rather
+	// than through the current DAO.
+	if err := pool.QueryRow(ctx, `INSERT INTO programs (user_id, name, primary_goal, roadmap, active)
+		VALUES ($1,$2,$3,'{}'::jsonb,true) RETURNING id`, userID, program.Name, program.PrimaryGoal).Scan(&program.ID); err != nil {
 		t.Fatal(err)
+	}
+	for i := range program.Workouts {
+		if err := pool.QueryRow(ctx, `INSERT INTO program_workouts (program_id, name, sequence_position)
+			VALUES ($1,$2,$3) RETURNING id`, program.ID, program.Workouts[i].Name, program.Workouts[i].SequencePosition).Scan(&program.Workouts[i].ID); err != nil {
+			t.Fatal(err)
+		}
 	}
 	workoutA, workoutB := program.Workouts[0].ID, program.Workouts[1].ID
 

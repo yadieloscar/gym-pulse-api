@@ -58,13 +58,44 @@ func NewScheduleDAO(pool *pgxpool.Pool) ScheduleDAO {
 	return &scheduleDAO{pool: pool}
 }
 
+// scheduledWorkoutColumns reads a scheduled unit with its sport snapshot and,
+// for a sport session, the activity that completed it. Queries alias the
+// table as sw and append scheduledWorkoutJoin.
+const scheduledWorkoutColumns = `sw.id, sw.program_id, sw.program_workout_id, to_char(sw.date, 'YYYY-MM-DD'),
+		       sw.name, sw.sequence_position, sw.status, sw.finalized_at, sw.resolution, sw.resolved_at, sw.revision, sw.created_at, sw.updated_at,
+		       sw.kind, sw.sport_id, sw.sport_name, sw.target_duration_minutes, sw.target_distance_meters, sw.sport_notes,
+		       sa.id, to_char(sa.date, 'YYYY-MM-DD')`
+
+const scheduledWorkoutJoin = `LEFT JOIN sport_activities sa ON sa.scheduled_workout_id = sw.id`
+
+// scanScheduledWorkout scans scheduledWorkoutColumns into w.
+func scanScheduledWorkout(row rowScanner, w *model.ScheduledWorkout) error {
+	var (
+		sport      scannedSport
+		activityID *uuid.UUID
+		performed  *string
+	)
+	if err := row.Scan(&w.ID, &w.ProgramID, &w.ProgramWorkoutID, &w.Date,
+		&w.Name, &w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Resolution, &w.ResolvedAt, &w.Revision,
+		&w.CreatedAt, &w.UpdatedAt,
+		&w.Kind, &sport.ID, &sport.Name, &sport.DurationMinutes, &sport.DistanceMeters, &sport.Notes,
+		&activityID, &performed); err != nil {
+		return err
+	}
+	w.Kind = model.NormalizeUnitKind(w.Kind)
+	if target := sport.target(); target != nil && w.Kind == model.UnitKindSport {
+		w.Sport = &model.ScheduledSport{SportTarget: *target, SportActivityID: activityID, PerformedDate: performed}
+	}
+	return nil
+}
+
 func (r *scheduleDAO) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.ScheduledWorkout, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
-		FROM scheduled_workouts
-		WHERE user_id=$1 AND date BETWEEN $2 AND $3
-		ORDER BY date, created_at`, userID, from, to)
+		SELECT `+scheduledWorkoutColumns+`
+		FROM scheduled_workouts sw
+		`+scheduledWorkoutJoin+`
+		WHERE sw.user_id=$1 AND sw.date BETWEEN $2 AND $3
+		ORDER BY sw.date, sw.created_at`, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("querying scheduled workouts: %w", err)
 	}
@@ -73,9 +104,7 @@ func (r *scheduleDAO) List(ctx context.Context, userID uuid.UUID, from, to strin
 	workouts := []model.ScheduledWorkout{}
 	for rows.Next() {
 		var w model.ScheduledWorkout
-		if err := rows.Scan(&w.ID, &w.ProgramID, &w.ProgramWorkoutID, &w.Date,
-			&w.Name, &w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Resolution, &w.ResolvedAt, &w.Revision,
-			&w.CreatedAt, &w.UpdatedAt); err != nil {
+		if err := scanScheduledWorkout(rows, &w); err != nil {
 			return nil, fmt.Errorf("scanning scheduled workout: %w", err)
 		}
 		workouts = append(workouts, w)
@@ -165,14 +194,11 @@ func (r *scheduleDAO) loadListSets(ctx context.Context, userID uuid.UUID, workou
 
 func (r *scheduleDAO) Get(ctx context.Context, userID, workoutID uuid.UUID) (*model.ScheduledWorkout, error) {
 	w := &model.ScheduledWorkout{}
-	err := r.pool.QueryRow(ctx, `
-		SELECT id, program_id, program_workout_id, to_char(date, 'YYYY-MM-DD'),
-		       name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at
-		FROM scheduled_workouts WHERE id=$1 AND user_id=$2`, workoutID, userID).Scan(
-		&w.ID, &w.ProgramID, &w.ProgramWorkoutID, &w.Date, &w.Name,
-		&w.SequencePosition, &w.Status, &w.FinalizedAt, &w.Resolution, &w.ResolvedAt, &w.Revision,
-		&w.CreatedAt, &w.UpdatedAt,
-	)
+	err := scanScheduledWorkout(r.pool.QueryRow(ctx, `
+		SELECT `+scheduledWorkoutColumns+`
+		FROM scheduled_workouts sw
+		`+scheduledWorkoutJoin+`
+		WHERE sw.id=$1 AND sw.user_id=$2`, workoutID, userID), w)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "scheduled workout not found"}
 	}
@@ -324,11 +350,18 @@ func (r *scheduleDAO) Create(ctx context.Context, userID uuid.UUID, workouts []m
 func insertScheduledWorkouts(ctx context.Context, tx pgx.Tx, userID uuid.UUID, workouts []model.ScheduledWorkout) error {
 	for i := range workouts {
 		w := &workouts[i]
+		w.Kind = model.NormalizeUnitKind(w.Kind)
+		var sport scannedSport
+		if w.Sport != nil {
+			sport = sportColumns(&w.Sport.SportTarget)
+		}
 		err := tx.QueryRow(ctx, `
-			INSERT INTO scheduled_workouts (user_id, program_id, program_workout_id, date, name, sequence_position, status, finalized_at)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+			INSERT INTO scheduled_workouts (user_id, program_id, program_workout_id, date, name, sequence_position, status, finalized_at,
+				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 			RETURNING id, revision, created_at, updated_at`, userID, w.ProgramID, w.ProgramWorkoutID,
-			w.Date, w.Name, w.SequencePosition, w.Status, w.FinalizedAt).Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
+			w.Date, w.Name, w.SequencePosition, w.Status, w.FinalizedAt,
+			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes).Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
 		if err != nil {
 			return fmt.Errorf("inserting scheduled workout: %w", err)
 		}
@@ -448,7 +481,7 @@ func (r *scheduleDAO) RecoverIdempotent(ctx context.Context, userID uuid.UUID, d
 		return &replay, true, nil
 	}
 	var source model.ScheduledWorkout
-	err = tx.QueryRow(ctx, `SELECT id, program_id, program_workout_id, to_char(date,'YYYY-MM-DD'), name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at FROM scheduled_workouts WHERE user_id=$1 AND date <= $2 AND status='missed' AND resolution IS NULL ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE`, userID, date).Scan(&source.ID, &source.ProgramID, &source.ProgramWorkoutID, &source.Date, &source.Name, &source.SequencePosition, &source.Status, &source.FinalizedAt, &source.Resolution, &source.ResolvedAt, &source.Revision, &source.CreatedAt, &source.UpdatedAt)
+	err = tx.QueryRow(ctx, `SELECT id, program_id, program_workout_id, to_char(date,'YYYY-MM-DD'), name, sequence_position, status, finalized_at, resolution, resolved_at, revision, created_at, updated_at FROM scheduled_workouts WHERE user_id=$1 AND date <= $2 AND status='missed' AND resolution IS NULL AND kind='exercises' ORDER BY sequence_position NULLS LAST, date LIMIT 1 FOR UPDATE`, userID, date).Scan(&source.ID, &source.ProgramID, &source.ProgramWorkoutID, &source.Date, &source.Name, &source.SequencePosition, &source.Status, &source.FinalizedAt, &source.Resolution, &source.ResolvedAt, &source.Revision, &source.CreatedAt, &source.UpdatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, false, &model.NotFoundError{Message: "no missed workout to recover"}
 	}

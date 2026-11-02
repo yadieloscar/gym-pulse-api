@@ -19,9 +19,19 @@
   legacy HMAC with `SUPABASE_JWT_SECRET`.
 - Production accepts only expiring `RS256` RSA or `ES256` P-256 tokens whose
   JWKS algorithm exactly matches the token, and `sub` must be a UUID.
+- `exp`, `nbf`, and `iat` are checked with 30 seconds of clock-skew leeway so a
+  device or host a few seconds off does not get a spurious `401`.
 - After signature and claim validation, every `/api/v1/*` request verifies
   that the JWT subject still exists in `auth.users`. A deleted identity is
   rejected even while its previously issued access token remains unexpired.
+- Every authentication failure is
+  `401 { "error": "<message>", "code": "AUTHENTICATION_REQUIRED" }` with a
+  `WWW-Authenticate` challenge (RFC 6750): `Bearer realm="gym-pulse"` when no
+  bearer token was presented, and
+  `Bearer realm="gym-pulse", error="invalid_token"` when one was presented but
+  failed validation or its subject no longer exists. Clients branch on `code`
+  and the challenge, never on the message text. A transient identity-check
+  failure is `503 AUTHENTICATION_UNAVAILABLE` and must not sign the user out.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
 - Browser preflight accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and
   `OPTIONS`, including `Authorization`, `Content-Type`, and `Idempotency-Key`.
@@ -172,7 +182,19 @@ A skip or unskip that does not apply to the workout's current outcome returns:
   "resource": { "id": "<uuid>", "revision": 5 }
 }
 ```
-All three conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
+A sport activity recorded against a scheduled sport session that is already
+completed returns:
+```json
+{
+  "error": "sport session is already completed",
+  "code": "SPORT_SESSION_CONFLICT",
+  "details": { "status": "completed" },
+  "resource": { "id": "<uuid>", "kind": "sport", "status": "completed", "revision": 2 }
+}
+```
+Link and unlink add `details.reason` (`activity_linked`, `session_completed`,
+`not_linked`).
+All four conflicts are HTTP 409. Standard errors are `401 AUTHENTICATION_REQUIRED`,
 `404 NOT_FOUND`, and `422 VALIDATION_ERROR`; all have the top-level
 `{"error":"string","code":"CODE","details":{}}` shape.
 
@@ -273,7 +295,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
   "starter_version": 2, "name": "My Strength Plan", "primary_goal": "strength",
   "roadmap": {}, "active": true, "revision": 1,
   "workouts": [{
-    "id": "<uuid>", "name": "Full Body A", "preferred_weekday": 1,
+    "id": "<uuid>", "kind": "exercises", "name": "Full Body A", "preferred_weekday": 1,
     "sequence_position": 1,
     "exercises": [{
       "id": "<uuid>", "catalog_id": "<uuid|null>",
@@ -282,10 +304,29 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
       "target_sets": 3, "target_reps": 5, "target_weight": null,
       "target_duration_seconds": null, "rest_seconds": 180, "notes": null
     }]
+  }, {
+    "id": "<uuid>", "kind": "sport", "name": "Long ride", "preferred_weekday": 6,
+    "sequence_position": 2,
+    "sport": {
+      "sport_id": "cycling", "sport_name": "Cycling",
+      "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null
+    },
+    "exercises": []
   }],
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
+Planned sport sessions (contract 1.2.0): every program unit carries `kind`,
+`exercises` (the default when omitted on write) or `sport`. An `exercises`
+unit has at least one exercise and no `sport`. A `sport` unit has a `sport`
+target and no exercises: `sport_id` is a lowercase slug of at most 64
+characters, `sport_name` is trimmed and 1–80 characters (`other` requires a
+custom name), `target_duration_minutes` is 1–1,440, optional
+`target_distance_meters` is 1–1,000,000 and allowed only for `cycling`,
+`running`, `swimming`, and `other`, and optional `notes` is trimmed and at most
+2,000 characters. Violations return `422 VALIDATION_ERROR` with
+`details.field = "workouts"`. Starter programs, `from-starter`, and
+`adopt-legacy` produce `exercises` units only.
 
 #### `GET /api/v1/programs/{id}`
 
@@ -337,6 +378,116 @@ corrected workouts therefore reflect their current revisions. Each operation's
 subsequent same-key retries still return its own exact committed response,
 including when those resources have changed again.
 
+### Program generation
+
+GymPulse can build one unsaved program draft from the saved training profile.
+Generation is read-only with respect to programs, schedules, and the profile:
+nothing is stored except a per-athlete daily count, and the draft exists only
+in the response. The athlete reviews it in the app and saves it, unchanged,
+through `POST /api/v1/programs`. The feature is off when the API has no
+provider key; the app hides its entry points when `enabled` is false.
+
+#### `GET /api/v1/program-generation`
+
+Response 200:
+```json
+{ "enabled": true, "limit": 5, "remaining_today": 4, "resets_at": "<RFC3339|null>" }
+```
+`remaining_today` counts succeeded and in-progress drafts in the athlete's
+current local day (saved training-profile timezone) against `limit`; `resets_at` is the next
+local midnight. Without a training profile `remaining_today` equals `limit`
+and `resets_at` is `null`.
+
+#### `POST /api/v1/program-generation`
+
+Optional body:
+```json
+{
+  "request": "no deadlifts",
+  "secondary_goals": ["conditioning"],
+  "proposed_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "intermediate",
+    "equipment": ["barbell"], "session_duration_minutes": 60,
+    "timezone": "America/New_York", "preferences": {}
+  }
+}
+```
+`request` is one optional steer, trimmed, 1..200 characters; a blank or longer
+value returns `422 VALIDATION_ERROR` with `details.field = "request"`.
+`secondary_goals` is optional: up to two valid training goals other than the
+primary (duplicates collapse; the primary itself, an unknown goal, or a third
+goal returns `422 VALIDATION_ERROR` with `details.field = "secondary_goals"`).
+The primary goal sets the draft's structure; a secondary goal steers at most
+about a third of it. `proposed_profile` is optional and uses the plan-transition preview shape; when
+present it replaces the saved profile for this request only (onboarding builds a
+draft before the profile is saved), is validated like `PUT /training-profile`,
+and is never stored. The body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
+draft is not deterministic. It is rate limited to 5 requests per minute per
+athlete (`429 RATE_LIMITED`).
+
+Response 200:
+```json
+{
+  "draft": {
+    "name": "Three-day upper lower", "primary_goal": "hypertrophy",
+    "roadmap": { "origin": "generated", "model": "claude-opus-5-5", "request": null },
+    "workouts": [{
+      "kind": "exercises", "name": "Upper A", "preferred_weekday": 1, "sequence_position": 1,
+      "exercises": [{
+        "catalog_id": "<uuid>", "name": "Barbell Bench Press", "category": "push",
+        "modality": "strength", "exercise_order": 1, "target_sets": 4, "target_reps": 8,
+        "target_weight": null, "target_duration_seconds": null, "rest_seconds": 120, "notes": null
+      }]
+    }]
+  },
+  "rationale": "string, at most 500 characters",
+  "request": "no deadlifts|null",
+  "secondary_goals": ["conditioning"],
+  "remaining_today": 3,
+  "resets_at": "<RFC3339>"
+}
+```
+`draft` is the `POST /api/v1/programs` body without `operation_key` and
+without server ids. Every draft the API returns satisfies: 1 to
+`min(available_days, 6)` workouts, each `kind: exercises` with 3 to 8
+exercises; every `catalog_id` resolves to an exercise-catalog entry and is
+unique within its workout, with `name`, `category`, and `modality` copied from
+the catalog; strength exercises carry `target_reps` (1..50) and a null
+duration, cardio exercises carry `target_duration_seconds` (30..3600) and null
+reps; `target_sets` 1..10; `rest_seconds` 0..600; `target_weight` always null;
+`primary_goal` equals the profile's; `name` 1..80 characters; `preferred_weekday`
+is assigned from the profile's sorted available days. A generated answer that
+cannot be repaired into that shape is never returned.
+
+Errors:
+
+- `422 VALIDATION_ERROR` with `details.field = "training_profile"` when no
+  profile is saved and none is proposed, or `details.field =
+  "proposed_profile.<field>"` when the proposed profile is invalid; no provider
+  call is made.
+- `429 GENERATION_LIMIT_REACHED` when the athlete already received `limit`
+  drafts in the current local day:
+  ```json
+  { "error": "daily program generation limit reached", "code": "GENERATION_LIMIT_REACHED",
+    "details": { "limit": 5, "resets_at": "<RFC3339>" } }
+  ```
+  No provider call is made.
+- `503 GENERATION_UNAVAILABLE` with `details.reason` `"disabled"` (no provider
+  key configured) or `"unavailable"` (provider error, timeout after 45 seconds,
+  refusal, or a draft that failed validation):
+  ```json
+  { "error": "program generation is unavailable", "code": "GENERATION_UNAVAILABLE",
+    "details": { "reason": "unavailable" } }
+  ```
+  The attempt does not count toward the daily limit and nothing is stored.
+
+Only the training-profile fields (`primary_goal`, `available_days`,
+`usual_activity`, `experience`, `equipment`, `session_duration_minutes`), the
+exercise catalog, and `request` are sent to the provider. The athlete's
+identity, timezone, history, body metrics, nutrition, and health data never
+leave the API.
+
 ### Schedule and scheduled workouts
 
 #### `GET /api/v1/schedule?from=YYYY-MM-DD&to=YYYY-MM-DD`
@@ -349,9 +500,15 @@ Response 200:
 `ScheduledWorkout` is:
 ```json
 {
-  "id": "<uuid>", "program_id": "<uuid|null>",
+  "id": "<uuid>", "kind": "exercises|sport", "program_id": "<uuid|null>",
   "program_workout_id": "<uuid|null>", "date": "2026-07-20",
   "name": "Full Body A", "sequence_position": 1,
+  "sport": {
+    "sport_id": "cycling", "sport_name": "Cycling",
+    "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null,
+    "sport_activity_id": "<uuid> (present once completed)",
+    "performed_date": "2026-07-20 (present once completed)"
+  },
   "status": "planned|in_progress|completed|incomplete|missed",
   "finalized_at": "<RFC3339|null>",
   "resolution": "skipped|recovered (omitted when unresolved)",
@@ -372,6 +529,18 @@ Response 200:
 ```
 Exercise name/category/modality and targets are immutable snapshots. Nullable
 program/catalog IDs are provenance only and deletion never erases history.
+`sport` is present only when `kind` is `sport` (contract 1.2.0). A scheduled
+sport session snapshots its sport target at generation, has empty
+`required_sets`, and only ever holds `planned`, `completed`, or `missed`. It
+becomes `completed` when a sport activity is recorded against it (see "Sport
+activities"), and `sport.sport_activity_id` and `sport.performed_date` then
+name that activity and its date. Materialize, regenerate, plan transitions,
+skip, and unskip treat sport sessions exactly like workouts. `complete`, set
+check, target edit, extra set, and a `PATCH` carrying non-empty
+`required_sets` answer `422 VALIDATION_ERROR` with `details.field = "kind"` on
+a sport session; a `PATCH` with only `name` is accepted. `schedule/recover`
+selects exercise workouts only, and health exports never apply to sport
+sessions.
 `resolution` records how the athlete resolved a missed workout: `skipped`
 (undoable) or `recovered` (a copy was planned through recover). It is
 meaningful only when `status` is `missed`; clients treat a missed workout as
@@ -678,20 +847,77 @@ is 1–1,000,000, `energy_kcal` is 1–20,000, and `avg_heart_rate_bpm` is 30–
 each is optional and stored only when supplied. Zero is rejected. Measurements
 are display facts and never feed records, volume, or distribution.
 
+Planned sport sessions (contract 1.2.0) add optional `scheduled_workout_id`.
+When present it must name an owned scheduled sport session (a missing or
+foreign id is the shared 404; an exercise workout is `422` on
+`scheduled_workout_id`) for the same `sport_id` (`422` on `sport_id`) that is
+not yet completed (`409 SPORT_SESSION_CONFLICT` with the authoritative session
+as `resource`). The session may be `planned` or `missed`; the activity `date`
+is the performed date and may differ from the scheduled date. In one
+transaction the activity is created with the link, the session becomes
+`completed` with any skip cleared and its revision incremented, and
+participation is credited to the activity date. The scheduled date's
+participation row is left as finalization wrote it. An imported activity
+(`source` not `manual`) sent without `scheduled_workout_id` fulfils the
+open session for the same sport and date whose `target_duration_minutes` is
+closest to the activity's duration, then the lowest `sequence_position`; a
+session planned for more than three times the activity's duration is skipped
+(contract 1.3.0). A manual activity never links on its own. An import
+duplicate (same `source` and `external_id`) returns 200 and never links.
+GymPulse never changes a link on its own after it is made; the athlete changes
+it with link and unlink below.
+
+Contract 1.3.0 adds optional `perceived_effort`, a whole number from 1 (very
+easy) to 10 (maximal) given after the session; it is returned when set and
+never feeds records, volume, distribution, or participation. Out-of-range values
+return `422` on `perceived_effort`.
+
+#### `POST /api/v1/sport-activities/{id}/link` (contract 1.3.0)
+
+```json
+{ "scheduled_workout_id": "<uuid>", "expected_revision": 2, "operation_key": "link-123" }
+```
+
+Requires `Idempotency-Key` equal to `operation_key`; `expected_revision` is the
+session's. Links an owned unlinked activity to an owned open (`planned` or
+`missed`) sport session of the same sport and completes the session exactly as
+recording against it would, without crediting participation again. Response
+200 is `{ "sport_activity": SportActivity, "scheduled_workout": ScheduledWorkout }`.
+A missing or foreign activity or session returns the shared 404; an exercise
+workout returns `422` on `kind`; a different sport returns `422` on `sport_id`;
+a stale revision returns `409 REVISION_CONFLICT`; an already linked activity or
+a completed session returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason` `activity_linked` or `session_completed` and the session as
+`resource`. A verbatim retry replays the stored response.
+
+#### `POST /api/v1/sport-activities/{id}/unlink` (contract 1.3.0)
+
+```json
+{ "expected_revision": 3, "operation_key": "unlink-123" }
+```
+
+`expected_revision` is the linked session's. Clears the link. The session
+returns to `planned` with `finalized_at` cleared (omitted) when its date is today or later
+in the athlete's timezone, otherwise to `missed` (still finalized, any skip
+cleared), and that scheduled date counts as a missed opportunity. The activity
+and its own date's participation are unchanged. Response 200 is the same pair.
+An unlinked activity returns `409 SPORT_SESSION_CONFLICT` with
+`details.reason: "not_linked"`; a stale revision returns `409 REVISION_CONFLICT`.
+
 Response 201 is the authoritative activity. `source` is always present;
-`external_id` and measurements appear only when set:
+`external_id`, measurements, and `scheduled_workout_id` appear only when set:
 
 ```json
 {
   "id": "<uuid>", "date": "2026-08-02",
   "sport_id": "basketball", "sport_name": "Basketball",
   "duration_minutes": 60, "notes": "Pickup game",
-  "source": "manual",
+  "source": "manual", "scheduled_workout_id": "<uuid> (when linked)",
   "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
 
-Creation and date participation commit atomically. An identical idempotent retry
+Creation, any session completion, and date participation commit atomically. An identical idempotent retry
 returns the original activity with 201; a changed payload returns 409
 `IDEMPOTENCY_CONFLICT`. When an imported workout's `source` and `external_id`
 already exist for the athlete, the existing activity is returned with 200 and
@@ -1060,6 +1286,292 @@ Validator: `weight gt=0`, `unit oneof=lb kg`.
 ### `DELETE /api/v1/body/weight/{id}` → 204.
 
 ---
+
+## Nutrition
+
+Nutrition is the athlete's own daily totals and the daily target they chose.
+GymPulse stores totals only: no food, meal, or portion data, and it never
+computes or changes a target. All dates are the athlete's local calendar dates
+in their saved training-profile timezone; the two `PUT` routes and `GET
+/api/v1/nutrition/target` return the shared `404 NOT_FOUND` for an athlete
+with no training profile, while the range read does not need one. Both mutations require
+`Idempotency-Key` equal to `operation_key`; an identical retry replays the
+original status and body, and a changed payload returns `409
+IDEMPOTENCY_CONFLICT`. Energy is whole kilocalories (0–20,000); macros are
+grams with at most one decimal (0–2,000). Validation failures are `422` with
+`details.field` naming the offending field.
+
+### `PUT /api/v1/nutrition/days/{date}`
+
+Saves, replaces, or removes the athlete's totals for one date. `date` is
+`YYYY-MM-DD` and may not be after the athlete's local today.
+
+```json
+{
+  "energy_kcal": 2150,
+  "protein_g": 162.5,
+  "carbs_g": 230,
+  "fat_g": 70,
+  "source": "manual",
+  "expected_revision": 0,
+  "operation_key": "nutrition-day:2026-10-25:<uuid>"
+}
+```
+
+Every value is optional. `source` is `manual` (default when omitted) or
+`apple_health`. A stored day may also carry `source: "foods"`, meaning its
+totals are the sum of its food entries (see "Food logging"); clients never send
+that value.
+
+An **athlete save** (`manual`) carries `expected_revision`: `0` when no entry
+exists for the date, otherwise the stored revision. A stale value returns `409
+REVISION_CONFLICT` with the stored day under `resource` (`actual_revision` is
+`0` when the day no longer exists). A save over an `apple_health` day converts
+it to `manual`. A save with all four values absent removes the day and returns
+`204`; with no day to remove it also returns `204` and writes nothing. Removal
+carries `expected_revision` like any athlete save.
+
+A **Health save** (`apple_health`) carries no `expected_revision` (one that is
+sent is ignored) and must carry at least one value. It creates the day or
+replaces an existing `apple_health` day. Over a `manual` or `foods` day it
+returns the stored day unchanged with `200` and writes nothing: the athlete's
+entry wins.
+
+A **typed save or remove on a `foods` day** is refused with `409
+DAY_HAS_FOOD_ENTRIES` and the stored day under `resource`; change or remove the
+entries instead (`POST /days/{date}/entries` with `quick_add` adds typed totals
+beside them).
+
+Response `201` on create, `200` on replace or on an ignored Health save:
+
+```json
+{
+  "id": "<uuid>", "date": "2026-10-25",
+  "energy_kcal": 2150, "protein_g": 162.5, "carbs_g": 230, "fat_g": 70,
+  "source": "manual", "revision": 1,
+  "logged_at": "<RFC3339>", "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+Absent values are omitted from the response. Saving never changes body weight,
+participation, workouts, records, or volume.
+
+### `GET /api/v1/nutrition/days?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response `200`: `{ "days": [NutritionDay], "targets": [NutritionTarget] }`.
+`days` holds the owned days inside the inclusive range (at most 366 days),
+oldest first. `targets` holds the target in effect on `from` (the latest
+`effective_from` on or before it, if any) plus every target whose
+`effective_from` falls inside the range, oldest first, so a client resolves each
+day's target as the latest `effective_from` on or before that day. Both are
+`[]` when empty.
+
+### `GET /api/v1/nutrition/target`
+
+Response `200` is the target in effect on the athlete's local today. No saved
+target returns the shared `404 NOT_FOUND`.
+
+```json
+{
+  "id": "<uuid>", "effective_from": "2026-10-25",
+  "protein_g": 150, "energy_kcal": null, "carbs_g": null, "fat_g": null,
+  "revision": 1, "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+Optional target values are always present and `null` when unset.
+
+### `PUT /api/v1/nutrition/target`
+
+```json
+{
+  "effective_from": "2026-10-25",
+  "protein_g": 150,
+  "energy_kcal": 2200,
+  "carbs_g": null,
+  "fat_g": null,
+  "expected_revision": 0,
+  "operation_key": "nutrition-target:<uuid>"
+}
+```
+
+`protein_g` is required and greater than zero; `energy_kcal` (1–20,000),
+`carbs_g`, and `fat_g` are optional. `effective_from` defaults to the athlete's
+local today and may not be in the future. `expected_revision` is the current
+target's revision, `0` when none exists; a stale value returns `409
+REVISION_CONFLICT` with the current target under `resource`. Saving for an
+`effective_from` that already has a target replaces that row; a different date
+adds one and earlier targets are kept for the days they covered. Values
+identical to the current target with the same `effective_from` return it
+unchanged.
+
+Response `201` on create, `200` on replace or unchanged; the body is the saved
+target.
+
+---
+
+## Food logging
+
+Food logging adds foods to a day. Facts come from USDA FoodData Central first
+and Open Food Facts when a barcode is not found there; the API makes those
+calls with server-held credentials and keeps a copy of every food it returns in
+a shared catalog, so repeat lookups never leave GymPulse. A food the athlete
+creates from a label is private (`source: "own"`). Every entry stores the values
+it was logged with; a day's totals (`nutrition_days`, `source: "foods"`) are the
+sum of its entries and are rewritten in the same transaction as every entry
+change. Mutations require `Idempotency-Key` equal to `operation_key` (the header
+alone on body-less deletes); a verbatim retry replays the original status and
+body. Dates follow "Nutrition": local calendar dates, never after local today.
+Search and barcode lookups are limited to 60 per athlete per minute (`429
+RATE_LIMITED`).
+
+### `Food`
+
+```json
+{
+  "id": "<uuid>", "source": "usda",
+  "name": "Greek yogurt, plain, nonfat", "brand": "Kirkland Signature",
+  "barcode": "0096619123452",
+  "servings": [{ "label": "1 container (170 g)", "grams": 170 }, { "label": "100 g", "grams": 100 }],
+  "per_100g": { "energy_kcal": 59, "protein_g": 10.2, "carbs_g": 3.6, "fat_g": 0.4 },
+  "attribution": null, "revision": null, "archived": false
+}
+```
+
+`source` is `usda`, `open_food_facts`, or `own`. Nullable keys are always
+present. `servings` always includes `100 g`. `attribution` is set only for Open
+Food Facts (`{ "name": "Open Food Facts", "url": "https://world.openfoodfacts.org/product/<code>", "license": "ODbL" }`)
+and must be shown wherever that food is displayed. `revision` and `archived`
+are set only for `own` foods. `barcode` is the 13-digit form when the GTIN fits
+it, otherwise 14 digits.
+
+### `GET /api/v1/nutrition/foods/search?q=<text>&limit=25`
+
+`q` is 2–100 characters; `limit` is 1–25 (default 25). Response `200`:
+`{ "foods": [Food], "incomplete": false }`. The athlete's own foods come first,
+then USDA matches in source order, then catalog foods, de-duplicated. `foods`
+is `[]` when nothing matches. `incomplete: true` means USDA could not be asked
+(no key, timeout, `429`, `5xx`) and only stored foods are listed.
+
+### `GET /api/v1/nutrition/foods/barcode/{code}`
+
+`code` is 8, 12, 13, or 14 digits (spaces and hyphens allowed) with a valid GS1
+check digit, otherwise `422` on `code`. Equivalent forms match the same product.
+Order: the athlete's own food with that barcode → catalog → USDA (Branded,
+exact GTIN match) → Open Food Facts. Response `200 Food`. `404 NOT_FOUND` when
+no source has a usable product; a miss is remembered for seven days. When the
+Open Food Facts budget (shared by every athlete, 12 reads a minute) is spent
+before the code could be asked, the `404` carries
+`details.retry_after_seconds` and nothing is remembered.
+
+### `GET /api/v1/nutrition/foods/recent`
+
+Response `200`: `{ "foods": [RecentFood] }`, up to 20 foods logged in the last
+30 days, most often then most recently first, `[]` when none. Quick adds are
+excluded.
+
+```json
+{ "food": { "...": "Food" }, "last_serving": { "label": "1 container (170 g)", "grams": 170 }, "last_amount": 1.5, "times_logged": 6, "last_logged_at": "<RFC3339>" }
+```
+
+### `POST /api/v1/nutrition/foods` → `201 Food`
+
+Creates a private food from a label, typed per serving.
+
+```json
+{
+  "name": "Whey isolate", "brand": "Acme", "barcode": "096619123452",
+  "serving": { "label": "1 scoop", "grams": 30 },
+  "energy_kcal": 120, "protein_g": 24, "carbs_g": 3, "fat_g": 1.5,
+  "operation_key": "user-food:<uuid>"
+}
+```
+
+`name` 1–200, `brand` ≤ 120 (optional), `barcode` optional (same rules as the
+lookup; `422` on `barcode`), serving label 1–60, serving grams 0–5,000 with one
+decimal, `energy_kcal` 0–20,000, macros 0–2,000 with one decimal. The response
+is a `Food` with `source: "own"`, `revision: 1`, the typed serving plus `100 g`,
+and `per_100g` derived from the label.
+
+### `PUT /api/v1/nutrition/foods/{id}` → `200 Food`
+
+Same body plus `expected_revision` (the food's current revision, ≥ 1). Stale →
+`409 REVISION_CONFLICT` with the food under `resource`. Existing entries keep
+the values they were logged with.
+
+### `DELETE /api/v1/nutrition/foods/{id}?expected_revision=<n>` → `204`
+
+Archives the food (`Idempotency-Key` header is the operation key). An archived
+food no longer appears in search or barcode lookups and cannot start a new
+entry, but existing entries and recents still resolve it. Unknown, foreign, and
+malformed ids are the shared `404`.
+
+### `GET /api/v1/nutrition/days/{date}/entries`
+
+Response `200`: `{ "day": NutritionDay | null, "entries": [FoodEntry] }`,
+entries oldest first, `[]` when none.
+
+```json
+{
+  "id": "<uuid>", "date": "2026-10-27", "kind": "food",
+  "food": { "id": "<uuid>", "source": "usda", "name": "Greek yogurt, plain, nonfat", "brand": "Kirkland Signature" },
+  "serving": { "label": "1 container (170 g)", "grams": 170 }, "amount": 1.5,
+  "energy_kcal": 150, "protein_g": 26, "carbs_g": 9.2, "fat_g": 1,
+  "revision": 1, "logged_at": "<RFC3339>", "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+A `quick_add` entry has `food`, `serving`, and `amount` null and omits absent
+values. Entry values are `per_100g × grams × amount / 100`, energy rounded to a
+whole kcal and macros to one decimal.
+
+### `POST /api/v1/nutrition/days/{date}/entries` → `201`
+
+```json
+{ "food": { "id": "<uuid>" }, "serving": { "label": "1 container (170 g)", "grams": 170 }, "amount": 1.5, "operation_key": "food-entry:<uuid>" }
+```
+
+or `{ "quick_add": { "energy_kcal": 600, "protein_g": 40 }, "operation_key": "..." }`.
+Exactly one of `food` or `quick_add`. With `food`, `serving` must be one of the
+food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`, and
+`amount` is 0.1–50 with at most two decimals. `quick_add` needs at least one
+value and follows the day-total bounds. `logged_at` is optional (default now).
+An unknown, foreign, or archived food is the shared `404`.
+
+Response: `{ "entry": FoodEntry, "day": NutritionDay, "converted": [FoodEntry] }`.
+When the date already held typed totals (`manual` or `apple_health`) and no
+entries, those totals become one `quick_add` entry, returned under `converted`,
+so nothing the athlete saved disappears. `day.source` is `foods` from then on
+and its `revision` advances on every entry change.
+
+### `PUT /api/v1/nutrition/entries/{id}` → `200`
+
+`{ "serving": {...}, "amount": 2, "expected_revision": 1, "operation_key": "..." }`
+for a food entry (values are recomputed from the food's current facts), or
+`{ "quick_add": {...}, "expected_revision": 1, "operation_key": "..." }` for a
+quick add. Mixing the shapes is `422`. Stale → `409 REVISION_CONFLICT` with the
+entry under `resource`. Response `{ "entry": FoodEntry, "day": NutritionDay }`.
+
+### `DELETE /api/v1/nutrition/entries/{id}?expected_revision=<n>` → `200`
+
+`Idempotency-Key` header is the operation key. Response `{ "day": NutritionDay | null }`;
+`day` is `null` when the last entry was removed and the day's totals with it.
+
+### Codes
+
+`VALIDATION_ERROR` (`details.field` ∈ `q`, `limit`, `code`, `date`, `name`,
+`brand`, `barcode`, `serving`, `amount`, `food`, `quick_add`, `energy_kcal`,
+`protein_g`, `carbs_g`, `fat_g`, `expected_revision`, `operation_key`,
+`Idempotency-Key`), `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`, `REVISION_CONFLICT`,
+`DAY_HAS_FOOD_ENTRIES` (on `PUT /days/{date}` only), `RATE_LIMITED`.
+
+### Configuration
+
+`USDA_FDC_API_KEY` (free key from FoodData Central; empty means degraded,
+catalog-only search and a startup warning in staging and production),
+`FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
+to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
+(test and staging overrides). Keys never appear in logs or responses.
 
 ## Account
 

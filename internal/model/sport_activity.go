@@ -30,8 +30,12 @@ type SportActivity struct {
 	DistanceMeters  *int           `json:"distance_meters,omitempty"`
 	EnergyKcal      *int           `json:"energy_kcal,omitempty"`
 	AvgHeartRateBPM *int           `json:"avg_heart_rate_bpm,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	// PerceivedEffort is the athlete's whole-session effort, 1 to 10, when given.
+	PerceivedEffort *int `json:"perceived_effort,omitempty"`
+	// ScheduledWorkoutID is the scheduled sport session this activity fulfilled.
+	ScheduledWorkoutID *uuid.UUID `json:"scheduled_workout_id,omitempty"`
+	CreatedAt          time.Time  `json:"created_at"`
+	UpdatedAt          time.Time  `json:"updated_at"`
 }
 
 // CreateSportActivityRequest records a completed sport. Date defaults to the
@@ -49,6 +53,33 @@ type CreateSportActivityRequest struct {
 	DistanceMeters  *int           `json:"distance_meters,omitempty"`
 	EnergyKcal      *int           `json:"energy_kcal,omitempty"`
 	AvgHeartRateBPM *int           `json:"avg_heart_rate_bpm,omitempty"`
+	// ScheduledWorkoutID records the activity against an owned open scheduled
+	// sport session for the same sport.
+	ScheduledWorkoutID *uuid.UUID `json:"scheduled_workout_id,omitempty"`
+	// PerceivedEffort is an optional whole-session effort from 1 to 10.
+	PerceivedEffort *int `json:"perceived_effort,omitempty"`
+}
+
+// LinkSportActivityRequest links an owned unlinked activity to an owned open
+// sport session of the same sport. ExpectedRevision is the session's.
+type LinkSportActivityRequest struct {
+	ScheduledWorkoutID uuid.UUID `json:"scheduled_workout_id"`
+	ExpectedRevision   int64     `json:"expected_revision"`
+	OperationKey       string    `json:"operation_key"`
+}
+
+// UnlinkSportActivityRequest clears an activity's session link. ExpectedRevision
+// is the linked session's.
+type UnlinkSportActivityRequest struct {
+	ExpectedRevision int64  `json:"expected_revision"`
+	OperationKey     string `json:"operation_key"`
+}
+
+// SportSessionLinkResult is the authoritative activity and session after a link
+// or unlink.
+type SportSessionLinkResult struct {
+	SportActivity    SportActivity    `json:"sport_activity"`
+	ScheduledWorkout ScheduledWorkout `json:"scheduled_workout"`
 }
 
 // SportActivityCreateOutcome says what a create request did.

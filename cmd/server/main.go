@@ -31,6 +31,10 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
 
+// generationLedgerMargin is added to the generation timeout for the ledger's
+// pending window and the server write timeout, covering repair and encoding.
+const generationLedgerMargin = 10 * time.Second
+
 func main() {
 	// Load config.
 	cfg, err := config.Load()
@@ -154,7 +158,11 @@ func main() {
 	participationRepo := dao.NewParticipationDAO(pool)
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
 	healthExportRepo := dao.NewHealthExportDAO(pool)
+	nutritionRepo := dao.NewNutritionDAO(pool)
+	foodRepo := dao.NewFoodDAO(pool)
+	foodEntryRepo := dao.NewFoodEntryDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
+	programGenerationRepo := dao.NewProgramGenerationDAO(pool, cfg.ProgramGenerationTimeout+generationLedgerMargin)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
 	trainingMutationRepo := dao.NewTrainingMutationDAO(pool)
 	planTransitionRepo := dao.NewPlanTransitionDAO(pool)
@@ -183,8 +191,22 @@ func main() {
 	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
 	healthExportSvc := service.NewHealthExportService(healthExportRepo)
+	nutritionSvc := service.NewNutritionService(nutritionRepo, trainingProfileRepo)
+	if cfg.USDAFDCAPIKey == "" && (cfg.Environment == "staging" || cfg.Environment == "production") {
+		logger.Warn("USDA_FDC_API_KEY is empty; food search answers from the catalog only")
+	}
+	usdaSource := service.NewUSDAFoodSource(cfg.USDAFDCBaseURL, cfg.USDAFDCAPIKey, nil)
+	openFoodFactsSource := service.NewOpenFoodFactsSource(cfg.OpenFoodFactsBaseURL, cfg.FoodSourceUserAgent, nil)
+	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
+	var draftGenerator service.DraftGenerator
+	if cfg.ProgramGenerationEnabled() {
+		draftGenerator = service.NewAnthropicDraftGenerator(cfg.AnthropicAPIKey, cfg.AnthropicBaseURL, cfg.ProgramGenerationModel, cfg.ProgramGenerationTimeout)
+	} else if cfg.Environment == "staging" || cfg.Environment == "production" {
+		logger.Warn("ANTHROPIC_API_KEY is empty; program generation is disabled")
+	}
+	programGenerationSvc := service.NewProgramGenerationService(trainingProfileRepo, exerciseCatalogRepo, programGenerationRepo, draftGenerator, cfg.ProgramGenerationDailyLimit, cfg.ProgramGenerationModel)
 
 	accountRepo := dao.NewAccountDAO(pool)
 	var authDeleter service.AuthUserDeleter
@@ -210,19 +232,29 @@ func main() {
 	participationHandler := handler.NewParticipationHandler(participationSvc)
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
+	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
+	foodHandler := handler.NewFoodHandler(foodSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
+	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, trainingBlockHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler)
 
 	// Start server with graceful shutdown.
+	// Program generation holds a response open for up to its timeout, so the
+	// server write timeout must exceed it; every other route stays well
+	// inside the previous 15 s.
+	writeTimeout := 15 * time.Second
+	if generationWrite := cfg.ProgramGenerationTimeout + generationLedgerMargin; generationWrite > writeTimeout {
+		writeTimeout = generationWrite
+	}
 	srv := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           r,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		WriteTimeout:      writeTimeout,
 		IdleTimeout:       60 * time.Second,
 	}
 

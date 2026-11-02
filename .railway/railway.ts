@@ -39,6 +39,10 @@ export default defineRailway((ctx) => {
       SUPABASE_SERVICE_ROLE_KEY: preserve(),
       SUPABASE_JWT_AUDIENCE: preserve(),
       ALLOWED_ORIGINS: preserve(),
+      // Feature keys: program generation (Anthropic) and live food search
+      // (USDA FoodData Central). Set them in Railway before applying.
+      ANTHROPIC_API_KEY: preserve(),
+      USDA_FDC_API_KEY: preserve(),
     },
   });
 

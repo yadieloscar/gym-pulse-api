@@ -1,0 +1,178 @@
+openapi: 3.0.3
+info: {title: GymPulse Planned Sport Sessions Contract, version: 1.3.0}
+paths:
+  /api/v1/programs:
+    post:
+      summary: Create a program whose units are exercise workouts or sport sessions (unchanged route, extended shape)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateProgramRequest'}}}}
+      responses:
+        '201': {description: Full program, content: {application/json: {schema: {$ref: '#/components/schemas/Program'}}}}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/programs/{id}:
+    put:
+      summary: Replace a program (unchanged route, extended shape; same validation as create)
+      responses:
+        '200': {description: Full program, content: {application/json: {schema: {$ref: '#/components/schemas/Program'}}}}
+        '404': {description: Missing and foreign IDs are indistinguishable}
+        '409': {$ref: '#/components/responses/ConflictError'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/schedule:
+    get:
+      summary: List scheduled workouts and sport sessions (unchanged route, extended item shape)
+      responses:
+        '200': {description: '{scheduled_workouts: [ScheduledWorkout]}'}
+  /api/v1/schedule/materialize:
+    post:
+      summary: Unchanged; a sport unit yields a ScheduledWorkout with kind sport and no required sets
+      responses: {'201': {description: '{scheduled_workouts: [ScheduledWorkout]}'}}
+  /api/v1/schedule/recover:
+    post:
+      summary: Unchanged route; selects exercise workouts only. A missed sport session is recorded or skipped instead.
+      responses: {'201': {description: New planned exercise workout}, '404': {description: No unresolved missed exercise workout}}
+  /api/v1/scheduled-workouts/{id}/complete:
+    post:
+      summary: Unchanged for exercise workouts; a sport session answers 422 with details.field kind
+      responses: {'422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/scheduled-workouts/{id}/extra-sets:
+    post:
+      summary: Unchanged for exercise workouts; a sport session answers 422 with details.field kind (same for PATCH with required_sets, set check, and target edit)
+      responses: {'422': {$ref: '#/components/responses/ValidationError'}}
+  /api/v1/sport-activities:
+    post:
+      summary: Record a sport, optionally fulfilling an owned open scheduled sport session
+      description: >
+        Requires Idempotency-Key equal to operation_key. When scheduled_workout_id is present, the
+        session must be owned (else 404), of kind sport (else 422 scheduled_workout_id), for the same
+        sport_id (else 422 sport_id), and not completed (else 409 SPORT_SESSION_CONFLICT). The
+        activity, the session's completion, and participation for the activity date commit together.
+        An import (source not manual) without scheduled_workout_id fulfils the earliest open session
+        for the same sport and date, if any. Import duplicates return 200 and never link.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/CreateSportActivityRequest'}}}}
+      responses:
+        '201': {description: Created or replayed, content: {application/json: {schema: {$ref: '#/components/schemas/SportActivity'}}}}
+        '200': {description: Existing import duplicate; no side effect}
+        '404': {description: Unknown or foreign scheduled_workout_id}
+        '409': {$ref: '#/components/responses/SportSessionConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/sport-activities/{id}/link:
+    post:
+      summary: Link an owned unlinked activity to an owned open sport session of the same sport (1.3.0)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LinkSportActivityRequest'}}}}
+      responses:
+        '200': {description: Linked, content: {application/json: {schema: {$ref: '#/components/schemas/SportSessionLinkResult'}}}}
+        '404': {description: Missing or foreign activity or session}
+        '409': {$ref: '#/components/responses/SportSessionConflict'}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/sport-activities/{id}/unlink:
+    post:
+      summary: Clear the activity's session link; the session returns to planned or missed (1.3.0)
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/UnlinkSportActivityRequest'}}}}
+      responses:
+        '200': {description: Unlinked, content: {application/json: {schema: {$ref: '#/components/schemas/SportSessionLinkResult'}}}}
+        '404': {description: Missing or foreign activity}
+        '409': {$ref: '#/components/responses/SportSessionConflict'}
+components:
+  schemas:
+    LinkSportActivityRequest:
+      type: object
+      required: [scheduled_workout_id, expected_revision, operation_key]
+      properties:
+        scheduled_workout_id: {type: string, format: uuid}
+        expected_revision: {type: integer, minimum: 1, description: The session's revision}
+        operation_key: {type: string, description: Equals Idempotency-Key}
+    UnlinkSportActivityRequest:
+      type: object
+      required: [expected_revision, operation_key]
+      properties:
+        expected_revision: {type: integer, minimum: 1, description: The linked session's revision}
+        operation_key: {type: string}
+    SportSessionLinkResult:
+      type: object
+      required: [sport_activity, scheduled_workout]
+      properties:
+        sport_activity: {$ref: '#/components/schemas/SportActivity'}
+        scheduled_workout: {$ref: '#/components/schemas/ScheduledWorkout'}
+    UnitKind: {type: string, enum: [exercises, sport], default: exercises}
+    SportTarget:
+      type: object
+      required: [sport_id, sport_name, target_duration_minutes]
+      properties:
+        sport_id: {type: string, pattern: '^[a-z0-9]+(?:-[a-z0-9]+)*$', maxLength: 64}
+        sport_name: {type: string, minLength: 1, maxLength: 80, description: Custom name required when sport_id is other}
+        target_duration_minutes: {type: integer, minimum: 1, maximum: 1440}
+        target_distance_meters: {type: integer, minimum: 1, maximum: 1000000, nullable: true, description: Only for cycling, running, swimming, other}
+        notes: {type: string, maxLength: 2000, nullable: true}
+    ScheduledSport:
+      allOf:
+        - {$ref: '#/components/schemas/SportTarget'}
+        - type: object
+          properties:
+            sport_activity_id: {type: string, format: uuid, description: Present once completed}
+            performed_date: {type: string, format: date, description: Present once completed; the activity date}
+    ProgramWorkoutInput:
+      type: object
+      required: [name, sequence_position]
+      properties:
+        kind: {$ref: '#/components/schemas/UnitKind'}
+        name: {type: string, minLength: 1, maxLength: 200}
+        preferred_weekday: {type: integer, minimum: 1, maximum: 7, nullable: true}
+        sequence_position: {type: integer, minimum: 1}
+        sport: {$ref: '#/components/schemas/SportTarget', description: Required when kind is sport, rejected otherwise}
+        exercises: {type: array, description: At least one when kind is exercises; empty or omitted when kind is sport}
+    ProgramWorkout:
+      allOf:
+        - {$ref: '#/components/schemas/ProgramWorkoutInput'}
+        - type: object
+          required: [id, kind, exercises]
+          properties: {id: {type: string, format: uuid}}
+    CreateProgramRequest:
+      type: object
+      required: [name, primary_goal, workouts, operation_key]
+      properties:
+        name: {type: string}
+        primary_goal: {type: string}
+        roadmap: {type: object}
+        workouts: {type: array, minItems: 1, items: {$ref: '#/components/schemas/ProgramWorkoutInput'}}
+        operation_key: {type: string}
+    Program:
+      type: object
+      description: Existing Program shape; workouts items gain kind and sport
+      properties: {workouts: {type: array, items: {$ref: '#/components/schemas/ProgramWorkout'}}}
+    ScheduledWorkout:
+      type: object
+      description: Existing ScheduledWorkout shape plus kind and sport; a sport row has status planned, completed, or missed and empty required_sets
+      required: [id, kind, date, name, status, revision, required_sets, extra_sets]
+      properties:
+        kind: {$ref: '#/components/schemas/UnitKind'}
+        sport: {$ref: '#/components/schemas/ScheduledSport'}
+    CreateSportActivityRequest:
+      type: object
+      description: Existing request (contract 1.1.0) plus one optional field
+      properties:
+        scheduled_workout_id: {type: string, format: uuid, nullable: true}
+        perceived_effort: {type: integer, minimum: 1, maximum: 10, nullable: true, description: Whole-session effort after the fact (1.3.0)}
+    SportActivity:
+      type: object
+      description: Existing activity shape plus one optional field
+      properties:
+        scheduled_workout_id: {type: string, format: uuid, description: Present when the activity fulfilled a session}
+        perceived_effort: {type: integer, minimum: 1, maximum: 10, description: Present when given (1.3.0)}
+    ErrorBody:
+      type: object
+      required: [error, code]
+      properties:
+        error: {type: string}
+        code: {type: string}
+        details: {type: object}
+        resource: {type: object}
+  responses:
+    ValidationError:
+      description: 422 with details.field naming the offending field (kind, workouts, scheduled_workout_id, sport_id, ...)
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorBody'}}}
+    ConflictError:
+      description: 409 REVISION_CONFLICT or IDEMPOTENCY_CONFLICT as documented today
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorBody'}}}
+    SportSessionConflict:
+      description: 409 SPORT_SESSION_CONFLICT with details.status (and details.reason on link/unlink) and the authoritative ScheduledWorkout as resource
+      content: {application/json: {schema: {$ref: '#/components/schemas/ErrorBody'}}}

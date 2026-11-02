@@ -49,10 +49,46 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	var foodsDay *model.DayHasFoodEntriesError
+	if errors.As(err, &foodsDay) {
+		writeJSON(w, http.StatusConflict, apiError{Error: foodsDay.Error(), Code: "DAY_HAS_FOOD_ENTRIES", Resource: foodsDay.Day})
+		return
+	}
+
+	var budget *model.FoodLookupBudgetError
+	if errors.As(err, &budget) {
+		writeError(w, http.StatusNotFound, "food not found", "NOT_FOUND", map[string]int{"retry_after_seconds": budget.RetryAfterSeconds})
+		return
+	}
+
+	var generationLimit *model.GenerationLimitError
+	if errors.As(err, &generationLimit) {
+		writeError(w, http.StatusTooManyRequests, generationLimit.Error(), "GENERATION_LIMIT_REACHED", map[string]any{
+			"limit": generationLimit.Limit, "resets_at": generationLimit.ResetsAt,
+		})
+		return
+	}
+
+	var generationUnavailable *model.GenerationUnavailableError
+	if errors.As(err, &generationUnavailable) {
+		writeError(w, http.StatusServiceUnavailable, generationUnavailable.Error(), "GENERATION_UNAVAILABLE", map[string]string{"reason": generationUnavailable.Reason})
+		return
+	}
+
 	var resolution *model.ResolutionConflictError
 	if errors.As(err, &resolution) {
 		details := map[string]any{"status": resolution.Status, "resolution": resolution.Resolution}
 		writeJSON(w, http.StatusConflict, apiError{Error: resolution.Message, Code: "RESOLUTION_CONFLICT", Details: details, Resource: resolution.Authoritative})
+		return
+	}
+
+	var sportSession *model.SportSessionConflictError
+	if errors.As(err, &sportSession) {
+		details := map[string]any{"status": sportSession.Status}
+		if sportSession.Reason != "" {
+			details["reason"] = sportSession.Reason
+		}
+		writeJSON(w, http.StatusConflict, apiError{Error: sportSession.Message, Code: "SPORT_SESSION_CONFLICT", Details: details, Resource: sportSession.Authoritative})
 		return
 	}
 
@@ -61,7 +97,7 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		code := "CONFLICT"
 		var details any
 		switch {
-		case conflict.Actual > 0:
+		case conflict.Actual > 0 || conflict.Message == "resource revision conflict":
 			code = "REVISION_CONFLICT"
 			details = map[string]int64{"expected_revision": conflict.Expected, "actual_revision": conflict.Actual}
 		case strings.Contains(conflict.Message, "idempotency"):

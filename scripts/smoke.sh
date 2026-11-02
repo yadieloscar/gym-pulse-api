@@ -15,6 +15,9 @@
 #   8. sport creation is idempotent and records participation for the date
 #   9. an imported health workout is created once; re-import answers 200
 #  10. a finished workout's health export is recorded once (201, 200, 409)
+#  11. a sport unit schedules a session completed once by a linked activity
+#  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
+#  13. nutrition target and days: save, replay, conflicts, Health precedence, clear, ranges
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -575,6 +578,259 @@ if [ -n "${workout_id:-}" ]; then
   fi
 else
   bad "health export acceptance skipped: no finalized scheduled workout id from step 10" ""
+fi
+
+# ---------- 13d. planned sport session ----------
+step "13d. a sport unit schedules a session that one linked sport activity completes"
+read -r sport_week_from sport_week_to <<EOF
+$(python3 - <<'PY'
+from datetime import date, timedelta
+today=date.today(); monday=today+timedelta(days=(7-today.weekday())%7)+timedelta(days=14)
+print(monday.isoformat(), (monday+timedelta(days=6)).isoformat())
+PY
+)
+EOF
+sport_program_op="smoke-sport-program-v1"
+sport_program_payload="{\"name\":\"Smoke mixed week\",\"primary_goal\":\"strength\",\"roadmap\":{},\"operation_key\":\"$sport_program_op\",\"workouts\":[{\"name\":\"Smoke lift\",\"sequence_position\":1,\"exercises\":[{\"name\":\"Air Squat\",\"category\":\"legs\",\"modality\":\"strength\",\"exercise_order\":1,\"target_sets\":2,\"target_reps\":10}]},{\"kind\":\"sport\",\"name\":\"Smoke ride\",\"sequence_position\":2,\"sport\":{\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"target_duration_minutes\":90,\"target_distance_meters\":40000}}]}"
+sport_program_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_program_op" -d "$sport_program_payload")
+sport_program_body=$(cat /tmp/smoke.body)
+sport_program_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$sport_program_body" 2>/dev/null || true)
+sport_program_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$sport_program_body" 2>/dev/null || true)
+sport_unit_ok=$(python3 -c "import json,sys; w=json.loads(sys.argv[1])['workouts']; assert w[0]['kind']=='exercises' and 'sport' not in w[0]; assert w[1]['kind']=='sport' and w[1]['sport']['sport_id']=='cycling' and w[1]['sport']['target_distance_meters']==40000 and w[1]['exercises']==[]; print('yes')" "$sport_program_body" 2>/dev/null || echo no)
+sport_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/programs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-program-bad" \
+  -d "{\"name\":\"Bad\",\"primary_goal\":\"strength\",\"roadmap\":{},\"operation_key\":\"smoke-sport-program-bad\",\"workouts\":[{\"kind\":\"sport\",\"name\":\"Spike\",\"sequence_position\":1,\"sport\":{\"sport_id\":\"volleyball\",\"sport_name\":\"Volleyball\",\"target_duration_minutes\":60,\"target_distance_meters\":5000}}]}")
+sport_bad_body=$(cat /tmp/smoke.body)
+if [ "$sport_program_status" = "201" ] && [ "$sport_unit_ok" = "yes" ] && [ "$sport_bad_status" = "422" ] && [ -n "$sport_program_id" ]; then
+  sport_materialize_op="smoke-sport-materialize-v1"
+  sm_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/schedule/materialize" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $sport_materialize_op" \
+    -d "{\"program_id\":\"$sport_program_id\",\"from\":\"$sport_week_from\",\"to\":\"$sport_week_to\",\"operation_key\":\"$sport_materialize_op\",\"expected_revision\":$sport_program_revision}")
+  sm_body=$(cat /tmp/smoke.body)
+  sport_session_id=$(python3 -c "import json,sys; rows=[w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['kind']=='sport']; assert rows and rows[0]['status']=='planned' and rows[0]['required_sets']==[] and rows[0]['sport']['sport_id']=='cycling' and 'sport_activity_id' not in rows[0]['sport']; print(rows[0]['id'])" "$sm_body" 2>/dev/null || true)
+  sport_session_revision=$(python3 -c "import json,sys; print([w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['kind']=='sport'][0]['revision'])" "$sm_body" 2>/dev/null || true)
+  if [ "$sm_status" != "201" ] || [ -z "$sport_session_id" ]; then
+    bad "sport unit did not materialize as a planned sport session (status=$sm_status)" "$(echo "$sm_body" | head -c 280)"
+  else
+    # The session date is in the future, so record it as performed today (performed date may differ).
+    record_op="smoke-sport-record-v1"
+    record_payload="{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":95,\"distance_meters\":42000,\"perceived_effort\":7,\"operation_key\":\"$record_op\",\"scheduled_workout_id\":\"$sport_session_id\"}"
+    record_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $record_op" -d "$record_payload")
+    record_body=$(cat /tmp/smoke.body)
+    record_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $record_op" -d "$record_payload")
+    record_replay_body=$(cat /tmp/smoke.body)
+    record_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-record-v2" \
+      -d "{\"date\":\"$session_date\",\"sport_id\":\"cycling\",\"sport_name\":\"Cycling\",\"duration_minutes\":60,\"operation_key\":\"smoke-sport-record-v2\",\"scheduled_workout_id\":\"$sport_session_id\"}")
+    record_again_body=$(cat /tmp/smoke.body)
+    sport_sched_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/schedule?from=$sport_week_from&to=$sport_week_to" "${auth[@]}")
+    sport_sched_body=$(cat /tmp/smoke.body)
+    sport_extra_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/scheduled-workouts/$sport_session_id/extra-sets" \
+      "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-extra" \
+      -d "{\"operation_key\":\"smoke-sport-extra\",\"expected_revision\":$((sport_session_revision+1)),\"exercise_id\":null,\"exercise_name\":\"Push-Up\",\"exercise_category\":\"push\",\"exercise_modality\":\"strength\",\"set_index\":1,\"actual_reps\":10,\"completed\":true}")
+    sport_extra_body=$(cat /tmp/smoke.body)
+    if [ "$record_status" = "201" ] && [ "$record_replay_status" = "201" ] && [ "$record_again_status" = "409" ] && [ "$sport_sched_status" = "200" ] && [ "$sport_extra_status" = "422" ] && \
+      python3 -c "import json,sys; a,r,c,s,e=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert a['id']==r['id'] and a['scheduled_workout_id']==sid and a['distance_meters']==42000 and a['perceived_effort']==7; assert c['code']=='SPORT_SESSION_CONFLICT' and c['details']['status']=='completed' and c['resource']['id']==sid; row=[w for w in s['scheduled_workouts'] if w['id']==sid][0]; assert row['status']=='completed' and row['sport']['sport_activity_id']==a['id'] and row['sport']['performed_date']==a['date'] and row['required_sets']==[]; assert e['code']=='VALIDATION_ERROR' and e['details']['field']=='kind'" "$record_body" "$record_replay_body" "$record_again_body" "$sport_sched_body" "$sport_extra_body" 2>/dev/null; then
+      ok "sport session planned, completed once by a linked activity, replayed, conflicted on a second record, and refused an extra set"
+      # 13e. contract 1.3.0: unlink reopens the future session; linking the same activity back completes it again.
+      record_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$record_body" 2>/dev/null || true)
+      done_revision=$(python3 -c "import json,sys; print([w for w in json.loads(sys.argv[1])['scheduled_workouts'] if w['id']=='$sport_session_id'][0]['revision'])" "$sport_sched_body" 2>/dev/null || true)
+      unlink_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/unlink" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-unlink" \
+        -d "{\"expected_revision\":$done_revision,\"operation_key\":\"smoke-sport-unlink\"}")
+      unlink_body=$(cat /tmp/smoke.body)
+      reopened_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['scheduled_workout']['revision'])" "$unlink_body" 2>/dev/null || echo 0)
+      unlink_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/unlink" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-unlink-2" \
+        -d "{\"expected_revision\":$reopened_revision,\"operation_key\":\"smoke-sport-unlink-2\"}")
+      unlink_again_body=$(cat /tmp/smoke.body)
+      relink_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/sport-activities/$record_id/link" \
+        "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-link" \
+        -d "{\"scheduled_workout_id\":\"$sport_session_id\",\"expected_revision\":$reopened_revision,\"operation_key\":\"smoke-sport-link\"}")
+      relink_body=$(cat /tmp/smoke.body)
+      if [ "$unlink_status" = "200" ] && [ "$unlink_again_status" = "409" ] && [ "$relink_status" = "200" ] && \
+        python3 -c "import json,sys; u,a,l=[json.loads(x) for x in sys.argv[1:]]; sid='$sport_session_id'; assert 'scheduled_workout_id' not in u['sport_activity'] and u['scheduled_workout']['status']=='planned' and u['scheduled_workout'].get('finalized_at') is None and 'sport_activity_id' not in u['scheduled_workout']['sport']; assert a['code']=='SPORT_SESSION_CONFLICT' and a['details']['reason']=='not_linked'; assert l['sport_activity']['scheduled_workout_id']==sid and l['scheduled_workout']['status']=='completed' and l['scheduled_workout']['sport']['sport_activity_id']==l['sport_activity']['id']" "$unlink_body" "$unlink_again_body" "$relink_body" 2>/dev/null; then
+        ok "unlink reopened the session, a second unlink conflicted with not_linked, and link-existing completed it again"
+      else
+        bad "sport session link repair failed (unlink=$unlink_status again=$unlink_again_status relink=$relink_status)" "$(echo "$unlink_body $unlink_again_body $relink_body" | head -c 320)"
+      fi
+    else
+      bad "planned sport session acceptance failed (record=$record_status replay=$record_replay_status again=$record_again_status schedule=$sport_sched_status extra=$sport_extra_status)" "$(echo "$record_again_body $sport_extra_body" | head -c 320)"
+    fi
+  fi
+else
+  bad "sport unit program acceptance failed (create=$sport_program_status units=$sport_unit_ok distance-on-volleyball=$sport_bad_status)" "$(echo "$sport_program_body $sport_bad_body" | head -c 320)"
+fi
+
+# ---------- 13f. nutrition days and target ----------
+step "13f. Nutrition: target 201/200, day 201/replay/Health-ignored, Health day 201 → manual takeover → ignored, clear 204, range, future 422"
+nu_yesterday=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()-timedelta(days=1)).isoformat())")
+nu_before=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()-timedelta(days=2)).isoformat())")
+nu_tomorrow=$(python3 -c "from datetime import datetime,timezone,timedelta; print((datetime.now(timezone.utc).date()+timedelta(days=1)).isoformat())")
+nu_today=$(python3 -c "from datetime import datetime,timezone; print(datetime.now(timezone.utc).date().isoformat())")
+nu_put() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API$1" "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $2" -d "$3"; }
+nt_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-a" "{\"protein_g\":150,\"energy_kcal\":2200,\"expected_revision\":0,\"operation_key\":\"smoke-nt-a\"}")
+nt_body=$(cat /tmp/smoke.body)
+nt_rev=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$nt_body" 2>/dev/null || echo 0)
+nt_same_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-b" "{\"protein_g\":150,\"energy_kcal\":2200,\"expected_revision\":$nt_rev,\"operation_key\":\"smoke-nt-b\"}")
+nt_same_body=$(cat /tmp/smoke.body)
+nt_get_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/target" "${auth[@]}")
+nt_get_body=$(cat /tmp/smoke.body)
+nd_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-a" "{\"protein_g\":162.5,\"energy_kcal\":2150,\"expected_revision\":0,\"operation_key\":\"smoke-nd-a\"}")
+nd_body=$(cat /tmp/smoke.body)
+nd_replay_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-a" "{\"protein_g\":162.5,\"energy_kcal\":2150,\"expected_revision\":0,\"operation_key\":\"smoke-nd-a\"}")
+nd_replay_body=$(cat /tmp/smoke.body)
+nd_stale_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-stale" "{\"protein_g\":1,\"expected_revision\":0,\"operation_key\":\"smoke-nd-stale\"}")
+nd_stale_body=$(cat /tmp/smoke.body)
+nd_hk_over_manual_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-hk1" "{\"source\":\"apple_health\",\"protein_g\":99,\"operation_key\":\"smoke-nd-hk1\"}")
+nd_hk_over_manual_body=$(cat /tmp/smoke.body)
+nd_hk_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk2" "{\"source\":\"apple_health\",\"protein_g\":120,\"carbs_g\":200.5,\"operation_key\":\"smoke-nd-hk2\"}")
+nd_hk_body=$(cat /tmp/smoke.body)
+nd_hk_replace_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk2b" "{\"source\":\"apple_health\",\"protein_g\":125,\"operation_key\":\"smoke-nd-hk2b\"}")
+nd_hk_replace_body=$(cat /tmp/smoke.body)
+nd_takeover_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-m2" "{\"protein_g\":130,\"expected_revision\":2,\"operation_key\":\"smoke-nd-m2\"}")
+nd_takeover_body=$(cat /tmp/smoke.body)
+nd_hk_again_status=$(nu_put "/api/v1/nutrition/days/$nu_before" "smoke-nd-hk3" "{\"source\":\"apple_health\",\"protein_g\":121,\"operation_key\":\"smoke-nd-hk3\"}")
+nd_hk_again_body=$(cat /tmp/smoke.body)
+nd_clear_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear" "{\"expected_revision\":1,\"operation_key\":\"smoke-nd-clear\"}")
+nd_clear_replay_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear" "{\"expected_revision\":1,\"operation_key\":\"smoke-nd-clear\"}")
+nd_clear_none_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-clear2" "{\"expected_revision\":0,\"operation_key\":\"smoke-nd-clear2\"}")
+nd_gone_status=$(nu_put "/api/v1/nutrition/days/$nu_yesterday" "smoke-nd-gone" "{\"protein_g\":5,\"expected_revision\":1,\"operation_key\":\"smoke-nd-gone\"}")
+nd_gone_body=$(cat /tmp/smoke.body)
+# An older target is inserted while the revision is checked against the current (today's) target.
+nt_old_status=$(nu_put "/api/v1/nutrition/target" "smoke-nt-old" "{\"effective_from\":\"$nu_before\",\"protein_g\":140,\"expected_revision\":1,\"operation_key\":\"smoke-nt-old\"}")
+nt_old_body=$(cat /tmp/smoke.body)
+nd_range_old_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_yesterday&to=$nu_yesterday" "${auth[@]}")
+nd_range_old_body=$(cat /tmp/smoke.body)
+nd_range_today_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_today&to=$nu_today" "${auth[@]}")
+nd_range_today_body=$(cat /tmp/smoke.body)
+nd_range_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/nutrition/days?from=$nu_before&to=$nu_today" "${auth[@]}")
+nd_range_body=$(cat /tmp/smoke.body)
+nd_future_status=$(nu_put "/api/v1/nutrition/days/$nu_tomorrow" "smoke-nd-future" "{\"protein_g\":1,\"expected_revision\":0,\"operation_key\":\"smoke-nd-future\"}")
+if [ "$nt_status" = "201" ] && [ "$nt_same_status" = "200" ] && [ "$nt_get_status" = "200" ] && \
+   [ "$nd_status" = "201" ] && [ "$nd_replay_status" = "201" ] && [ "$nd_stale_status" = "409" ] && [ "$nd_hk_over_manual_status" = "200" ] && \
+   [ "$nd_hk_status" = "201" ] && [ "$nd_takeover_status" = "200" ] && [ "$nd_hk_again_status" = "200" ] && [ "$nd_clear_status" = "204" ] && \
+   [ "$nd_range_status" = "200" ] && [ "$nd_future_status" = "422" ] && \
+   [ "$nd_hk_replace_status" = "200" ] && [ "$nd_clear_replay_status" = "204" ] && [ "$nd_clear_none_status" = "204" ] && [ "$nd_gone_status" = "409" ] && \
+   [ "$nt_old_status" = "201" ] && [ "$nd_range_old_status" = "200" ] && [ "$nd_range_today_status" = "200" ] && \
+   python3 -c "
+import json,sys
+t,ts,tg,d,dr,st,hm,hk,tk,ha,rg,hr,gn,to,ro,rt=[json.loads(x) for x in sys.argv[1:]]
+assert hr['id']==hk['id'] and hr['source']=='apple_health' and hr['protein_g']==125 and hr['revision']==2 and 'carbs_g' not in hr
+assert gn['code']=='REVISION_CONFLICT' and gn['details']['actual_revision']==0 and 'resource' not in gn
+assert to['effective_from']=='$nu_before' and to['protein_g']==140 and to['revision']==1 and to['id']!=t['id']
+assert ro['days']==[] and [x['id'] for x in ro['targets']]==[to['id']]
+assert [x['id'] for x in rt['targets']]==[t['id']]
+assert t['protein_g']==150 and t['energy_kcal']==2200 and t['carbs_g'] is None and t['revision']==1
+assert ts['id']==t['id'] and ts['revision']==1 and tg['id']==t['id']
+assert d['protein_g']==162.5 and d['energy_kcal']==2150 and d['source']=='manual' and d['revision']==1 and 'carbs_g' not in d
+assert dr['id']==d['id'] and dr['logged_at']==d['logged_at']
+assert st['code']=='REVISION_CONFLICT' and st['details']['actual_revision']==1 and st['resource']['id']==d['id']
+assert hm['id']==d['id'] and hm['protein_g']==162.5 and hm['source']=='manual'
+assert hk['source']=='apple_health' and hk['protein_g']==120 and hk['carbs_g']==200.5 and hk['revision']==1
+assert tk['id']==hk['id'] and tk['source']=='manual' and tk['protein_g']==130 and tk['revision']==3 and 'carbs_g' not in tk
+assert ha['id']==hk['id'] and ha['protein_g']==130 and ha['source']=='manual'
+assert [x['date'] for x in rg['days']]==['$nu_before'] and [x['id'] for x in rg['targets']]==[to['id'],t['id']]
+" "$nt_body" "$nt_same_body" "$nt_get_body" "$nd_body" "$nd_replay_body" "$nd_stale_body" "$nd_hk_over_manual_body" "$nd_hk_body" "$nd_takeover_body" "$nd_hk_again_body" "$nd_range_body" "$nd_hk_replace_body" "$nd_gone_body" "$nt_old_body" "$nd_range_old_body" "$nd_range_today_body" 2>/dev/null; then
+  ok "nutrition target saved, unchanged, read back, and an older target inserted under the current revision; day created, replayed, stale-conflicted, protected from a Health import; Health day replaced by Health, taken over by the athlete, then protected; cleared 204 (replay and no-row too), gone-row conflict omits resource; ranges carry the target in effect and never duplicate; future date rejected"
+else
+  bad "nutrition acceptance failed (target=$nt_status same=$nt_same_status get=$nt_get_status day=$nd_status replay=$nd_replay_status stale=$nd_stale_status hk_over_manual=$nd_hk_over_manual_status hk=$nd_hk_status hk_replace=$nd_hk_replace_status takeover=$nd_takeover_status hk_again=$nd_hk_again_status clear=$nd_clear_status clear_replay=$nd_clear_replay_status clear_none=$nd_clear_none_status gone=$nd_gone_status old_target=$nt_old_status range=$nd_range_status range_old=$nd_range_old_status range_today=$nd_range_today_status future=$nd_future_status)" "$(echo "$nd_range_old_body $nd_gone_body" | head -c 400)"
+fi
+
+# ---------- 13g. food logging ----------
+step "13g. Food logging: private food 201 → barcode → entry 201 (replay) → day source foods → typed PUT 409 → Health ignored → update/stale → recents → delete → emptied day reads null"
+fl_put() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X "$1" "$API$2" "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $3" -d "$4"; }
+fl_get() { curl -s -o /tmp/smoke.body -w "%{http_code}" "$API$1" "${auth[@]}"; }
+fl_del() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API$1" "${auth[@]}" -H "Idempotency-Key: $2"; }
+fl_today=$(python3 -c "from datetime import datetime,timezone; print(datetime.now(timezone.utc).date().isoformat())")
+fl_food_status=$(fl_put POST "/api/v1/nutrition/foods" "smoke-uf-a" '{"name":"Smoke whey","brand":"Smoke","barcode":"096619123452","serving":{"label":"1 scoop","grams":30},"energy_kcal":120,"protein_g":24,"carbs_g":3,"fat_g":1.5,"operation_key":"smoke-uf-a"}')
+fl_food_body=$(cat /tmp/smoke.body)
+fl_food_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$fl_food_body" 2>/dev/null || echo none)
+fl_bad_code_status=$(fl_get "/api/v1/nutrition/foods/barcode/096619123456")
+fl_barcode_status=$(fl_get "/api/v1/nutrition/foods/barcode/0%2096619%2012345%202")
+fl_barcode_body=$(cat /tmp/smoke.body)
+fl_search_status=$(fl_get "/api/v1/nutrition/foods/search?q=smoke%20whey")
+fl_search_body=$(cat /tmp/smoke.body)
+fl_short_q_status=$(fl_get "/api/v1/nutrition/foods/search?q=s")
+fl_entry_status=$(fl_put POST "/api/v1/nutrition/days/$fl_today/entries" "smoke-fe-a" "{\"food\":{\"id\":\"$fl_food_id\"},\"serving\":{\"label\":\"1 scoop\",\"grams\":30},\"amount\":2,\"operation_key\":\"smoke-fe-a\"}")
+fl_entry_body=$(cat /tmp/smoke.body)
+fl_entry_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['entry']['id'])" "$fl_entry_body" 2>/dev/null || echo none)
+fl_replay_status=$(fl_put POST "/api/v1/nutrition/days/$fl_today/entries" "smoke-fe-a" "{\"food\":{\"id\":\"$fl_food_id\"},\"serving\":{\"label\":\"1 scoop\",\"grams\":30},\"amount\":2,\"operation_key\":\"smoke-fe-a\"}")
+fl_replay_body=$(cat /tmp/smoke.body)
+fl_mismatch_status=$(fl_put POST "/api/v1/nutrition/days/$fl_today/entries" "smoke-fe-a" "{\"food\":{\"id\":\"$fl_food_id\"},\"serving\":{\"label\":\"1 scoop\",\"grams\":30},\"amount\":3,\"operation_key\":\"smoke-fe-a\"}")
+fl_quick_status=$(fl_put POST "/api/v1/nutrition/days/$fl_today/entries" "smoke-fe-q" '{"quick_add":{"protein_g":10.5,"energy_kcal":50},"operation_key":"smoke-fe-q"}')
+fl_quick_body=$(cat /tmp/smoke.body)
+fl_quick_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['entry']['id'])" "$fl_quick_body" 2>/dev/null || echo none)
+fl_typed_status=$(fl_put PUT "/api/v1/nutrition/days/$fl_today" "smoke-fe-typed" '{"protein_g":1,"expected_revision":2,"operation_key":"smoke-fe-typed"}')
+fl_typed_body=$(cat /tmp/smoke.body)
+fl_health_status=$(fl_put PUT "/api/v1/nutrition/days/$fl_today" "smoke-fe-hk" '{"source":"apple_health","protein_g":99,"operation_key":"smoke-fe-hk"}')
+fl_health_body=$(cat /tmp/smoke.body)
+fl_update_status=$(fl_put PUT "/api/v1/nutrition/entries/$fl_entry_id" "smoke-fe-u" '{"serving":{"label":"1 scoop","grams":30},"amount":1,"expected_revision":1,"operation_key":"smoke-fe-u"}')
+fl_update_body=$(cat /tmp/smoke.body)
+fl_stale_status=$(fl_put PUT "/api/v1/nutrition/entries/$fl_entry_id" "smoke-fe-s" '{"serving":{"label":"1 scoop","grams":30},"amount":1,"expected_revision":1,"operation_key":"smoke-fe-s"}')
+fl_stale_body=$(cat /tmp/smoke.body)
+fl_list_status=$(fl_get "/api/v1/nutrition/days/$fl_today/entries")
+fl_list_body=$(cat /tmp/smoke.body)
+fl_recent_status=$(fl_get "/api/v1/nutrition/foods/recent")
+fl_recent_body=$(cat /tmp/smoke.body)
+fl_del_quick_status=$(fl_del "/api/v1/nutrition/entries/$fl_quick_id?expected_revision=1" "smoke-fe-dq")
+fl_del_quick_body=$(cat /tmp/smoke.body)
+fl_del_status=$(fl_del "/api/v1/nutrition/entries/$fl_entry_id?expected_revision=2" "smoke-fe-d")
+fl_del_body=$(cat /tmp/smoke.body)
+fl_archive_status=$(fl_del "/api/v1/nutrition/foods/$fl_food_id?expected_revision=1" "smoke-uf-d")
+fl_after_archive_status=$(fl_get "/api/v1/nutrition/foods/barcode/096619123452")
+fl_unknown_food_status=$(fl_put PUT "/api/v1/nutrition/foods/00000000-0000-0000-0000-000000000000" "smoke-uf-x" '{"name":"x","serving":{"label":"1","grams":1},"energy_kcal":1,"protein_g":1,"carbs_g":1,"fat_g":1,"expected_revision":1,"operation_key":"smoke-uf-x"}')
+fl_after_delete_status=$(fl_get "/api/v1/nutrition/days/$fl_today/entries")
+fl_after_delete_body=$(cat /tmp/smoke.body)
+if [ "$fl_food_status" = "201" ] && [ "$fl_bad_code_status" = "422" ] && [ "$fl_barcode_status" = "200" ] && [ "$fl_search_status" = "200" ] && [ "$fl_short_q_status" = "422" ] && \
+   [ "$fl_entry_status" = "201" ] && [ "$fl_replay_status" = "201" ] && [ "$fl_mismatch_status" = "409" ] && [ "$fl_quick_status" = "201" ] && \
+   [ "$fl_typed_status" = "409" ] && [ "$fl_health_status" = "200" ] && [ "$fl_update_status" = "200" ] && [ "$fl_stale_status" = "409" ] && \
+   [ "$fl_list_status" = "200" ] && [ "$fl_recent_status" = "200" ] && [ "$fl_del_quick_status" = "200" ] && [ "$fl_del_status" = "200" ] && \
+   [ "$fl_archive_status" = "204" ] && [ "$fl_after_archive_status" = "404" ] && [ "$fl_unknown_food_status" = "404" ] && [ "$fl_after_delete_status" = "200" ] && \
+   python3 -c "
+import json,sys
+food,bc,sr,en,rp,qk,ty,hk,up,st,ls,rc,dq,dl,ol=[json.loads(x) for x in sys.argv[1:]]
+assert food['source']=='own' and food['barcode']=='0096619123452' and food['revision']==1 and food['per_100g']=={'energy_kcal':400,'protein_g':80,'carbs_g':10,'fat_g':5}
+assert [s['grams'] for s in food['servings']]==[30,100]
+assert bc['id']==food['id'], 'own food wins the barcode chain'
+assert any(f['id']==food['id'] for f in sr['foods']) and sr['foods'][0]['id']==food['id']
+assert en['converted']==[] and en['entry']['kind']=='food' and en['entry']['energy_kcal']==240 and en['entry']['protein_g']==48 and en['entry']['amount']==2
+assert en['day']['source']=='foods' and en['day']['protein_g']==48 and en['day']['energy_kcal']==240 and en['day']['revision']==1
+assert rp['entry']['id']==en['entry']['id'] and rp['day']['revision']==1, 'verbatim replay returns the original body'
+assert qk['day']['protein_g']==58.5 and qk['day']['energy_kcal']==290 and qk['day']['revision']==2
+assert ty['code']=='DAY_HAS_FOOD_ENTRIES' and ty['resource']['source']=='foods'
+assert hk['source']=='foods' and hk['protein_g']==58.5, 'Health save ignored over a foods day'
+assert up['entry']['revision']==2 and up['entry']['protein_g']==24 and up['day']['protein_g']==34.5 and up['day']['revision']==3
+assert st['code']=='REVISION_CONFLICT' and st['details']['actual_revision']==2 and st['resource']['id']==en['entry']['id']
+assert [e['kind'] for e in ls['entries']]==['food','quick_add'] and ls['day']['protein_g']==34.5
+assert len(rc['foods'])==1 and rc['foods'][0]['food']['id']==food['id'] and rc['foods'][0]['last_amount']==1 and rc['foods'][0]['times_logged']==1
+assert dq['day']['protein_g']==24 and dq['day']['revision']==4
+assert dl['day'] is None, 'removing the last entry removes the day'
+assert ol['day'] is None and ol['entries']==[], 'day and entries gone after the last delete'
+" "$fl_food_body" "$fl_barcode_body" "$fl_search_body" "$fl_entry_body" "$fl_replay_body" "$fl_quick_body" "$fl_typed_body" "$fl_health_body" "$fl_update_body" "$fl_stale_body" "$fl_list_body" "$fl_recent_body" "$fl_del_quick_body" "$fl_del_body" "$fl_after_delete_body" 2>/dev/null; then
+  ok "food logging: private food created and found first by barcode and search; bad check digit and short query rejected; entry created with snapshot and day source foods, replayed verbatim, mismatched key conflicted; quick add summed; typed PUT refused with DAY_HAS_FOOD_ENTRIES; Health save ignored; update recomputed and bumped the day; stale revision conflicted with the entry; recents listed the food; deletes recomputed and removed the day; archive hid the food; unknown food id is the shared 404; the emptied day reads back as null"
+else
+  bad "food logging acceptance failed (food=$fl_food_status bad_code=$fl_bad_code_status barcode=$fl_barcode_status search=$fl_search_status short_q=$fl_short_q_status entry=$fl_entry_status replay=$fl_replay_status mismatch=$fl_mismatch_status quick=$fl_quick_status typed=$fl_typed_status health=$fl_health_status update=$fl_update_status stale=$fl_stale_status list=$fl_list_status recent=$fl_recent_status del_quick=$fl_del_quick_status del=$fl_del_status archive=$fl_archive_status after_archive=$fl_after_archive_status unknown_food=$fl_unknown_food_status after_delete=$fl_after_delete_status)" "$(echo "$fl_entry_body $fl_typed_body" | head -c 500)"
+fi
+
+# ---------- 13h. program generation (no provider key in the smoke stack) ----------
+step "13h. GET /api/v1/program-generation reports disabled; POST answers 503 GENERATION_UNAVAILABLE reason disabled"
+pg_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/program-generation" "${auth[@]}")
+pg_body=$(cat /tmp/smoke.body)
+pg_post_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts"}')
+pg_post_body=$(cat /tmp/smoke.body)
+pg_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"   "}')
+pg_bad_body=$(cat /tmp/smoke.body)
+if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "503" ] && [ "$pg_bad_status" = "503" ] && \
+  python3 -c "import json,sys; s,p=[json.loads(x) for x in sys.argv[1:]]; assert s['enabled'] is False and s['limit']==5 and s['remaining_today']==5; assert p['code']=='GENERATION_UNAVAILABLE' and p['details']['reason']=='disabled'" "$pg_body" "$pg_post_body" 2>/dev/null; then
+  ok "generation reports enabled false with limit 5, and POST answers 503 disabled before validating the body"
+else
+  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------

@@ -175,6 +175,8 @@ func (r *programDAO) Get(ctx context.Context, userID, programID uuid.UUID) (*mod
 func loadProgramWorkouts(ctx context.Context, q queryer, userID, programID uuid.UUID) ([]model.ProgramWorkout, error) {
 	rows, err := q.Query(ctx, `
 		SELECT pw.id, pw.name, pw.preferred_weekday, pw.sequence_position,
+		       pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,
+		       pw.target_distance_meters, pw.sport_notes,
 		       pe.id, pe.catalog_id, pe.source_starter_exercise_id, pe.name,
 		       pe.category, pe.modality, pe.exercise_order, pe.target_sets,
 		       pe.target_reps, pe.target_weight, pe.target_duration_seconds,
@@ -199,6 +201,7 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 			workout    model.ProgramWorkout
 			exerciseID *uuid.UUID
 			exercise   model.ProgramExercise
+			sport      scannedSport
 		)
 		if starter {
 			err := rows.Scan(
@@ -211,17 +214,31 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 			if err != nil {
 				return nil, fmt.Errorf("scanning starter workout: %w", err)
 			}
+			workout.Kind = model.UnitKindExercises
 		} else {
+			// A sport unit has no exercise rows, so the LEFT JOIN yields NULLs
+			// for every exercise column; scan them through nullable holders.
+			var (
+				name, category, modality *string
+				order, targetSets        *int
+			)
 			err := rows.Scan(
 				&workout.ID, &workout.Name, &workout.PreferredWeekday, &workout.SequencePosition,
+				&workout.Kind, &sport.ID, &sport.Name, &sport.DurationMinutes, &sport.DistanceMeters, &sport.Notes,
 				&exerciseID, &exercise.CatalogID, &exercise.SourceStarterExerciseID,
-				&exercise.Name, &exercise.Category, &exercise.Modality, &exercise.ExerciseOrder,
-				&exercise.TargetSets, &exercise.TargetReps, &exercise.TargetWeight,
+				&name, &category, &modality, &order,
+				&targetSets, &exercise.TargetReps, &exercise.TargetWeight,
 				&exercise.TargetDurationSeconds, &exercise.RestSeconds, &exercise.Notes,
 			)
 			if err != nil {
 				return nil, fmt.Errorf("scanning program workout: %w", err)
 			}
+			if exerciseID != nil {
+				exercise.Name, exercise.Category, exercise.Modality = deref(name), deref(category), deref(modality)
+				exercise.ExerciseOrder, exercise.TargetSets = derefInt(order), derefInt(targetSets)
+			}
+			workout.Kind = model.NormalizeUnitKind(workout.Kind)
+			workout.Sport = sport.target()
 		}
 		idx, ok := byID[workout.ID]
 		if !ok {
@@ -239,6 +256,46 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 		return nil, fmt.Errorf("iterating program workouts: %w", err)
 	}
 	return workouts, nil
+}
+
+func deref(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func derefInt(value *int) int {
+	if value == nil {
+		return 0
+	}
+	return *value
+}
+
+// scannedSport holds the nullable sport columns of a program or scheduled unit.
+type scannedSport struct {
+	ID              *string
+	Name            *string
+	DurationMinutes *int
+	DistanceMeters  *int
+	Notes           *string
+}
+
+// target returns the sport snapshot, or nil for an exercises unit.
+func (s scannedSport) target() *model.SportTarget {
+	if s.ID == nil || s.Name == nil || s.DurationMinutes == nil {
+		return nil
+	}
+	return &model.SportTarget{SportID: *s.ID, SportName: *s.Name, TargetDurationMinutes: *s.DurationMinutes, TargetDistanceMeters: s.DistanceMeters, Notes: s.Notes}
+}
+
+// sportColumns flattens a sport target into its nullable column values.
+func sportColumns(target *model.SportTarget) scannedSport {
+	if target == nil {
+		return scannedSport{}
+	}
+	id, name, duration := target.SportID, target.SportName, target.TargetDurationMinutes
+	return scannedSport{ID: &id, Name: &name, DurationMinutes: &duration, DistanceMeters: target.TargetDistanceMeters, Notes: target.Notes}
 }
 
 func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Program) error {
@@ -357,10 +414,14 @@ func (r *programDAO) Replace(ctx context.Context, userID uuid.UUID, p *model.Pro
 func insertProgramWorkouts(ctx context.Context, tx pgx.Tx, programID uuid.UUID, workouts []model.ProgramWorkout) error {
 	for i := range workouts {
 		w := &workouts[i]
+		w.Kind = model.NormalizeUnitKind(w.Kind)
+		sport := sportColumns(w.Sport)
 		if err := tx.QueryRow(ctx, `
-			INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position)
-			VALUES ($1,$2,$3,$4) RETURNING id`,
-			programID, w.Name, w.PreferredWeekday, w.SequencePosition).Scan(&w.ID); err != nil {
+			INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,
+				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+			programID, w.Name, w.PreferredWeekday, w.SequencePosition,
+			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes).Scan(&w.ID); err != nil {
 			return fmt.Errorf("inserting program workout: %w", err)
 		}
 		for j := range w.Exercises {

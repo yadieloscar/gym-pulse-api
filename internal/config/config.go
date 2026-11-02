@@ -25,6 +25,20 @@ var (
 	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
 )
 
+// Defaults for the food sources; see docs/CONTRACTS.md "Food logging".
+const (
+	DefaultUSDAFDCBaseURL       = "https://api.nal.usda.gov"
+	DefaultOpenFoodFactsBaseURL = "https://world.openfoodfacts.org"
+	DefaultFoodSourceUserAgent  = "GymPulse/1.0 (https://github.com/yadieloscar/gym-pulse-api)"
+)
+
+// Defaults for program generation; see docs/CONTRACTS.md "Program generation".
+const (
+	DefaultProgramGenerationModel      = "claude-opus-5-5"
+	DefaultProgramGenerationDailyLimit = 5
+	DefaultProgramGenerationTimeout    = 45 * time.Second
+)
+
 // Config holds the application configuration.
 type Config struct {
 	Port            string
@@ -43,18 +57,33 @@ type Config struct {
 	SupabaseJWTAudience string
 	// Optional in development/test. Staging and production require these so
 	// account deletion can remove the auth identity and avatar object.
-	SupabaseURL               string
-	SupabaseServiceRoleKey    string
-	SupabaseAvatarBucket      string
-	AllowedOrigins            []string
-	Environment               string
-	LogLevel                  string
-	DatabaseMaxConns          int32
-	DatabaseMinConns          int32
-	DatabaseLockMaxConns      int32
-	DatabaseMaxConnLifetime   time.Duration
-	DatabaseMaxConnIdleTime   time.Duration
-	DatabaseHealthCheckPeriod time.Duration
+	SupabaseURL            string
+	SupabaseServiceRoleKey string
+	SupabaseAvatarBucket   string
+	// Food logging reads USDA FoodData Central (key required for live search;
+	// empty means degraded, catalog-only search) and Open Food Facts (no key,
+	// identifying User-Agent required). Base URLs are overridable for tests.
+	USDAFDCAPIKey        string
+	USDAFDCBaseURL       string
+	OpenFoodFactsBaseURL string
+	FoodSourceUserAgent  string
+	// Program generation calls the Anthropic API from the server. An empty key
+	// turns the feature off (the status route reports enabled: false). The
+	// base URL is overridable for tests and staging only.
+	AnthropicAPIKey             string
+	AnthropicBaseURL            string
+	ProgramGenerationModel      string
+	ProgramGenerationDailyLimit int
+	ProgramGenerationTimeout    time.Duration
+	AllowedOrigins              []string
+	Environment                 string
+	LogLevel                    string
+	DatabaseMaxConns            int32
+	DatabaseMinConns            int32
+	DatabaseLockMaxConns        int32
+	DatabaseMaxConnLifetime     time.Duration
+	DatabaseMaxConnIdleTime     time.Duration
+	DatabaseHealthCheckPeriod   time.Duration
 	// MigrateOnStart lets development and test servers apply migrations at
 	// boot. Staging and production run them as a separate release step over
 	// DatabaseMigrateURL and only verify the schema at startup.
@@ -164,6 +193,35 @@ func Load() (*Config, error) {
 		avatarBucket = "avatars"
 	}
 
+	usdaKey := strings.TrimSpace(os.Getenv("USDA_FDC_API_KEY"))
+	usdaBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("USDA_FDC_BASE_URL")), "/")
+	if usdaBaseURL == "" {
+		usdaBaseURL = DefaultUSDAFDCBaseURL
+	}
+	offBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("OPEN_FOOD_FACTS_BASE_URL")), "/")
+	if offBaseURL == "" {
+		offBaseURL = DefaultOpenFoodFactsBaseURL
+	}
+	foodUserAgent := strings.TrimSpace(os.Getenv("FOOD_SOURCE_USER_AGENT"))
+	if foodUserAgent == "" {
+		foodUserAgent = DefaultFoodSourceUserAgent
+	}
+
+	anthropicKey := strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	anthropicBaseURL := strings.TrimRight(strings.TrimSpace(os.Getenv("ANTHROPIC_BASE_URL")), "/")
+	generationModel := strings.TrimSpace(os.Getenv("PROGRAM_GENERATION_MODEL"))
+	if generationModel == "" {
+		generationModel = DefaultProgramGenerationModel
+	}
+	generationLimit, err := positiveInt32Env("PROGRAM_GENERATION_DAILY_LIMIT", DefaultProgramGenerationDailyLimit)
+	if err != nil {
+		return nil, err
+	}
+	generationTimeout, err := positiveDurationEnv("PROGRAM_GENERATION_TIMEOUT", DefaultProgramGenerationTimeout)
+	if err != nil {
+		return nil, err
+	}
+
 	maxConns, err := positiveInt32Env("DATABASE_MAX_CONNS", 10)
 	if err != nil {
 		return nil, err
@@ -193,29 +251,41 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Port:                      port,
-		DatabaseURL:               dbURL,
-		DatabaseLockURL:           lockURL,
-		DatabaseMigrateURL:        migrateURL,
-		SupabaseJWTSecret:         jwtSecret,
-		SupabaseJWKSURL:           jwksURL,
-		SupabaseJWTIssuer:         issuer,
-		SupabaseJWTAudience:       audience,
-		SupabaseURL:               supabaseURL,
-		SupabaseServiceRoleKey:    serviceRoleKey,
-		SupabaseAvatarBucket:      avatarBucket,
-		AllowedOrigins:            origins,
-		Environment:               env,
-		LogLevel:                  logLevel,
-		DatabaseMaxConns:          maxConns,
-		DatabaseMinConns:          minConns,
-		DatabaseLockMaxConns:      lockMaxConns,
-		DatabaseMaxConnLifetime:   maxConnLifetime,
-		DatabaseMaxConnIdleTime:   maxConnIdleTime,
-		DatabaseHealthCheckPeriod: healthCheckPeriod,
-		MigrateOnStart:            !isReleaseEnvironment,
+		Port:                        port,
+		DatabaseURL:                 dbURL,
+		DatabaseLockURL:             lockURL,
+		DatabaseMigrateURL:          migrateURL,
+		SupabaseJWTSecret:           jwtSecret,
+		SupabaseJWKSURL:             jwksURL,
+		SupabaseJWTIssuer:           issuer,
+		SupabaseJWTAudience:         audience,
+		SupabaseURL:                 supabaseURL,
+		SupabaseServiceRoleKey:      serviceRoleKey,
+		SupabaseAvatarBucket:        avatarBucket,
+		USDAFDCAPIKey:               usdaKey,
+		USDAFDCBaseURL:              usdaBaseURL,
+		OpenFoodFactsBaseURL:        offBaseURL,
+		FoodSourceUserAgent:         foodUserAgent,
+		AnthropicAPIKey:             anthropicKey,
+		AnthropicBaseURL:            anthropicBaseURL,
+		ProgramGenerationModel:      generationModel,
+		ProgramGenerationDailyLimit: int(generationLimit),
+		ProgramGenerationTimeout:    generationTimeout,
+		AllowedOrigins:              origins,
+		Environment:                 env,
+		LogLevel:                    logLevel,
+		DatabaseMaxConns:            maxConns,
+		DatabaseMinConns:            minConns,
+		DatabaseLockMaxConns:        lockMaxConns,
+		DatabaseMaxConnLifetime:     maxConnLifetime,
+		DatabaseMaxConnIdleTime:     maxConnIdleTime,
+		DatabaseHealthCheckPeriod:   healthCheckPeriod,
+		MigrateOnStart:              !isReleaseEnvironment,
 	}, nil
 }
+
+// ProgramGenerationEnabled reports whether a provider key is configured.
+func (c *Config) ProgramGenerationEnabled() bool { return c.AnthropicAPIKey != "" }
 
 func canonicalHTTPSBaseURL(raw string) (string, error) {
 	canonical := strings.TrimRight(strings.TrimSpace(raw), "/")

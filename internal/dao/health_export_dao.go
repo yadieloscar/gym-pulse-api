@@ -37,6 +37,7 @@ const workoutDateQuery = `
 			SELECT date FROM scheduled_workouts
 			WHERE $1 = 'scheduled_workout' AND id=$2 AND user_id=$3
 			  AND finalized_at IS NOT NULL AND status IN ('completed', 'incomplete')
+			  AND kind = 'exercises'
 			UNION ALL
 			SELECT date FROM day_logs
 			WHERE $1 = 'day_log' AND id=$2 AND user_id=$3 AND type_id <> 'rest'

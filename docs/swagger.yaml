@@ -29,6 +29,15 @@ definitions:
           $ref: '#/definitions/model.ScheduledWorkout'
         type: array
     type: object
+  model.Attribution:
+    properties:
+      license:
+        type: string
+      name:
+        type: string
+      url:
+        type: string
+    type: object
   model.BodyWeight:
     properties:
       date:
@@ -143,6 +152,21 @@ definitions:
     required:
     - name
     type: object
+  model.CreateFoodEntryRequest:
+    properties:
+      amount:
+        type: number
+      food:
+        $ref: '#/definitions/model.FoodRef'
+      logged_at:
+        type: string
+      operation_key:
+        type: string
+      quick_add:
+        $ref: '#/definitions/model.QuickAdd'
+      serving:
+        $ref: '#/definitions/model.Serving'
+    type: object
   model.CreateOverrideRequest:
     properties:
       actual_reps:
@@ -246,6 +270,15 @@ definitions:
     - name
     - operation_key
     type: object
+  model.DayEntries:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entries:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
+    type: object
   model.DayLog:
     properties:
       date:
@@ -315,6 +348,46 @@ definitions:
         type: boolean
       timezone:
         type: string
+    type: object
+  model.DraftExercise:
+    properties:
+      catalog_id:
+        type: string
+      category:
+        type: string
+      exercise_order:
+        type: integer
+      modality:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      rest_seconds:
+        type: integer
+      target_duration_seconds:
+        type: integer
+      target_reps:
+        type: integer
+      target_sets:
+        type: integer
+      target_weight:
+        type: number
+    type: object
+  model.DraftWorkout:
+    properties:
+      exercises:
+        items:
+          $ref: '#/definitions/model.DraftExercise'
+        type: array
+      kind:
+        $ref: '#/definitions/model.UnitKind'
+      name:
+        type: string
+      preferred_weekday:
+        type: integer
+      sequence_position:
+        type: integer
     type: object
   model.Exercise:
     properties:
@@ -431,6 +504,174 @@ definitions:
     - operation_key
     - set_index
     type: object
+  model.Food:
+    properties:
+      archived:
+        type: boolean
+      attribution:
+        $ref: '#/definitions/model.Attribution'
+      barcode:
+        type: string
+      brand:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      per_100g:
+        $ref: '#/definitions/model.Per100g'
+      revision:
+        type: integer
+      servings:
+        items:
+          $ref: '#/definitions/model.Serving'
+        type: array
+      source:
+        $ref: '#/definitions/model.FoodSource'
+    type: object
+  model.FoodEntry:
+    properties:
+      amount:
+        type: number
+      carbs_g:
+        type: number
+      created_at:
+        type: string
+      date:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      food:
+        $ref: '#/definitions/model.FoodSummary'
+      id:
+        type: string
+      kind:
+        $ref: '#/definitions/model.FoodEntryKind'
+      logged_at:
+        type: string
+      protein_g:
+        type: number
+      revision:
+        type: integer
+      serving:
+        $ref: '#/definitions/model.Serving'
+      updated_at:
+        type: string
+    type: object
+  model.FoodEntryCreated:
+    properties:
+      converted:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entry:
+        $ref: '#/definitions/model.FoodEntry'
+    type: object
+  model.FoodEntryDeleted:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+    type: object
+  model.FoodEntryKind:
+    enum:
+    - food
+    - quick_add
+    type: string
+    x-enum-varnames:
+    - FoodEntryKindFood
+    - FoodEntryKindQuickAdd
+  model.FoodEntryUpdated:
+    properties:
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entry:
+        $ref: '#/definitions/model.FoodEntry'
+    type: object
+  model.FoodRef:
+    properties:
+      id:
+        type: string
+    type: object
+  model.FoodSearchResult:
+    properties:
+      foods:
+        items:
+          $ref: '#/definitions/model.Food'
+        type: array
+      incomplete:
+        type: boolean
+    type: object
+  model.FoodSource:
+    enum:
+    - usda
+    - open_food_facts
+    - own
+    type: string
+    x-enum-varnames:
+    - FoodSourceUSDA
+    - FoodSourceOpenFoodFacts
+    - FoodSourceOwn
+  model.FoodSummary:
+    properties:
+      brand:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      source:
+        $ref: '#/definitions/model.FoodSource'
+    type: object
+  model.GenerateProgramRequest:
+    properties:
+      proposed_profile:
+        allOf:
+        - $ref: '#/definitions/model.ProposedTrainingProfile'
+        description: |-
+          ProposedProfile lets onboarding build a draft before the profile is
+          saved. It is validated like a saved profile and is never stored.
+      request:
+        type: string
+      secondary_goals:
+        description: |-
+          SecondaryGoals are up to two further goals the draft should also serve.
+          The profile's primary goal sets the structure; these steer part of it.
+        items:
+          type: string
+        type: array
+    type: object
+  model.GenerateProgramResponse:
+    properties:
+      draft:
+        $ref: '#/definitions/model.ProgramDraft'
+      rationale:
+        type: string
+      remaining_today:
+        type: integer
+      request:
+        type: string
+      resets_at:
+        type: string
+      secondary_goals:
+        items:
+          type: string
+        type: array
+    type: object
+  model.GenerationStatus:
+    properties:
+      enabled:
+        type: boolean
+      limit:
+        type: integer
+      remaining_today:
+        type: integer
+      resets_at:
+        type: string
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -450,6 +691,73 @@ definitions:
     - operation_key
     - program_id
     - to
+    type: object
+  model.NutritionDay:
+    properties:
+      carbs_g:
+        type: number
+      created_at:
+        type: string
+      date:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      id:
+        type: string
+      logged_at:
+        type: string
+      protein_g:
+        type: number
+      revision:
+        type: integer
+      source:
+        $ref: '#/definitions/model.NutritionSource'
+      updated_at:
+        type: string
+    type: object
+  model.NutritionRange:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/model.NutritionDay'
+        type: array
+      targets:
+        items:
+          $ref: '#/definitions/model.NutritionTarget'
+        type: array
+    type: object
+  model.NutritionSource:
+    enum:
+    - manual
+    - apple_health
+    - foods
+    type: string
+    x-enum-varnames:
+    - NutritionSourceManual
+    - NutritionSourceAppleHealth
+    - NutritionSourceFoods
+  model.NutritionTarget:
+    properties:
+      carbs_g:
+        type: number
+      created_at:
+        type: string
+      effective_from:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      id:
+        type: string
+      protein_g:
+        type: number
+      revision:
+        type: integer
+      updated_at:
+        type: string
     type: object
   model.PatchScheduledSetTargetRequest:
     properties:
@@ -505,6 +813,17 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.Per100g:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: number
+      fat_g:
+        type: number
+      protein_g:
+        type: number
     type: object
   model.PerformedSet:
     properties:
@@ -591,6 +910,20 @@ definitions:
           $ref: '#/definitions/model.ProgramWorkout'
         type: array
     type: object
+  model.ProgramDraft:
+    properties:
+      name:
+        type: string
+      primary_goal:
+        type: string
+      roadmap:
+        additionalProperties: {}
+        type: object
+      workouts:
+        items:
+          $ref: '#/definitions/model.DraftWorkout'
+        type: array
+    type: object
   model.ProgramExercise:
     properties:
       catalog_id:
@@ -628,12 +961,40 @@ definitions:
         type: array
       id:
         type: string
+      kind:
+        $ref: '#/definitions/model.UnitKind'
       name:
         type: string
       preferred_weekday:
         type: integer
       sequence_position:
         type: integer
+      sport:
+        $ref: '#/definitions/model.SportTarget'
+    type: object
+  model.ProposedTrainingProfile:
+    properties:
+      available_days:
+        items:
+          type: integer
+        type: array
+      equipment:
+        items:
+          type: string
+        type: array
+      experience:
+        type: string
+      preferences:
+        additionalProperties: {}
+        type: object
+      primary_goal:
+        type: string
+      session_duration_minutes:
+        type: integer
+      timezone:
+        type: string
+      usual_activity:
+        type: string
     type: object
   model.PutPlanOverrideRequest:
     properties:
@@ -647,6 +1008,37 @@ definitions:
       days:
         items:
           $ref: '#/definitions/model.WeeklyPlanDay'
+        type: array
+    type: object
+  model.QuickAdd:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
+    type: object
+  model.RecentFood:
+    properties:
+      food:
+        $ref: '#/definitions/model.Food'
+      last_amount:
+        type: number
+      last_logged_at:
+        type: string
+      last_serving:
+        $ref: '#/definitions/model.Serving'
+      times_logged:
+        type: integer
+    type: object
+  model.RecentFoods:
+    properties:
+      foods:
+        items:
+          $ref: '#/definitions/model.RecentFood'
         type: array
     type: object
   model.RecoverScheduledWorkoutRequest:
@@ -711,6 +1103,63 @@ definitions:
     - expected_revision
     - operation_key
     type: object
+  model.SaveNutritionDayRequest:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      expected_revision:
+        type: integer
+      fat_g:
+        type: number
+      operation_key:
+        type: string
+      protein_g:
+        type: number
+      source:
+        $ref: '#/definitions/model.NutritionSource'
+    type: object
+  model.SaveNutritionTargetRequest:
+    properties:
+      carbs_g:
+        type: number
+      effective_from:
+        type: string
+      energy_kcal:
+        type: integer
+      expected_revision:
+        type: integer
+      fat_g:
+        type: number
+      operation_key:
+        type: string
+      protein_g:
+        type: number
+    type: object
+  model.SaveUserFoodRequest:
+    properties:
+      barcode:
+        type: string
+      brand:
+        type: string
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      expected_revision:
+        type: integer
+      fat_g:
+        type: number
+      name:
+        type: string
+      operation_key:
+        type: string
+      protein_g:
+        type: number
+      serving:
+        $ref: '#/definitions/model.Serving'
+    type: object
   model.ScheduledSet:
     properties:
       actual_duration_seconds:
@@ -750,6 +1199,23 @@ definitions:
       target_weight:
         type: number
     type: object
+  model.ScheduledSport:
+    properties:
+      notes:
+        type: string
+      performed_date:
+        type: string
+      sport_activity_id:
+        type: string
+      sport_id:
+        type: string
+      sport_name:
+        type: string
+      target_distance_meters:
+        type: integer
+      target_duration_minutes:
+        type: integer
+    type: object
   model.ScheduledWorkout:
     properties:
       created_at:
@@ -764,6 +1230,8 @@ definitions:
         type: string
       id:
         type: string
+      kind:
+        $ref: '#/definitions/model.UnitKind'
       name:
         type: string
       program_id:
@@ -785,9 +1253,18 @@ definitions:
         type: integer
       sequence_position:
         type: integer
+      sport:
+        $ref: '#/definitions/model.ScheduledSport'
       status:
         type: string
       updated_at:
+        type: string
+    type: object
+  model.Serving:
+    properties:
+      grams:
+        type: number
+      label:
         type: string
     type: object
   model.SetLog:
@@ -833,6 +1310,19 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.SportTarget:
+    properties:
+      notes:
+        type: string
+      sport_id:
+        type: string
+      sport_name:
+        type: string
+      target_distance_meters:
+        type: integer
+      target_duration_minutes:
+        type: integer
     type: object
   model.StarterProgram:
     properties:
@@ -952,6 +1442,14 @@ definitions:
       type_id:
         type: string
     type: object
+  model.UnitKind:
+    enum:
+    - exercises
+    - sport
+    type: string
+    x-enum-varnames:
+    - UnitKindExercises
+    - UnitKindSport
   model.UpdateDayLogRequest:
     properties:
       overrides:
@@ -970,6 +1468,19 @@ definitions:
         type: string
       type_id:
         type: string
+    type: object
+  model.UpdateFoodEntryRequest:
+    properties:
+      amount:
+        type: number
+      expected_revision:
+        type: integer
+      operation_key:
+        type: string
+      quick_add:
+        $ref: '#/definitions/model.QuickAdd'
+      serving:
+        $ref: '#/definitions/model.Serving'
     type: object
   model.UpdateProfileRequest:
     properties:
@@ -1614,6 +2125,532 @@ paths:
       summary: Update a day log
       tags:
       - logs
+  /api/v1/nutrition/days:
+    get:
+      parameters:
+      - description: YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: YYYY-MM-DD (at most 366 days after from)
+        in: query
+        name: to
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NutritionRange'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List nutrition days in a range with the targets that applied
+      tags:
+      - nutrition
+  /api/v1/nutrition/days/{date}:
+    put:
+      description: |-
+        Athlete saves carry expected_revision; Health saves never overwrite an athlete day.
+        All four values absent removes the day. See docs/CONTRACTS.md "Nutrition".
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Totals
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveNutritionDayRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NutritionDay'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.NutritionDay'
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save, replace, or remove one day's nutrition totals
+      tags:
+      - nutrition
+  /api/v1/nutrition/days/{date}/entries:
+    get:
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DayEntries'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: A day's totals and its food entries, oldest first
+      tags:
+      - nutrition
+    post:
+      description: Typed totals already on the day are converted into one quick_add
+        entry (converted).
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: food+serving+amount, or quick_add
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CreateFoodEntryRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.FoodEntryCreated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a food or a quick add; the day's totals become the sum of its entries
+      tags:
+      - nutrition
+  /api/v1/nutrition/entries/{id}:
+    delete:
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current revision
+        in: query
+        name: expected_revision
+        required: true
+        type: integer
+      - description: Operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryDeleted'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove an entry; removing the last one removes the day's totals
+      tags:
+      - nutrition
+    put:
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Change with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateFoodEntryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryUpdated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change an entry's serving and amount, or its quick-add values
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods:
+    post:
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Label values per serving
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveUserFoodRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.Food'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create a private food from a label
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/{id}:
+    delete:
+      parameters:
+      - description: Food id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current revision
+        in: query
+        name: expected_revision
+        required: true
+        type: integer
+      - description: Operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Archive a private food
+      tags:
+      - nutrition
+    put:
+      parameters:
+      - description: Food id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Label values with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveUserFoodRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Food'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Change a private food; existing entries keep their snapshot
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/barcode/{code}:
+    get:
+      description: Private food → catalog → USDA → Open Food Facts. 404 NOT_FOUND
+        carries details.retry_after_seconds when the fallback budget was spent.
+      parameters:
+      - description: 8, 12, 13, or 14 digits
+        in: path
+        name: code
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Food'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Look up one product by retail barcode
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/recent:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.RecentFoods'
+      security:
+      - BearerAuth: []
+      summary: Foods logged in the last 30 days, most often and most recently first
+      tags:
+      - nutrition
+  /api/v1/nutrition/foods/search:
+    get:
+      description: Private foods first, then USDA FoodData Central; catalog only (incomplete=true)
+        when USDA cannot be asked.
+      parameters:
+      - description: 2–100 characters
+        in: query
+        name: q
+        required: true
+        type: string
+      - description: 1–25, default 25
+        in: query
+        name: limit
+        type: integer
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodSearchResult'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Search foods by text
+      tags:
+      - nutrition
+  /api/v1/nutrition/target:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NutritionTarget'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read the nutrition target in effect today
+      tags:
+      - nutrition
+    put:
+      description: expected_revision is the current target's revision, 0 when none
+        exists.
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Target
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveNutritionTargetRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NutritionTarget'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.NutritionTarget'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save the athlete's chosen nutrition target
+      tags:
+      - nutrition
   /api/v1/participation:
     get:
       produces:
@@ -1886,6 +2923,53 @@ paths:
       summary: Upload profile avatar
       tags:
       - profile
+  /api/v1/program-generation:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.GenerationStatus'
+      security:
+      - BearerAuth: []
+      summary: Program generation status
+      tags:
+      - goal-training
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Optional one-line request and proposed profile
+        in: body
+        name: body
+        schema:
+          $ref: '#/definitions/model.GenerateProgramRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.GenerateProgramResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "429":
+          description: Too Many Requests
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      summary: Generate a program draft
+      tags:
+      - goal-training
   /api/v1/programs:
     get:
       produces:
