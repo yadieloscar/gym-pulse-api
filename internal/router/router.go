@@ -38,6 +38,7 @@ func New(
 	nutritionHandler *handler.NutritionHandler,
 	foodHandler *handler.FoodHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
+	programGenerationHandler *handler.ProgramGenerationHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -74,6 +75,10 @@ func New(
 				r.Get("/training-profile", trainingProfileHandler.Get)
 				r.Put("/training-profile", trainingProfileHandler.Update)
 				r.Get("/starter-programs", programHandler.ListStarters)
+				// Program-draft generation: read-only, provider-backed, bounded per minute
+				// here and per local day in the ledger.
+				r.Get("/program-generation", programGenerationHandler.Status)
+				r.With(middleware.RateLimitPerUser(middleware.ProgramGenerationLimit)).Post("/program-generation", programGenerationHandler.Generate)
 				r.Route("/programs", func(r chi.Router) {
 					r.Get("/", programHandler.List)
 					r.Post("/", programHandler.Create)

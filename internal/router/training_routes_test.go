@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -12,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -41,9 +43,20 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"GET /api/v1/training-blocks/", "POST /api/v1/training-blocks/", "GET /api/v1/training-blocks/{block_id}/",
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",
+		"GET /api/v1/program-generation", "POST /api/v1/program-generation",
 	} {
 		if !found[route] {
 			t.Errorf("missing route %s", route)
 		}
+	}
+}
+
+func TestProgramGenerationPostIsRateLimitedPerUser(t *testing.T) {
+	body, err := os.ReadFile("router.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), `r.With(middleware.RateLimitPerUser(middleware.ProgramGenerationLimit)).Post("/program-generation"`) {
+		t.Fatal("POST /program-generation must carry the per-user generation limit")
 	}
 }

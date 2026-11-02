@@ -1891,6 +1891,83 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/program-generation": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Program generation status",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerationStatus"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Generate a program draft",
+                "parameters": [
+                    {
+                        "description": "Optional one-line request and proposed profile",
+                        "name": "body",
+                        "in": "body",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerateProgramRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.GenerateProgramResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "429": {
+                        "description": "Too Many Requests",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/programs": {
             "get": {
                 "security": [
@@ -3979,6 +4056,67 @@ const docTemplate = `{
                 }
             }
         },
+        "model.DraftExercise": {
+            "type": "object",
+            "properties": {
+                "catalog_id": {
+                    "type": "string"
+                },
+                "category": {
+                    "type": "string"
+                },
+                "exercise_order": {
+                    "type": "integer"
+                },
+                "modality": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "notes": {
+                    "type": "string"
+                },
+                "rest_seconds": {
+                    "type": "integer"
+                },
+                "target_duration_seconds": {
+                    "type": "integer"
+                },
+                "target_reps": {
+                    "type": "integer"
+                },
+                "target_sets": {
+                    "type": "integer"
+                },
+                "target_weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.DraftWorkout": {
+            "type": "object",
+            "properties": {
+                "exercises": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DraftExercise"
+                    }
+                },
+                "kind": {
+                    "$ref": "#/definitions/model.UnitKind"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "preferred_weekday": {
+                    "type": "integer"
+                },
+                "sequence_position": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.Exercise": {
             "type": "object",
             "required": [
@@ -4330,6 +4468,72 @@ const docTemplate = `{
                 },
                 "source": {
                     "$ref": "#/definitions/model.FoodSource"
+                }
+            }
+        },
+        "model.GenerateProgramRequest": {
+            "type": "object",
+            "properties": {
+                "proposed_profile": {
+                    "description": "ProposedProfile lets onboarding build a draft before the profile is\nsaved. It is validated like a saved profile and is never stored.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ProposedTrainingProfile"
+                        }
+                    ]
+                },
+                "request": {
+                    "type": "string"
+                },
+                "secondary_goals": {
+                    "description": "SecondaryGoals are up to two further goals the draft should also serve.\nThe profile's primary goal sets the structure; these steer part of it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.GenerateProgramResponse": {
+            "type": "object",
+            "properties": {
+                "draft": {
+                    "$ref": "#/definitions/model.ProgramDraft"
+                },
+                "rationale": {
+                    "type": "string"
+                },
+                "remaining_today": {
+                    "type": "integer"
+                },
+                "request": {
+                    "type": "string"
+                },
+                "resets_at": {
+                    "type": "string"
+                },
+                "secondary_goals": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "model.GenerationStatus": {
+            "type": "object",
+            "properties": {
+                "enabled": {
+                    "type": "boolean"
+                },
+                "limit": {
+                    "type": "integer"
+                },
+                "remaining_today": {
+                    "type": "integer"
+                },
+                "resets_at": {
+                    "type": "string"
                 }
             }
         },
@@ -4688,6 +4892,27 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ProgramDraft": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "roadmap": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "workouts": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.DraftWorkout"
+                    }
+                }
+            }
+        },
         "model.ProgramExercise": {
             "type": "object",
             "properties": {
@@ -4758,6 +4983,42 @@ const docTemplate = `{
                 },
                 "sport": {
                     "$ref": "#/definitions/model.SportTarget"
+                }
+            }
+        },
+        "model.ProposedTrainingProfile": {
+            "type": "object",
+            "properties": {
+                "available_days": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
+                },
+                "equipment": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "experience": {
+                    "type": "string"
+                },
+                "preferences": {
+                    "type": "object",
+                    "additionalProperties": {}
+                },
+                "primary_goal": {
+                    "type": "string"
+                },
+                "session_duration_minutes": {
+                    "type": "integer"
+                },
+                "timezone": {
+                    "type": "string"
+                },
+                "usual_activity": {
+                    "type": "string"
                 }
             }
         },
