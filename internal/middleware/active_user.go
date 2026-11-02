@@ -57,6 +57,11 @@ func activeUserID(ctx context.Context) (uuid.UUID, bool) {
 }
 
 func writeActiveUserError(w http.ResponseWriter, status int, message, code string) {
+	if status == http.StatusUnauthorized {
+		// The token verified but its subject no longer exists: a new session
+		// is required, so the challenge names the token as the problem.
+		w.Header().Set("WWW-Authenticate", `Bearer realm="gym-pulse", error="invalid_token"`)
+	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{"error": message, "code": code})
