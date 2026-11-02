@@ -152,12 +152,15 @@ three workouts, and the rationale names the secondary goal.
 - Equipment `bands` only: the catalog may hold few band entries; the engine falls back to
   bodyweight entries, says so, and never returns fewer than three exercises per workout.
 - Equipment `cardio_machine` only with a strength goal: strength slots fall back to bodyweight.
-- Power goal for a beginner: strength-style draft with one jump or swing entry per session.
+- Power goal for a beginner: strength-style draft with no explosive entry (US1/AC3 governs); the
+  rationale says beginners get nothing explosive.
 - Conditioning goal with no cardio equipment: bodyweight locomotion entries (jump rope, burpee,
   HIIT circuit) serve the cardio slots.
-- Avoiding every pattern that a goal needs: the engine builds what it can and the rationale lists
-  what was dropped; if fewer than three exercises remain for any workout the answer is a documented
-  `422 VALIDATION_ERROR` on `avoid` saying the constraints leave too little to build from.
+- Avoiding every pattern that a goal needs: the engine builds what it can (topping a thin workout
+  up from any remaining pattern, then isolation work, then cardio) and the rationale lists what
+  was dropped; if fewer than three exercises remain for any workout the answer is a documented
+  `422 VALIDATION_ERROR` on `avoid` saying the constraints leave too little to build from. With
+  at most six avoided patterns this is reachable only on bodyweight-only equipment.
 - A catalog entry missing programming metadata: the migration seeds all current entries; a
   database check constraint keeps future entries from being added without it.
 

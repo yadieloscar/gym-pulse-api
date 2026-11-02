@@ -19,8 +19,8 @@ func TestExerciseCatalogHandler_List(t *testing.T) {
 		svc := &MockExerciseCatalogService{
 			ListFunc: func(ctx context.Context, category string) ([]model.CatalogExercise, error) {
 				return []model.CatalogExercise{
-					{Name: "Barbell Squat", Category: "legs", Modality: "strength"},
-					{Name: "Treadmill Run", Category: "cardio", Modality: "cardio"},
+					{Name: "Barbell Squat", Category: "legs", Modality: "strength", Pattern: "squat", MuscleGroup: "quads", EquipmentRequired: []string{"barbell"}, Impact: "low"},
+					{Name: "Treadmill Run", Category: "cardio", Modality: "cardio", Pattern: "locomotion", MuscleGroup: "full_body", EquipmentRequired: []string{"cardio_machine"}, Impact: "high"},
 				}, nil
 			},
 		}
@@ -33,6 +33,10 @@ func TestExerciseCatalogHandler_List(t *testing.T) {
 		decodeBody(t, rec, &got)
 		if len(got["exercises"]) != 2 {
 			t.Errorf("exercises len=%d want 2", len(got["exercises"]))
+		}
+		// Programming metadata (spec 016 FR-005) rides on the same entry shape.
+		if first := got["exercises"][0]; first.Pattern != "squat" || first.MuscleGroup != "quads" || len(first.EquipmentRequired) != 1 || first.EquipmentRequired[0] != "barbell" || first.Impact != "low" {
+			t.Errorf("programming metadata missing from the wire shape: %+v", first)
 		}
 	})
 

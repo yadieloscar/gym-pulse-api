@@ -378,22 +378,32 @@ including when those resources have changed again.
 
 ### Program generation
 
-GymPulse can build one unsaved program draft from the saved training profile.
-Generation is read-only with respect to programs, schedules, and the profile:
-nothing is stored except a per-athlete daily count, and the draft exists only
-in the response. The athlete reviews it in the app and saves it, unchanged,
-through `POST /api/v1/programs`. The feature is off when the API has no
-provider key; the app hides its entry points when `enabled` is false.
+GymPulse builds one unsaved program draft from the athlete's answers (the saved
+or proposed training profile plus the optional steers below). Generation is
+read-only with respect to programs, schedules, and the profile; the draft
+exists only in the response. The athlete reviews it in the app and saves it,
+unchanged, through `POST /api/v1/programs`.
+
+Two providers serve the same route. The default, `rules`, is a deterministic
+engine inside the API: no provider call, no daily limit, nothing about the
+athlete leaves the process, and equal answers give an identical draft. The
+`model` provider (`PROGRAM_GENERATION_PROVIDER=model` with `ANTHROPIC_API_KEY`)
+sends the answers to the configured Claude model, keeps a per-athlete daily
+count, and honours the free-text `request`. `provider` in both answers says
+which served; `enabled` is `false` only when `model` is configured without a
+key and the app hides its entry points then.
 
 #### `GET /api/v1/program-generation`
 
 Response 200:
 ```json
-{ "enabled": true, "limit": 5, "remaining_today": 4, "resets_at": "<RFC3339|null>" }
+{ "enabled": true, "provider": "rules", "limit": 5, "remaining_today": 5, "resets_at": null }
 ```
-`remaining_today` counts succeeded and in-progress drafts in the athlete's
-current local day (saved training-profile timezone) against `limit`; `resets_at` is the next
-local midnight. Without a training profile `remaining_today` equals `limit`
+With `provider: "rules"` the limit never applies: `remaining_today` equals
+`limit` and `resets_at` is `null`. With `provider: "model"`, `remaining_today`
+counts succeeded and in-progress drafts in the athlete's current local day
+(saved training-profile timezone) against `limit` and `resets_at` is the next
+local midnight; without a training profile `remaining_today` equals `limit`
 and `resets_at` is `null`.
 
 #### `POST /api/v1/program-generation`
@@ -403,6 +413,9 @@ Optional body:
 {
   "request": "no deadlifts",
   "secondary_goals": ["conditioning"],
+  "avoid": ["hinge", "vertical_push"],
+  "focus": "upper",
+  "variant": 1,
   "proposed_profile": {
     "primary_goal": "strength", "available_days": [1, 3, 5],
     "usual_activity": "moderate", "experience": "intermediate",
@@ -417,11 +430,21 @@ value returns `422 VALIDATION_ERROR` with `details.field = "request"`.
 primary (duplicates collapse; the primary itself, an unknown goal, or a third
 goal returns `422 VALIDATION_ERROR` with `details.field = "secondary_goals"`).
 The primary goal sets the draft's structure; a secondary goal steers at most
-about a third of it. `proposed_profile` is optional and uses the plan-transition preview shape; when
+about a third of it. `avoid` (optional, at most 6 distinct catalog movement
+patterns: `squat`, `hinge`, `lunge`, `horizontal_push`, `vertical_push`,
+`horizontal_pull`, `vertical_pull`, `carry`, `core`, `explosive`, `locomotion`,
+`isolation`) keeps those patterns out of the draft; `focus` (optional: `upper`,
+`lower`, or `core`) gives that area about two thirds of the lifting slots;
+`variant` (optional integer 0..1000) rotates the exercise chosen within each
+pattern so "try another" yields a different, equally valid draft. Unknown values
+return `422 VALIDATION_ERROR` naming `avoid`, `focus`, or `variant`. The `rules`
+provider ignores `request`; the `model` provider ignores `avoid`, `focus`, and
+`variant`. `proposed_profile` is optional and uses the plan-transition preview shape; when
 present it replaces the saved profile for this request only (onboarding builds a
 draft before the profile is saved), is validated like `PUT /training-profile`,
-and is never stored. The body may be omitted or `{}`. The route takes no `Idempotency-Key` because the
-draft is not deterministic. It is rate limited to 5 requests per minute per
+and is never stored. The body may be omitted or `{}`. The route takes no
+`Idempotency-Key` (the `rules` provider is deterministic by construction; the
+`model` provider is not). It is rate limited to 5 requests per minute per
 athlete (`429 RATE_LIMITED`).
 
 Response 200:
@@ -429,7 +452,7 @@ Response 200:
 {
   "draft": {
     "name": "Three-day upper lower", "primary_goal": "hypertrophy",
-    "roadmap": { "origin": "generated", "model": "claude-opus-5-5", "request": null },
+    "roadmap": { "origin": "generated", "model": "gympulse-rules-v1", "request": null },
     "workouts": [{
       "kind": "exercises", "name": "Upper A", "preferred_weekday": 1, "sequence_position": 1,
       "exercises": [{
@@ -442,7 +465,10 @@ Response 200:
   "rationale": "string, at most 500 characters",
   "request": "no deadlifts|null",
   "secondary_goals": ["conditioning"],
-  "remaining_today": 3,
+  "provider": "rules",
+  "avoid": ["hinge", "vertical_push"],
+  "focus": "upper",
+  "remaining_today": 5,
   "resets_at": "<RFC3339>"
 }
 ```
@@ -463,28 +489,31 @@ Errors:
 - `422 VALIDATION_ERROR` with `details.field = "training_profile"` when no
   profile is saved and none is proposed, or `details.field =
   "proposed_profile.<field>"` when the proposed profile is invalid; no provider
-  call is made.
-- `429 GENERATION_LIMIT_REACHED` when the athlete already received `limit`
-  drafts in the current local day:
+  call is made. With `details.field = "avoid"` and the message "Those limits
+  leave too little to build a workout from; drop one and try again." when the
+  `rules` provider cannot fill three exercises for some workout.
+- `429 GENERATION_LIMIT_REACHED` (`model` provider only) when the athlete
+  already received `limit` drafts in the current local day:
   ```json
   { "error": "daily program generation limit reached", "code": "GENERATION_LIMIT_REACHED",
     "details": { "limit": 5, "resets_at": "<RFC3339>" } }
   ```
   No provider call is made.
-- `503 GENERATION_UNAVAILABLE` with `details.reason` `"disabled"` (no provider
-  key configured) or `"unavailable"` (provider error, timeout after 45 seconds,
-  refusal, or a draft that failed validation):
+- `503 GENERATION_UNAVAILABLE` with `details.reason` `"disabled"` (`model`
+  provider configured without a key) or `"unavailable"` (provider error,
+  timeout after 45 seconds, refusal, or a draft that failed validation):
   ```json
   { "error": "program generation is unavailable", "code": "GENERATION_UNAVAILABLE",
     "details": { "reason": "unavailable" } }
   ```
   The attempt does not count toward the daily limit and nothing is stored.
 
-Only the training-profile fields (`primary_goal`, `available_days`,
-`usual_activity`, `experience`, `equipment`, `session_duration_minutes`), the
-exercise catalog, and `request` are sent to the provider. The athlete's
+With the `rules` provider nothing leaves the API. With the `model` provider
+only the training-profile fields (`primary_goal`, `available_days`,
+`usual_activity`, `experience`, `equipment`, `session_duration_minutes`),
+`secondary_goals`, the exercise catalog, and `request` are sent. The athlete's
 identity, timezone, history, body metrics, nutrition, and health data never
-leave the API.
+leave the API either way.
 
 ### Schedule and scheduled workouts
 
@@ -1077,12 +1106,21 @@ convention as `/stats/distribution`):
 {
   "exercises": [
     { "id": "<uuid>", "name": "Barbell Bench Press", "category": "push",
-      "modality": "strength", "mechanic": "compound", "sort_order": 1 }
+      "modality": "strength", "mechanic": "compound", "sort_order": 1,
+      "pattern": "horizontal_push", "muscle_group": "chest",
+      "equipment_required": ["barbell"], "impact": "low" }
   ]
 }
 ```
 - `modality`: `"strength" | "cardio"`. `mechanic`: `"compound" | "isolation"`,
   **null for cardio entries** — client prefill keys off these two fields.
+- Programming metadata (migration 032, used by the program engine): `pattern`
+  (`squat`, `hinge`, `lunge`, `horizontal_push`, `vertical_push`,
+  `horizontal_pull`, `vertical_pull`, `carry`, `core`, `explosive`,
+  `locomotion`, `isolation`), `muscle_group` (`chest`, `back`, `shoulders`,
+  `arms`, `quads`, `hamstrings`, `glutes`, `calves`, `core`, `full_body`),
+  `equipment_required` (non-empty subset of the training-profile equipment
+  values; `["bodyweight"]` means always available), `impact` (`low` | `high`).
 - Unknown `category` → 422 `VALIDATION_ERROR`. Valid categories are the
   workout type ids (push, pull, legs, upper, lower, full, core, cardio, …).
 - Catalog is seeded by migration (~80 entries); no write endpoints in v1.

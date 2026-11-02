@@ -174,6 +174,21 @@ composition; Wilson 2012 and Schumann 2022 for concurrent training). Tables, all
   `PROGRAM_GENERATION_PROVIDER=model` (with a key) or revert; the migration's down drops the four
   columns.
 
+### Implementation notes (2026-11-02)
+
+- Thin workouts are topped up before the engine gives up: any remaining pattern, then isolation
+  work (even for beginners), then a short cardio bout. `ErrTooConstrained` therefore fires only
+  when nothing eligible is left, which with the six-pattern cap on `avoid` means bodyweight-only
+  equipment.
+- Focus keeps its two-thirds share when `avoid` thins the focus area by appending extra slots
+  from that area (isolation and repeated patterns, which pick different entries).
+- Beginners never get explosive entries, power goal included (US1/AC3 wins over the edge-case
+  wording, now aligned).
+- The seam carries no `Explanation`, so the success log records provider, model id, duration,
+  and workout count rather than the split (FR-011 "split only" is read as "nothing more than
+  that").
+- Engine-built drafts carry `roadmap.model = "gympulse-rules-v1"`.
+
 ## Resolved Technical Questions
 
 - Migration number: `032`; `031` is spec 015's ledger.

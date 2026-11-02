@@ -27,6 +27,10 @@ type GenerationInput struct {
 	Request                *string
 	Model                  string
 	WorkoutCap             int
+	// Avoid, Focus, and Variant steer the rules engine; the model path ignores them.
+	Avoid   []string
+	Focus   string
+	Variant int
 }
 
 // GenerationUsage is what the service logs about a call.
