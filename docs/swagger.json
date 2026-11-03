@@ -2456,6 +2456,50 @@
             }
         },
         "/api/v1/scheduled-workouts/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.",
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Delete a past scheduled workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "CONFLICT for today's or a future unfinished workout; ACTIVE_SESSION_CONFLICT while a linked session is active",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            },
             "patch": {
                 "security": [
                     {

@@ -203,12 +203,8 @@ func (s *logService) resolveReplacement(ctx context.Context, userID uuid.UUID, r
 }
 
 func (s *logService) Delete(ctx context.Context, userID uuid.UUID, date string) error {
-	parsed, err := model.ParseDate(date)
-	if err != nil {
+	if _, err := model.ParseDate(date); err != nil {
 		return &model.ValidationError{Message: "invalid date format, expected YYYY-MM-DD", Field: "date"}
-	}
-	if parsed.Before(model.UTCToday()) {
-		return &model.ConflictError{Message: "historical workout logs cannot be deleted"}
 	}
 	return s.repo.Delete(ctx, userID, date)
 }

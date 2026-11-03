@@ -101,6 +101,7 @@ func New(
 				})
 				r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
 					r.Patch("/", scheduleHandler.Patch)
+					r.Delete("/", scheduleHandler.Delete)
 					r.Put("/sets/{set_id}", scheduleHandler.PutSet)
 					r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 					r.Post("/extra-sets", scheduleHandler.AddExtra)
