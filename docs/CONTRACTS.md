@@ -1134,9 +1134,23 @@ Body:
     { "exercise_id": "uuid", "set_index": 1, "target_reps": 8, "target_weight": 135,
       "actual_reps": 8, "actual_weight": 135, "duration_seconds": null, "completed": true }
   ],
-  "session_notes": "string|null"
+  "session_notes": "string|null",
+  "operation_key": "string (optional)"
 }
 ```
+
+**Optional idempotency (offline finish).** A client that may deliver the same
+finish more than once (an offline outbox, a retry after a lost response) sends
+`Idempotency-Key: <stable client operation key>` and an equal `operation_key`
+body field. The identical key and identical JSON payload returns the
+originally stored `201` body, including the original `id` and `logged_at`,
+and never creates a second log. Reusing the key with a different payload
+returns `409 IDEMPOTENCY_CONFLICT` (same shape as goal-based training). A key
+in only one location, or different values in the two locations, returns
+`422 VALIDATION_ERROR` with `details.field = "Idempotency-Key"`. Omitting both
+keeps the legacy, non-idempotent create, so released clients are unaffected.
+Replay is checked after request validation, so a replay must still be a valid
+request (the template must still be owned, and the date not in the future).
 
 `set_logs` is the per-set history behind the active workout player.
 `set_index` is 1-based (≥ 1). A `completed: true` set must include `actual_reps`
