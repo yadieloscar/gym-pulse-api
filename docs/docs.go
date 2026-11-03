@@ -2024,7 +2024,7 @@ const docTemplate = `{
                 "summary": "Generate a program draft",
                 "parameters": [
                     {
-                        "description": "Optional one-line request and proposed profile",
+                        "description": "Optional steers: request (model provider), secondary_goals, avoid, focus, variant (rules provider), and proposed profile",
                         "name": "body",
                         "in": "body",
                         "schema": {
@@ -3758,7 +3758,16 @@ const docTemplate = `{
                 "category": {
                     "type": "string"
                 },
+                "equipment_required": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
+                    "type": "string"
+                },
+                "impact": {
                     "type": "string"
                 },
                 "mechanic": {
@@ -3767,7 +3776,13 @@ const docTemplate = `{
                 "modality": {
                     "type": "string"
                 },
+                "muscle_group": {
+                    "type": "string"
+                },
                 "name": {
+                    "type": "string"
+                },
+                "pattern": {
                     "type": "string"
                 },
                 "sort_order": {
@@ -5084,6 +5099,16 @@ const docTemplate = `{
         "model.GenerateProgramRequest": {
             "type": "object",
             "properties": {
+                "avoid": {
+                    "description": "Avoid lists movement patterns the engine leaves out; Focus shifts the\nstrength slots toward upper, lower, or core; Variant rotates the exercise\nchosen within each pattern. The model path ignores all three.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "focus": {
+                    "type": "string"
+                },
                 "proposed_profile": {
                     "description": "ProposedProfile lets onboarding build a draft before the profile is\nsaved. It is validated like a saved profile and is never stored.",
                     "allOf": [
@@ -5101,14 +5126,29 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "variant": {
+                    "type": "integer"
                 }
             }
         },
         "model.GenerateProgramResponse": {
             "type": "object",
             "properties": {
+                "avoid": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "draft": {
                     "$ref": "#/definitions/model.ProgramDraft"
+                },
+                "focus": {
+                    "type": "string"
+                },
+                "provider": {
+                    "type": "string"
                 },
                 "rationale": {
                     "type": "string"
@@ -5138,6 +5178,9 @@ const docTemplate = `{
                 },
                 "limit": {
                     "type": "integer"
+                },
+                "provider": {
+                    "type": "string"
                 },
                 "remaining_today": {
                     "type": "integer"

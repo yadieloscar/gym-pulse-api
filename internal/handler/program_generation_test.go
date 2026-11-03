@@ -50,7 +50,7 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	svc := &fakeGenerationService{resp: &model.GenerateProgramResponse{Draft: draft, Rationale: "r", RemainingToday: 4, ResetsAt: time.Date(2026, 10, 31, 4, 0, 0, 0, time.UTC)}}
 	h := NewProgramGenerationHandler(svc, 45*time.Second)
 
-	for _, body := range []any{nil, "{}", map[string]any{"request": "no deadlifts", "secondary_goals": []string{"conditioning"}}} {
+	for _, body := range []any{nil, "{}", map[string]any{"request": "no deadlifts", "secondary_goals": []string{"conditioning"}, "avoid": []string{"hinge"}, "focus": "upper", "variant": 2}} {
 		rec := httptest.NewRecorder()
 		req := newReq(t, http.MethodPost, "/api/v1/program-generation", body, uuid.New())
 		if body != nil {
@@ -70,6 +70,9 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	if len(svc.got.SecondaryGoals) != 1 || svc.got.SecondaryGoals[0] != "conditioning" {
 		t.Fatalf("secondary_goals not passed through: %+v", svc.got.SecondaryGoals)
 	}
+	if len(svc.got.Avoid) != 1 || svc.got.Avoid[0] != "hinge" || svc.got.Focus == nil || *svc.got.Focus != "upper" || svc.got.Variant == nil || *svc.got.Variant != 2 {
+		t.Fatalf("avoid, focus, variant not passed through: %+v", svc.got)
+	}
 	rec := httptest.NewRecorder()
 	proposed := map[string]any{"proposed_profile": map[string]any{"primary_goal": "strength", "available_days": []int{1, 3}, "usual_activity": "moderate",
 		"experience": "beginner", "equipment": []string{"barbell"}, "session_duration_minutes": 45, "timezone": "America/New_York"}}
@@ -81,7 +84,7 @@ func TestProgramGenerationHandlerGenerate(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.Generate(rec, newReq(t, http.MethodPost, "/api/v1/program-generation", nil, uuid.New()))
 	decodeBody(t, rec, &out)
-	for _, key := range []string{"draft", "rationale", "request", "secondary_goals", "remaining_today", "resets_at"} {
+	for _, key := range []string{"draft", "rationale", "request", "secondary_goals", "provider", "avoid", "focus", "remaining_today", "resets_at"} {
 		if _, ok := out[key]; !ok {
 			t.Errorf("response missing %s", key)
 		}
@@ -107,6 +110,8 @@ func TestProgramGenerationHandlerErrorMapping(t *testing.T) {
 	}{
 		{"no profile", &model.ValidationError{Message: "save a training profile before building a program", Field: "training_profile"}, 422, []string{`"code":"VALIDATION_ERROR"`, `"field":"training_profile"`}},
 		{"bad proposed profile", &model.ValidationError{Message: "unknown training goal", Field: "proposed_profile.primary_goal"}, 422, []string{`"code":"VALIDATION_ERROR"`, `"field":"proposed_profile.primary_goal"`}},
+		{"too constrained", &model.ValidationError{Message: "Those limits leave too little to build a workout from; drop one and try again.", Field: "avoid"}, 422, []string{`"code":"VALIDATION_ERROR"`, `"field":"avoid"`, `drop one and try again`}},
+		{"bad focus", &model.ValidationError{Message: "focus must be upper, lower, or core", Field: "focus"}, 422, []string{`"field":"focus"`}},
 		{"limit", &model.GenerationLimitError{Limit: 5, ResetsAt: resets}, 429, []string{`"code":"GENERATION_LIMIT_REACHED"`, `"limit":5`, `"resets_at":"2026-10-31T04:00:00Z"`}},
 		{"disabled", &model.GenerationUnavailableError{Reason: model.GenerationDisabled}, 503, []string{`"code":"GENERATION_UNAVAILABLE"`, `"reason":"disabled"`}},
 		{"unavailable", &model.GenerationUnavailableError{Reason: model.GenerationUnavailable}, 503, []string{`"code":"GENERATION_UNAVAILABLE"`, `"reason":"unavailable"`}},

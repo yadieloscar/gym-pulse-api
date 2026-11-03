@@ -195,13 +195,14 @@ func main() {
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
-	var draftGenerator service.DraftGenerator
-	if cfg.ProgramGenerationEnabled() {
+	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).
+	draftGenerator := service.NewRulesDraftGenerator()
+	if cfg.ProgramGenerationUsesModel() {
 		draftGenerator = service.NewAnthropicDraftGenerator(cfg.AnthropicAPIKey, cfg.AnthropicBaseURL, cfg.ProgramGenerationModel, cfg.ProgramGenerationTimeout)
-	} else if cfg.Environment == "staging" || cfg.Environment == "production" {
-		logger.Warn("ANTHROPIC_API_KEY is empty; program generation is disabled")
+	} else if cfg.ProgramGenerationProviderFallback {
+		logger.Warn("PROGRAM_GENERATION_PROVIDER=model without ANTHROPIC_API_KEY; the rules engine serves drafts instead")
 	}
-	programGenerationSvc := service.NewProgramGenerationService(trainingProfileRepo, exerciseCatalogRepo, programGenerationRepo, draftGenerator, cfg.ProgramGenerationDailyLimit, cfg.ProgramGenerationModel)
+	programGenerationSvc := service.NewProgramGenerationService(trainingProfileRepo, exerciseCatalogRepo, programGenerationRepo, draftGenerator, cfg.ProgramGenerationProvider, cfg.ProgramGenerationDailyLimit, cfg.ProgramGenerationModel)
 
 	accountRepo := dao.NewAccountDAO(pool)
 	var authDeleter service.AuthUserDeleter

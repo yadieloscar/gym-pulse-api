@@ -839,21 +839,42 @@ else
   bad "food logging acceptance failed (food=$fl_food_status bad_code=$fl_bad_code_status barcode=$fl_barcode_status search=$fl_search_status short_q=$fl_short_q_status entry=$fl_entry_status replay=$fl_replay_status mismatch=$fl_mismatch_status quick=$fl_quick_status typed=$fl_typed_status health=$fl_health_status update=$fl_update_status stale=$fl_stale_status list=$fl_list_status recent=$fl_recent_status del_quick=$fl_del_quick_status del=$fl_del_status archive=$fl_archive_status after_archive=$fl_after_archive_status unknown_food=$fl_unknown_food_status after_delete=$fl_after_delete_status)" "$(echo "$fl_entry_body $fl_typed_body" | head -c 500)"
 fi
 
-# ---------- 13h. program generation (no provider key in the smoke stack) ----------
-step "13h. GET /api/v1/program-generation reports disabled; POST answers 503 GENERATION_UNAVAILABLE reason disabled"
+# ---------- 13h. program generation (rules engine; no provider key in the smoke stack) ----------
+step "13h. GET /api/v1/program-generation reports the rules provider; POST builds a deterministic draft; variant differs; too constrained answers 422 avoid"
 pg_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/program-generation" "${auth[@]}")
 pg_body=$(cat /tmp/smoke.body)
 pg_post_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
-  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts"}')
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts","avoid":["hinge"]}')
 pg_post_body=$(cat /tmp/smoke.body)
+pg_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts","avoid":["hinge"]}')
+pg_again_body=$(cat /tmp/smoke.body)
+pg_variant_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"avoid":["hinge"],"variant":1}')
+pg_variant_body=$(cat /tmp/smoke.body)
 pg_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
-  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"   "}')
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"focus":"sideways"}')
 pg_bad_body=$(cat /tmp/smoke.body)
-if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "503" ] && [ "$pg_bad_status" = "503" ] && \
-  python3 -c "import json,sys; s,p=[json.loads(x) for x in sys.argv[1:]]; assert s['enabled'] is False and s['limit']==5 and s['remaining_today']==5; assert p['code']=='GENERATION_UNAVAILABLE' and p['details']['reason']=='disabled'" "$pg_body" "$pg_post_body" 2>/dev/null; then
-  ok "generation reports enabled false with limit 5, and POST answers 503 disabled before validating the body"
+pg_started=$(date +%s%N)
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  curl -s -o /dev/null -X POST "$API/api/v1/program-generation" "${auth[@]}" -H "Content-Type: application/json" -d '{}'
+done
+pg_avg_ms=$(( ( $(date +%s%N) - pg_started ) / 10000000 ))
+if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "200" ] && [ "$pg_again_status" = "200" ] && [ "$pg_variant_status" = "200" ] && [ "$pg_bad_status" = "422" ] && \
+  python3 -c "
+import json,sys
+s,p,a,v,b=[json.loads(x) for x in sys.argv[1:]]
+assert s['enabled'] is True and s['provider']=='rules' and s['remaining_today']==s['limit']
+assert p['provider']=='rules' and p['avoid']==['hinge'] and p['request']=='no deadlifts'
+assert 1 <= len(p['draft']['workouts']) <= 6 and all(3 <= len(w['exercises']) <= 8 for w in p['draft']['workouts'])
+assert all('Deadlift' not in e['name'] for w in p['draft']['workouts'] for e in w['exercises'])
+assert p['draft']==a['draft'] and p['rationale']==a['rationale']
+assert v['draft']!=p['draft']
+assert b['code']=='VALIDATION_ERROR' and b['details']['field']=='focus'
+" "$pg_body" "$pg_post_body" "$pg_again_body" "$pg_variant_body" "$pg_bad_body" 2>/dev/null && [ "$pg_avg_ms" -lt 200 ]; then
+  ok "rules provider: deterministic draft, variant differs, 422 on a bad focus, average ${pg_avg_ms} ms over 10 builds"
 else
-  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
+  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status again=$pg_again_status variant=$pg_variant_status bad=$pg_bad_status avg_ms=$pg_avg_ms)" "$(echo "$pg_body $pg_post_body" | head -c 400)"
 fi
 
 # ---------- 13i. deleting past workouts ----------

@@ -55,13 +55,23 @@ definitions:
     properties:
       category:
         type: string
+      equipment_required:
+        items:
+          type: string
+        type: array
       id:
+        type: string
+      impact:
         type: string
       mechanic:
         type: string
       modality:
         type: string
+      muscle_group:
+        type: string
       name:
+        type: string
+      pattern:
         type: string
       sort_order:
         type: integer
@@ -945,6 +955,16 @@ definitions:
     type: object
   model.GenerateProgramRequest:
     properties:
+      avoid:
+        description: |-
+          Avoid lists movement patterns the engine leaves out; Focus shifts the
+          strength slots toward upper, lower, or core; Variant rotates the exercise
+          chosen within each pattern. The model path ignores all three.
+        items:
+          type: string
+        type: array
+      focus:
+        type: string
       proposed_profile:
         allOf:
         - $ref: '#/definitions/model.ProposedTrainingProfile'
@@ -960,11 +980,21 @@ definitions:
         items:
           type: string
         type: array
+      variant:
+        type: integer
     type: object
   model.GenerateProgramResponse:
     properties:
+      avoid:
+        items:
+          type: string
+        type: array
       draft:
         $ref: '#/definitions/model.ProgramDraft'
+      focus:
+        type: string
+      provider:
+        type: string
       rationale:
         type: string
       remaining_today:
@@ -984,6 +1014,8 @@ definitions:
         type: boolean
       limit:
         type: integer
+      provider:
+        type: string
       remaining_today:
         type: integer
       resets_at:
@@ -3320,7 +3352,8 @@ paths:
       consumes:
       - application/json
       parameters:
-      - description: Optional one-line request and proposed profile
+      - description: 'Optional steers: request (model provider), secondary_goals,
+          avoid, focus, variant (rules provider), and proposed profile'
         in: body
         name: body
         schema:
