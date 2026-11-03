@@ -54,6 +54,10 @@ type CreateDayLogRequest struct {
 	Overrides    []CreateOverrideRequest `json:"overrides,omitempty"`
 	SetLogs      []CreateSetLogRequest   `json:"set_logs,omitempty"`
 	SessionNotes *string                 `json:"session_notes,omitempty"`
+	// OperationKey makes a create safe to replay. It is optional because logs
+	// predate the idempotency contract; when present it must equal the
+	// Idempotency-Key header.
+	OperationKey string `json:"operation_key,omitempty"`
 }
 
 // UpdateDayLogRequest is the request body for PUT /api/v1/logs/:date.

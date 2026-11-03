@@ -534,6 +534,12 @@ const docTemplate = `{
                 "summary": "Create a day log",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "Optional; equal to operation_key. A replay returns the first response.",
+                        "name": "Idempotency-Key",
+                        "in": "header"
+                    },
+                    {
                         "description": "Day log payload",
                         "name": "body",
                         "in": "body",
@@ -569,7 +575,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "A log already exists for this date",
+                        "description": "A log already exists for this date, or the key was used with a different payload",
                         "schema": {
                             "type": "object",
                             "additionalProperties": {
@@ -3780,6 +3786,10 @@ const docTemplate = `{
             ],
             "properties": {
                 "date": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "description": "OperationKey makes a create safe to replay. It is optional because logs\npredate the idempotency contract; when present it must equal the\nIdempotency-Key header.",
                     "type": "string"
                 },
                 "overrides": {
