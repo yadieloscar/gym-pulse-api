@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
+	"github.com/gym-pulse/gym-pulse-api/internal/engine"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
@@ -24,20 +25,31 @@ type programGenerationService struct {
 	profiles  dao.TrainingProfileDAO
 	catalog   dao.ExerciseCatalogDAO
 	ledger    dao.ProgramGenerationDAO
-	generator DraftGenerator // nil when no provider key is configured
+	generator DraftGenerator // nil only when the model provider is configured without a key
+	provider  string         // model.GenerationProviderRules or model.GenerationProviderModel
 	limit     int
 	model     string
 	now       func() time.Time
 }
 
-// NewProgramGenerationService wires the DAOs and the optional generator. A nil
-// generator reports the feature as disabled.
-func NewProgramGenerationService(profiles dao.TrainingProfileDAO, catalog dao.ExerciseCatalogDAO, ledger dao.ProgramGenerationDAO, generator DraftGenerator, limit int, modelID string) ProgramGenerationService {
-	return &programGenerationService{profiles: profiles, catalog: catalog, ledger: ledger, generator: generator, limit: limit, model: modelID, now: time.Now}
+// NewProgramGenerationService wires the DAOs and the generator. provider says
+// whether drafts come from the rules engine (no ledger) or the model (ledger
+// and daily limit). A nil generator reports the feature as disabled.
+func NewProgramGenerationService(profiles dao.TrainingProfileDAO, catalog dao.ExerciseCatalogDAO, ledger dao.ProgramGenerationDAO, generator DraftGenerator, provider string, limit int, modelID string) ProgramGenerationService {
+	if provider == "" {
+		provider = model.GenerationProviderRules
+	}
+	return &programGenerationService{profiles: profiles, catalog: catalog, ledger: ledger, generator: generator, provider: provider, limit: limit, model: modelID, now: time.Now}
 }
 
+func (s *programGenerationService) rules() bool { return s.provider == model.GenerationProviderRules }
+
 func (s *programGenerationService) Status(ctx context.Context, userID uuid.UUID) (*model.GenerationStatus, error) {
-	status := &model.GenerationStatus{Enabled: s.generator != nil, Limit: s.limit, RemainingToday: s.limit}
+	status := &model.GenerationStatus{Enabled: s.generator != nil, Provider: s.provider, Limit: s.limit, RemainingToday: s.limit}
+	if s.rules() {
+		// The ledger bounds provider cost; engine drafts are free and unlimited.
+		return status, nil
+	}
 	profile, err := s.profiles.Get(ctx, userID)
 	var notFound *model.NotFoundError
 	if errors.As(err, &notFound) {
@@ -75,49 +87,79 @@ func (s *programGenerationService) Generate(ctx context.Context, userID uuid.UUI
 	if err != nil {
 		return nil, err
 	}
+	constraints, err := model.NormalizeGenerationConstraints(req.Avoid, req.Focus, req.Variant)
+	if err != nil {
+		return nil, err
+	}
 	localDate, resetsAt, err := s.localDay(profile)
 	if err != nil {
 		return nil, err
 	}
-	reservation, err := s.ledger.Reserve(ctx, userID, localDate, s.limit, s.model)
-	var limitErr *model.GenerationLimitError
-	if errors.As(err, &limitErr) {
-		limitErr.ResetsAt = resetsAt
-		return nil, limitErr
+	// The ledger and its daily limit bound provider cost; the rules engine has none.
+	var reservation *dao.ProgramGenerationReservation
+	if !s.rules() {
+		reservation, err = s.ledger.Reserve(ctx, userID, localDate, s.limit, s.model)
+		var limitErr *model.GenerationLimitError
+		if errors.As(err, &limitErr) {
+			limitErr.ResetsAt = resetsAt
+			return nil, limitErr
+		}
+		if err != nil {
+			return nil, err
+		}
 	}
-	if err != nil {
-		return nil, err
+	fail := func() {
+		if reservation != nil {
+			s.complete(ctx, reservation.ID, model.GenerationFailed)
+		}
 	}
 
 	catalog, err := s.catalog.List(ctx, "")
 	if err != nil {
-		s.complete(ctx, reservation.ID, model.GenerationFailed)
+		fail()
 		return nil, err
 	}
 	input := GenerationInput{
 		PrimaryGoal: profile.PrimaryGoal, SecondaryGoals: secondary, AvailableDays: profile.AvailableDays, UsualActivity: profile.UsualActivity,
 		Experience: profile.Experience, Equipment: profile.Equipment, SessionDurationMinutes: profile.SessionDurationMinutes,
 		Catalog: catalog, Request: request, Model: s.model, WorkoutCap: model.DraftWorkoutCap(profile.AvailableDays),
+		Avoid: constraints.Avoid, Focus: constraints.Focus, Variant: constraints.Variant,
+	}
+	modelID := s.model
+	if s.rules() {
+		modelID = RulesModelID
 	}
 	started := s.now()
 	raw, usage, err := s.generator.Generate(ctx, input)
+	if errors.Is(err, engine.ErrTooConstrained) {
+		return nil, &model.ValidationError{Message: "Those limits leave too little to build a workout from; drop one and try again.", Field: "avoid"}
+	}
 	if err != nil {
-		s.complete(ctx, reservation.ID, model.GenerationFailed)
-		slog.WarnContext(ctx, "program generation failed", "model", s.model, "duration_ms", s.now().Sub(started).Milliseconds(), "error", err)
+		fail()
+		slog.WarnContext(ctx, "program generation failed", "provider", s.provider, "model", modelID, "duration_ms", s.now().Sub(started).Milliseconds(), "error", err)
 		return nil, &model.GenerationUnavailableError{Reason: model.GenerationUnavailable}
 	}
-	generated, err := model.RepairGeneratedDraft(profile, catalog, raw, s.model, request)
+	generated, err := model.RepairGeneratedDraft(profile, catalog, raw, modelID, request)
 	if err != nil {
-		s.complete(ctx, reservation.ID, model.GenerationFailed)
-		slog.WarnContext(ctx, "program generation produced an invalid draft", "model", s.model, "error", err)
+		fail()
+		slog.WarnContext(ctx, "program generation produced an invalid draft", "provider", s.provider, "model", modelID, "error", err)
 		return nil, &model.GenerationUnavailableError{Reason: model.GenerationUnavailable}
 	}
-	s.complete(ctx, reservation.ID, model.GenerationSucceeded)
-	slog.InfoContext(ctx, "program generation succeeded", "model", s.model, "duration_ms", s.now().Sub(started).Milliseconds(),
+	remaining := s.limit
+	if reservation != nil {
+		s.complete(ctx, reservation.ID, model.GenerationSucceeded)
+		remaining = max(0, s.limit-reservation.Used)
+	}
+	slog.InfoContext(ctx, "program generation succeeded", "provider", s.provider, "model", modelID, "duration_ms", s.now().Sub(started).Milliseconds(),
 		"input_tokens", usage.InputTokens, "output_tokens", usage.OutputTokens, "workouts", len(generated.Draft.Workouts))
+	var focus *string
+	if constraints.Focus != "" {
+		focus = &constraints.Focus
+	}
 	return &model.GenerateProgramResponse{
 		Draft: generated.Draft, Rationale: generated.Rationale, Request: request, SecondaryGoals: secondary,
-		RemainingToday: max(0, s.limit-reservation.Used), ResetsAt: resetsAt,
+		Provider: s.provider, Avoid: constraints.Avoid, Focus: focus,
+		RemainingToday: remaining, ResetsAt: resetsAt,
 	}, nil
 }
 

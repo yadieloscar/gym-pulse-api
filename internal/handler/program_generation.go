@@ -47,7 +47,7 @@ func (h *ProgramGenerationHandler) Status(w http.ResponseWriter, r *http.Request
 // @Tags goal-training
 // @Accept json
 // @Produce json
-// @Param body body model.GenerateProgramRequest false "Optional one-line request and proposed profile"
+// @Param body body model.GenerateProgramRequest false "Optional steers: request (model provider), secondary_goals, avoid, focus, variant (rules provider), and proposed profile"
 // @Success 200 {object} model.GenerateProgramResponse
 // @Failure 422 {object} apiError
 // @Failure 429 {object} apiError

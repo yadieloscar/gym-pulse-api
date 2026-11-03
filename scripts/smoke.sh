@@ -495,6 +495,29 @@ else
   bad "lossless day-log acceptance failed (template=$template_status create=$create_status notes=$notes_status overrides=$overrides_status rollback=$rollback_status/$readback_status clear=$clear_status)" "$(echo "$clear_body" | head -c 280)"
 fi
 
+# ---------- 12b. keyed day-log create replays ----------
+step "12b. POST /api/v1/logs with an operation key creates one log and replays it"
+log_once_op="smoke-log-once-v1"
+log_once_payload="{\"date\":\"2026-01-16\",\"type_id\":\"push\",\"subtype_id\":\"hypertrophy\",\"template_id\":\"$template_id\",\"set_logs\":[{\"exercise_id\":\"$exercise_id\",\"set_index\":1,\"target_reps\":8,\"target_weight\":135,\"actual_reps\":8,\"actual_weight\":135,\"duration_seconds\":null,\"completed\":true}],\"operation_key\":\"$log_once_op\"}"
+log_once_first=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" -d "$log_once_payload")
+log_once_replay=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" -d "$log_once_payload")
+log_once_changed_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" \
+  -d "${log_once_payload/\"actual_reps\":8/\"actual_reps\":9}")
+log_once_changed_body=$(cat /tmp/smoke.body)
+log_once_mismatch_status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-log-other" -d "$log_once_payload")
+if [ "${log_once_first##*$'\n'}" = "201" ] && [ "${log_once_replay##*$'\n'}" = "201" ] \
+  && python3 -c "import json,sys; a=json.loads(sys.argv[1]); b=json.loads(sys.argv[2]); assert a['id']==b['id'] and a['logged_at']==b['logged_at']" "${log_once_first%$'\n'*}" "${log_once_replay%$'\n'*}" 2>/dev/null \
+  && [ "$log_once_changed_status" = "409" ] && echo "$log_once_changed_body" | grep -q IDEMPOTENCY_CONFLICT \
+  && [ "$log_once_mismatch_status" = "422" ]; then
+  ok "keyed create replayed the same log; changed payload 409; mismatched key 422"
+else
+  bad "keyed day-log acceptance failed (first=${log_once_first##*$'\n'} replay=${log_once_replay##*$'\n'} changed=$log_once_changed_status mismatch=$log_once_mismatch_status)" "$(echo "$log_once_changed_body" | head -c 280)"
+fi
+
 # ---------- 13. completed sport activity ----------
 step "13. POST /api/v1/sport-activities is idempotent and preserves participation"
 sport_op="smoke-sport-v1"
@@ -817,21 +840,60 @@ else
   bad "food logging acceptance failed (food=$fl_food_status bad_code=$fl_bad_code_status barcode=$fl_barcode_status search=$fl_search_status short_q=$fl_short_q_status entry=$fl_entry_status replay=$fl_replay_status mismatch=$fl_mismatch_status quick=$fl_quick_status typed=$fl_typed_status health=$fl_health_status update=$fl_update_status stale=$fl_stale_status list=$fl_list_status recent=$fl_recent_status del_quick=$fl_del_quick_status del=$fl_del_status archive=$fl_archive_status after_archive=$fl_after_archive_status unknown_food=$fl_unknown_food_status after_delete=$fl_after_delete_status)" "$(echo "$fl_entry_body $fl_typed_body" | head -c 500)"
 fi
 
-# ---------- 13h. program generation (no provider key in the smoke stack) ----------
-step "13h. GET /api/v1/program-generation reports disabled; POST answers 503 GENERATION_UNAVAILABLE reason disabled"
+# ---------- 13h. program generation (rules engine; no provider key in the smoke stack) ----------
+step "13h. GET /api/v1/program-generation reports the rules provider; POST builds a deterministic draft; variant differs; too constrained answers 422 avoid"
 pg_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/program-generation" "${auth[@]}")
 pg_body=$(cat /tmp/smoke.body)
 pg_post_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
-  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts"}')
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts","avoid":["hinge"]}')
 pg_post_body=$(cat /tmp/smoke.body)
+pg_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"no deadlifts","avoid":["hinge"]}')
+pg_again_body=$(cat /tmp/smoke.body)
+pg_variant_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"avoid":["hinge"],"variant":1}')
+pg_variant_body=$(cat /tmp/smoke.body)
 pg_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/program-generation" \
-  "${auth[@]}" -H "Content-Type: application/json" -d '{"request":"   "}')
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"focus":"sideways"}')
 pg_bad_body=$(cat /tmp/smoke.body)
-if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "503" ] && [ "$pg_bad_status" = "503" ] && \
-  python3 -c "import json,sys; s,p=[json.loads(x) for x in sys.argv[1:]]; assert s['enabled'] is False and s['limit']==5 and s['remaining_today']==5; assert p['code']=='GENERATION_UNAVAILABLE' and p['details']['reason']=='disabled'" "$pg_body" "$pg_post_body" 2>/dev/null; then
-  ok "generation reports enabled false with limit 5, and POST answers 503 disabled before validating the body"
+pg_started=$(date +%s%N)
+for _ in 1 2 3 4 5 6 7 8 9 10; do
+  curl -s -o /dev/null -X POST "$API/api/v1/program-generation" "${auth[@]}" -H "Content-Type: application/json" -d '{}'
+done
+pg_avg_ms=$(( ( $(date +%s%N) - pg_started ) / 10000000 ))
+if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "200" ] && [ "$pg_again_status" = "200" ] && [ "$pg_variant_status" = "200" ] && [ "$pg_bad_status" = "422" ] && \
+  python3 -c "
+import json,sys
+s,p,a,v,b=[json.loads(x) for x in sys.argv[1:]]
+assert s['enabled'] is True and s['provider']=='rules' and s['remaining_today']==s['limit']
+assert p['provider']=='rules' and p['avoid']==['hinge'] and p['request']=='no deadlifts'
+assert 1 <= len(p['draft']['workouts']) <= 6 and all(3 <= len(w['exercises']) <= 8 for w in p['draft']['workouts'])
+assert all('Deadlift' not in e['name'] for w in p['draft']['workouts'] for e in w['exercises'])
+assert p['draft']==a['draft'] and p['rationale']==a['rationale']
+assert v['draft']!=p['draft']
+assert b['code']=='VALIDATION_ERROR' and b['details']['field']=='focus'
+" "$pg_body" "$pg_post_body" "$pg_again_body" "$pg_variant_body" "$pg_bad_body" 2>/dev/null && [ "$pg_avg_ms" -lt 200 ]; then
+  ok "rules provider: deterministic draft, variant differs, 422 on a bad focus, average ${pg_avg_ms} ms over 10 builds"
 else
-  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
+  bad "program generation acceptance failed (status=$pg_status post=$pg_post_status again=$pg_again_status variant=$pg_variant_status bad=$pg_bad_status avg_ms=$pg_avg_ms)" "$(echo "$pg_body $pg_post_body" | head -c 400)"
+fi
+
+# ---------- 13i. deleting past workouts ----------
+step "13i. DELETE a past day log and a finished scheduled workout returns 204, then 404"
+log_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_gone_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+workout_delete_status=skipped
+workout_again_status=skipped
+if [ -n "${workout_id:-}" ]; then
+  workout_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+  workout_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+fi
+if [ "$log_delete_status" = "204" ] && [ "$log_gone_status" = "404" ] && [ "$log_again_status" = "404" ] && \
+  [ "$workout_delete_status" = "204" ] && [ "$workout_again_status" = "404" ]; then
+  ok "past day log and finished scheduled workout deleted; repeats answer 404"
+else
+  bad "past workout deletion failed (log=$log_delete_status/$log_gone_status/$log_again_status workout=$workout_delete_status/$workout_again_status)" "$(cat /tmp/smoke.body | head -c 200)"
 fi
 
 # ---------- 13i. mobility sessions (contract 1.4.0) ----------

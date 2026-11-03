@@ -1,0 +1,165 @@
+{
+  "name": "3-day strength plan",
+  "rationale": "Full-body days on Monday, Wednesday, and Friday. Built around back squat, goblet squat, and barbell bench press. Could not fit vertical pull with your equipment and limits.",
+  "workouts": [
+    {
+      "name": "Full body 1",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000001",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000006",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000003",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000009",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000014",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "name": "Full body 2",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000002",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000007",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000004",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000010",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000015",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": null
+        }
+      ]
+    },
+    {
+      "name": "Full body 3",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000001",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000006",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000003",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000009",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": null
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000014",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": null
+        }
+      ]
+    }
+  ]
+}

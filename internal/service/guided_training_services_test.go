@@ -188,6 +188,14 @@ func (r *coverageScheduleRepo) DeleteUnstartedRange(_ context.Context, _ uuid.UU
 	return deleted, nil
 }
 
+func (r *coverageScheduleRepo) Delete(_ context.Context, _ uuid.UUID, workoutID uuid.UUID) error {
+	if _, ok := r.workouts[workoutID]; !ok {
+		return &model.NotFoundError{Message: "scheduled workout not found"}
+	}
+	delete(r.workouts, workoutID)
+	return nil
+}
+
 type coverageSessionRepo struct {
 	sessions map[uuid.UUID]model.WorkoutSession
 }

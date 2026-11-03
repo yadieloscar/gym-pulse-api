@@ -39,6 +39,7 @@ func New(
 	foodHandler *handler.FoodHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
 	programGenerationHandler *handler.ProgramGenerationHandler,
+	exportHandler *handler.ExportHandler,
 	mobilitySessionHandler *handler.MobilitySessionHandler,
 ) http.Handler {
 	r := chi.NewRouter()
@@ -101,6 +102,7 @@ func New(
 				})
 				r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
 					r.Patch("/", scheduleHandler.Patch)
+					r.Delete("/", scheduleHandler.Delete)
 					r.Put("/sets/{set_id}", scheduleHandler.PutSet)
 					r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 					r.Post("/extra-sets", scheduleHandler.AddExtra)
@@ -212,6 +214,13 @@ func New(
 					r.Put("/weekly", planHandler.PutWeekly)
 					r.Put("/overrides/{date}", planHandler.PutOverride)
 					r.Delete("/overrides/{date}", planHandler.DeleteOverride)
+				})
+
+				// Data export: whole-history reads, bounded per minute.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RateLimitPerUser(middleware.ExportLimit))
+					r.Get("/export", exportHandler.Export)
+					r.Get("/export/workout-sets", exportHandler.WorkoutSets)
 				})
 
 				// Body Weight

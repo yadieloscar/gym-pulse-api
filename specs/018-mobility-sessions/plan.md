@@ -8,7 +8,7 @@
 
 Add an owned, write-once `mobility_sessions` resource with create (idempotent), range list, get, and
 delete routes. Nothing else in the API reads it, so stats, participation, records, history, volume,
-plan, schedule, sport activities, and health exports are unchanged. Additive contract 1.4.0; new
+plan, schedule, sport activities, and health exports are unchanged. Additive contract 1.5.0; new
 migration 033 (032 is claimed by open PR #40; renumber at merge if needed).
 
 ## Workflow and Specialist Scope
@@ -31,7 +31,7 @@ and deploys first.
 
 | Principle | Status |
 |---|---|
-| I. Contract first | `docs/CONTRACTS.md` gains a Mobility sessions section (contract 1.4.0) in the same change. Collections return `[]`. |
+| I. Contract first | `docs/CONTRACTS.md` gains a Mobility sessions section (contract 1.5.0) in the same change. Collections return `[]`. |
 | II. Owned authenticated data | Every query filters `user_id` from the JWT subject; foreign and missing ids share `404 NOT_FOUND`. |
 | III. Idempotent evolution | `Idempotency-Key` must equal `operation_key`; replay returns 200 with the original; a changed body is `409 IDEMPOTENCY_CONFLICT`. Forward-only additive migration; down drops only the new table. |
 | IV. Executable evidence | Service, handler, router, migration-contract, isolation, and PostgreSQL integration tests; smoke step. |

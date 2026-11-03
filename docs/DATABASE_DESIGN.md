@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **39 tables and 398 supported columns**. For the Supabase-managed
+The current inventory contains **39 tables and 402 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -301,6 +301,10 @@ account deletion leaves this row to the Supabase Admin API, after application an
 | `modality` | `text` | not null | Strength or cardio | Public |
 | `mechanic` | `text` | nullable | Compound/isolation for strength | Public |
 | `sort_order` | `integer` | not null; `0` | Order within category | Public |
+| `pattern` | `text` | not null | Movement pattern for the program engine (squat, hinge, lunge, horizontal_push, vertical_push, horizontal_pull, vertical_pull, carry, core, explosive, locomotion, isolation) | Public |
+| `muscle_group` | `text` | not null | Primary muscle group (chest, back, shoulders, arms, quads, hamstrings, glutes, calves, core, full_body) | Public |
+| `equipment_required` | `text[]` | not null | Profile equipment values the entry needs; `{bodyweight}` is always available | Public |
+| `impact` | `text` | not null | `low` or `high` | Public |
 
 **Current constraints and indexes**
 
@@ -308,11 +312,14 @@ account deletion leaves this row to the Supabase Admin API, after application an
 - Unique: `(category, name)`.
 - Modality: `strength|cardio`; mechanic: `compound|isolation`.
 - Shape check: strength requires a mechanic; cardio requires `NULL` mechanic.
-- Named index `idx_exercise_catalog_category(category)`.
+- Pattern, muscle group, and impact enumerations; `equipment_required` non-empty and a subset of
+  the profile equipment values (`exercise_catalog_*_check`).
+- Named indexes `idx_exercise_catalog_category(category)` and `idx_exercise_catalog_pattern(pattern)`.
 
 **Lifecycle**: Changes and seed additions ship as migrations; there is no public write endpoint.
+Migration 032 seeds the programming metadata for all 79 entries and fails if any row is missed.
 
-**Migration source**: `008_create_exercise_catalog`.
+**Migration source**: `008_create_exercise_catalog`, `032_add_exercise_catalog_programming`.
 
 ### Table: `public.workout_templates`
 
@@ -2154,6 +2161,7 @@ Report one of:
 | 029 | `nutrition_days` and `nutrition_targets`, RLS and role revocation, runtime-role grant and policy |
 | 030 | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`; `nutrition_days.source` gains `foods`; RLS and role revocation, runtime-role grants and policies |
 | 031 | `program_generations` daily-limit ledger, RLS and role revocation, runtime-role grant and policy |
+| 032 | `exercise_catalog` programming metadata (`pattern`, `muscle_group`, `equipment_required`, `impact`), seed for all rows, checks, `idx_exercise_catalog_pattern` |
 | 033 | `mobility_sessions` recorded stretching (write-once, row-level operation key), RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary

@@ -43,7 +43,7 @@ Tests are required by the constitution and by SC-001..SC-003.
 
 ## Phase 6: Polish
 
-- [X] T017 Document the routes in `docs/CONTRACTS.md` (contract 1.4.0)
+- [X] T017 Document the routes in `docs/CONTRACTS.md` (contract 1.5.0)
 - [X] T018 Add a mobility step to `scripts/smoke.sh`
 - [X] T019 Run the gates and record results below
 

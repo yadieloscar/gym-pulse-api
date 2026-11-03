@@ -77,11 +77,12 @@ func (h *LogHandler) GetByDate(w http.ResponseWriter, r *http.Request) {
 // @Tags        logs
 // @Accept      json
 // @Produce     json
+// @Param       Idempotency-Key header string false "Optional; equal to operation_key. A replay returns the first response."
 // @Param       body body model.CreateDayLogRequest true "Day log payload"
 // @Success     201 {object} model.DayLog
 // @Failure     400 {object} map[string]string
 // @Failure     401 {object} map[string]string
-// @Failure     409 {object} map[string]string "A log already exists for this date"
+// @Failure     409 {object} map[string]string "A log already exists for this date, or the key was used with a different payload"
 // @Security    BearerAuth
 // @Router      /api/v1/logs [post]
 func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
@@ -91,6 +92,13 @@ func (h *LogHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := decodeJSON(w, r, &req); err != nil {
 		writeDecodeError(w, err)
 		return
+	}
+	// Released clients send neither location and keep the legacy create; a
+	// key in either location must be present and equal in both.
+	if r.Header.Get("Idempotency-Key") != "" || req.OperationKey != "" {
+		if !matchIdempotencyKey(w, r, req.OperationKey) {
+			return
+		}
 	}
 
 	log, err := h.svc.Create(r.Context(), userID, req)
