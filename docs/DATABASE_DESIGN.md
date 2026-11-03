@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **38 tables and 389 supported columns**. For the Supabase-managed
+The current inventory contains **39 tables and 402 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -994,6 +994,39 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 031.
 
+### Table: `public.mobility_sessions`
+
+**Purpose**: Finished stretching routine recorded by the athlete. A stored fact only; no stat, participation, record, volume, plan, or schedule read consumes it.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Entry identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `date` | `date` | not null | Athlete's local date of the routine | Health |
+| `routine_id` | `text` | not null | App-bundled routine identifier (not validated against a catalog) | Health |
+| `routine_name` | `text` | not null | Routine display name at recording time | Health |
+| `context` | `text` | not null | `warmup`, `cooldown`, `rest_day`, or `anytime` | Health |
+| `duration_seconds` | `integer` | not null | Time spent in the routine | Health |
+| `moves_completed` | `smallint` | not null | Moves finished | Health |
+| `moves_total` | `smallint` | not null | Moves in the routine | Health |
+| `content_version` | `text` | not null | App routine-content version | Operational |
+| `operation_key` | `text` | not null | Client create identity | Operational |
+| `request_hash` | `text` | not null | Hash of the create request for replay comparison | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; UUID is application-generated.
+- FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: routine ID 1–64 characters and lowercase hyphenated slug; routine name 1–80; `context IN ('warmup', 'cooldown', 'rest_day', 'anytime')`; duration 1–7200 seconds; moves 1–100 each; `mobility_sessions_moves_check` requires `moves_completed <= moves_total`; content version 1–32; operation key 1–128.
+- Unique `ux_mobility_sessions_user_operation(user_id, operation_key)` is the create retry identity: insert-on-conflict-do-nothing, then a matching `request_hash` replays and a different one is an idempotency conflict. No `idempotency_records` row is written.
+- Index `idx_mobility_sessions_user_date(user_id, date DESC, created_at DESC, id DESC)` supports deterministic bounded range reads.
+- Rows are write-once; the owner may delete one. No revision column.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API roles have table privileges revoked, and the runtime role holds the `gym_pulse_api_access` policy.
+
+**Migration source**: 033.
+
 ### Table: `public.nutrition_days`
 
 **Purpose**: One set of daily nutrition totals per athlete and calendar date, typed, imported from Health, or (since 030) the sum of the date's food entries.
@@ -1310,11 +1343,13 @@ columns:
 | Scheduled execution/history/workflow | 6 | 72 |
 | Sport activity | 1 | 16 |
 | Health exports | 1 | 8 |
+| Program generation | 1 | 7 |
+| Mobility sessions | 1 | 13 |
 | Nutrition and food logging | 6 | 72 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **37** | **378** |
+| **Total** | **39** | **398** |
 
-The count is derived from the final state after migration 030, not the sum of every historical
+The count is derived from the final state after migration 033, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1323,7 +1358,7 @@ The count is derived from the final state after migration 030, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
 | `food_catalog` | `food_entries` | Restrict | Catalog rows are never deleted; entries keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `workout_templates` | `exercises` | Cascade | Removes mutable template composition |
@@ -1401,6 +1436,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Stats | None | Union logs, sessions, sets, participation; settings goal | Derived, no stats table |
 | Body weight | `body_weights` | Measurements ordered by date | Authoritative health series |
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
+| Mobility sessions | `mobility_sessions` | Owner range list, get, delete; nothing else reads it | Authoritative write-once fact; never counted |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
 | Food logging | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`, `nutrition_days` | Search and barcode lookups, recents, day entries with the day as their sum | Shared published facts; owner-scoped entries with snapshot values; same-transaction rollup |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
@@ -1447,6 +1483,8 @@ snapshot; `set_logs` is the preferred per-set history.
 | `health_exports` | `ux_health_exports_workout(user_id, workout_kind, workout_id, source)` unique | One Health export per finished workout and origin |
 | `health_exports` | `idx_health_exports_user_exported(user_id, exported_at DESC, id DESC)` | Owner export history |
 | `program_generations` | `idx_program_generations_user_date(user_id, local_date, status)` | Daily program-draft count per athlete |
+| `mobility_sessions` | `ux_mobility_sessions_user_operation(user_id, operation_key)` unique | Create retry identity |
+| `mobility_sessions` | `idx_mobility_sessions_user_date(user_id, date DESC, created_at DESC, id DESC)` | Owner range reads newest first |
 | `nutrition_days` | `ux_nutrition_days_user_date(user_id, date)` unique | One day per athlete and date; oldest-first range read |
 | `nutrition_targets` | `ux_nutrition_targets_user_effective(user_id, effective_from)` unique | One target per effective date; current-target lookup and range read |
 | `food_catalog` | `ux_food_catalog_source_id(source, source_id)` unique | One row per outside food; upsert identity |
@@ -1629,7 +1667,7 @@ payload-hash conflicts.
 ### Current deletion flow
 
 1. The service serializes account deletion and avatar writes with a per-user session advisory lock.
-2. One transaction explicitly deletes every application-owned root, including sports and training
+2. One transaction explicitly deletes every application-owned root, including sports, mobility sessions, and training
    blocks; composition children cascade. Global exercise and starter catalogs remain.
 3. After commit, avatar deletion removes the bounded owner paths.
 4. Supabase Auth Admin deletion runs last, so an auth response lost after deletion cannot strand
@@ -2124,6 +2162,7 @@ Report one of:
 | 030 | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`; `nutrition_days.source` gains `foods`; RLS and role revocation, runtime-role grants and policies |
 | 031 | `program_generations` daily-limit ledger, RLS and role revocation, runtime-role grant and policy |
 | 032 | `exercise_catalog` programming metadata (`pattern`, `muscle_group`, `equipment_required`, `impact`), seed for all rows, checks, `idx_exercise_catalog_pattern` |
+| 033 | `mobility_sessions` recorded stretching (write-once, row-level operation key), RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary
 

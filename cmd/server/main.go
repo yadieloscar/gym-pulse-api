@@ -151,6 +151,7 @@ func main() {
 	performedSetRepo := dao.NewPerformedSetDAO(pool)
 	participationRepo := dao.NewParticipationDAO(pool)
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
+	mobilitySessionRepo := dao.NewMobilitySessionDAO(pool)
 	healthExportRepo := dao.NewHealthExportDAO(pool)
 	nutritionRepo := dao.NewNutritionDAO(pool)
 	foodRepo := dao.NewFoodDAO(pool)
@@ -185,6 +186,7 @@ func main() {
 	workoutSessionSvc := service.NewWorkoutSessionService(workoutSessionRepo, scheduleRepo, participationRepo, trainingProfileRepo, trainingMutationRepo, idempotencyRepo, v)
 	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
+	mobilitySessionSvc := service.NewMobilitySessionService(mobilitySessionRepo, trainingProfileRepo)
 	healthExportSvc := service.NewHealthExportService(healthExportRepo)
 	nutritionSvc := service.NewNutritionService(nutritionRepo, trainingProfileRepo)
 	if cfg.USDAFDCAPIKey == "" && (cfg.Environment == "staging" || cfg.Environment == "production") {
@@ -228,6 +230,7 @@ func main() {
 	workoutSessionHandler := handler.NewWorkoutSessionHandler(workoutSessionSvc)
 	participationHandler := handler.NewParticipationHandler(participationSvc)
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
+	mobilitySessionHandler := handler.NewMobilitySessionHandler(mobilitySessionSvc)
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
 	foodHandler := handler.NewFoodHandler(foodSvc)
@@ -236,7 +239,7 @@ func main() {
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

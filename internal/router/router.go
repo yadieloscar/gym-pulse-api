@@ -40,6 +40,7 @@ func New(
 	trainingBlockHandler *handler.TrainingBlockHandler,
 	programGenerationHandler *handler.ProgramGenerationHandler,
 	exportHandler *handler.ExportHandler,
+	mobilitySessionHandler *handler.MobilitySessionHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -124,6 +125,12 @@ func New(
 					r.Get("/{id}", sportActivityHandler.Get)
 					r.Post("/{id}/link", sportActivityHandler.Link)
 					r.Post("/{id}/unlink", sportActivityHandler.Unlink)
+				})
+				r.Route("/mobility-sessions", func(r chi.Router) {
+					r.Get("/", mobilitySessionHandler.List)
+					r.Post("/", mobilitySessionHandler.Create)
+					r.Get("/{id}", mobilitySessionHandler.Get)
+					r.Delete("/{id}", mobilitySessionHandler.Delete)
 				})
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)
