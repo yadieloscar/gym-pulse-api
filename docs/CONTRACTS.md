@@ -931,6 +931,89 @@ Response 200 is the owned activity. A missing or foreign UUID returns the same
 404 `NOT_FOUND` response. Sport activities have no edit or delete route in v1;
 account deletion removes them.
 
+### Mobility sessions (contract 1.4.0)
+
+A mobility session is one finished stretching routine. Routines are bundled in
+the app; the API stores what was performed as facts and does not check
+`routine_id` against a catalog. Entries are never counted: stats
+(`this_week`, `streak_weeks`, totals), participation, records, exercise
+history, volume, distribution, plan, schedule, sport activities, and health
+exports ignore them, so a rest day with only stretching stays out of
+participation. Entries cannot be edited; the owner may delete one. Additive in
+contract 1.4.0; older clients never call these routes.
+
+#### `GET /api/v1/mobility-sessions?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Both dates are required and inclusive; `from` after `to` or a range longer
+than 366 days returns `422 VALIDATION_ERROR`. Response 200 is a JSON array of
+`MobilitySession` ordered by `date`, `created_at`, then `id`, newest first. An
+athlete with no entries in the range receives `[]`.
+
+#### `POST /api/v1/mobility-sessions`
+
+Requires `Idempotency-Key` equal to `operation_key` (otherwise `422` on
+`Idempotency-Key`).
+
+```json
+{
+  "date": "2026-11-03",
+  "routine_id": "hips-and-hamstrings",
+  "routine_name": "Hips and hamstrings",
+  "context": "cooldown",
+  "duration_seconds": 540,
+  "moves_completed": 7,
+  "moves_total": 8,
+  "content_version": "2026.11.1",
+  "operation_key": "mobility-create-123"
+}
+```
+
+| Field | Rule |
+|---|---|
+| `date` | Optional `YYYY-MM-DD`; omitted means today in the athlete's saved training-profile timezone. Future dates are rejected. |
+| `routine_id` | Lowercase slug (`a-z`, `0-9`, single hyphens between parts), 1–64 characters. |
+| `routine_name` | Trimmed, 1–80 characters. |
+| `context` | `warmup`, `cooldown`, `rest_day`, or `anytime`. |
+| `duration_seconds` | Whole number 1–7,200. |
+| `moves_completed` | Whole number 1–100, at most `moves_total`. |
+| `moves_total` | Whole number 1–100. |
+| `content_version` | Trimmed, 1–32 characters. |
+| `operation_key` | Trimmed, 1–128 characters. |
+
+A violation returns `422 VALIDATION_ERROR` with `details.field` naming the
+field (`moves_completed` when it exceeds `moves_total`). An athlete without a
+training profile receives the shared `404 NOT_FOUND`, as for sport activities.
+
+Response 201 is the stored `MobilitySession`:
+
+```json
+{
+  "id": "<uuid>", "date": "2026-11-03",
+  "routine_id": "hips-and-hamstrings", "routine_name": "Hips and hamstrings",
+  "context": "cooldown", "duration_seconds": 540,
+  "moves_completed": 7, "moves_total": 8,
+  "content_version": "2026.11.1", "operation_key": "mobility-create-123",
+  "created_at": "<RFC3339>"
+}
+```
+
+An identical retry with the same `operation_key` returns **200** with the
+original entry unchanged (same `id` and `created_at`), including a retry that
+omits `date` and arrives after local midnight. The same key with a different
+body returns `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to the athlete. Once an
+entry is deleted its key is free again, so a later create with that key records
+a new entry.
+
+#### `GET /api/v1/mobility-sessions/{id}`
+
+Response 200 is the owned entry. A missing or foreign UUID returns the shared
+`404 NOT_FOUND`; a malformed id returns `400 BAD_REQUEST`.
+
+#### `DELETE /api/v1/mobility-sessions/{id}` → 204
+
+Removes the owned entry. A repeat delete, or a missing or foreign id, returns
+`404 NOT_FOUND`. Account deletion removes every entry.
+
 ### Health exports
 
 Health exports remember the health-store identity the device received when it

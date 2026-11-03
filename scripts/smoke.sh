@@ -18,6 +18,7 @@
 #  11. a sport unit schedules a session completed once by a linked activity
 #  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
 #  13. nutrition target and days: save, replay, conflicts, Health precedence, clear, ranges
+#  14. mobility sessions replay, conflict, delete, and never move stats or participation (contract 1.4.0)
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -831,6 +832,53 @@ if [ "$pg_status" = "200" ] && [ "$pg_post_status" = "503" ] && [ "$pg_bad_statu
   ok "generation reports enabled false with limit 5, and POST answers 503 disabled before validating the body"
 else
   bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
+fi
+
+# ---------- 13i. mobility sessions (contract 1.4.0) ----------
+step "13i. Mobility: create 201 → replay 200 → conflict 409 → 422s → list/get → delete 204/404; stats and participation unchanged"
+mo_rest=$(python3 -c "from datetime import date,timedelta; print((date.today()-timedelta(days=3)).isoformat())")
+mo_stats_before=$(curl -s "$API/api/v1/stats" "${auth[@]}")
+mo_part_before=$(curl -s "$API/api/v1/participation?from=$mo_rest&to=$session_date" "${auth[@]}")
+mo_payload="{\"date\":\"$mo_rest\",\"routine_id\":\"hips-and-hamstrings\",\"routine_name\":\" Hips and hamstrings \",\"context\":\"rest_day\",\"duration_seconds\":540,\"moves_completed\":7,\"moves_total\":8,\"content_version\":\"1\",\"operation_key\":\"smoke-mobility-a\"}"
+mo_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-mobility-a" -d "$mo_payload")
+mo_body=$(cat /tmp/smoke.body)
+mo_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$mo_body" 2>/dev/null || true)
+mo_replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-mobility-a" -d "$mo_payload")
+mo_replay_body=$(cat /tmp/smoke.body)
+mo_conflict_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-mobility-a" -d "${mo_payload/\"moves_completed\":7/\"moves_completed\":6}")
+mo_conflict_body=$(cat /tmp/smoke.body)
+mo_header_status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: other-key" -d "$mo_payload")
+mo_moves_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-mobility-b" \
+  -d "$(echo "${mo_payload//smoke-mobility-a/smoke-mobility-b}" | sed 's/"moves_completed":7/"moves_completed":9/')")
+mo_moves_body=$(cat /tmp/smoke.body)
+mo_second_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/mobility-sessions" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-mobility-c" \
+  -d "{\"date\":\"$session_date\",\"routine_id\":\"desk-reset\",\"routine_name\":\"Desk reset\",\"context\":\"cooldown\",\"duration_seconds\":300,\"moves_completed\":5,\"moves_total\":5,\"content_version\":\"1\",\"operation_key\":\"smoke-mobility-c\"}")
+mo_second_body=$(cat /tmp/smoke.body)
+mo_list_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/mobility-sessions?from=$mo_rest&to=$session_date" "${auth[@]}")
+mo_list_body=$(cat /tmp/smoke.body)
+mo_get_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/mobility-sessions/$mo_id" "${auth[@]}")
+mo_stats_after=$(curl -s "$API/api/v1/stats" "${auth[@]}")
+mo_part_after=$(curl -s "$API/api/v1/participation?from=$mo_rest&to=$session_date" "${auth[@]}")
+mo_delete_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/mobility-sessions/$mo_id" "${auth[@]}")
+mo_delete_again_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/mobility-sessions/$mo_id" "${auth[@]}")
+mo_gone_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/mobility-sessions/$mo_id" "${auth[@]}")
+mo_empty_body=$(curl -s "$API/api/v1/mobility-sessions?from=$mo_rest&to=$mo_rest" "${auth[@]}")
+mo_range_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/mobility-sessions?from=2024-01-01&to=2025-01-02" "${auth[@]}")
+if [ "$mo_status" = "201" ] && [ "$mo_replay_status" = "200" ] && [ "$mo_conflict_status" = "409" ] && [ "$mo_header_status" = "422" ] && \
+  [ "$mo_moves_status" = "422" ] && [ "$mo_second_status" = "201" ] && [ "$mo_list_status" = "200" ] && [ "$mo_get_status" = "200" ] && \
+  [ "$mo_delete_status" = "204" ] && [ "$mo_delete_again_status" = "404" ] && [ "$mo_gone_status" = "404" ] && [ "$mo_range_status" = "422" ] && \
+  [ "$mo_stats_before" = "$mo_stats_after" ] && [ "$mo_part_before" = "$mo_part_after" ] && \
+  python3 -c "import json,sys; c,r,x,m,s,l,e=[json.loads(v) for v in sys.argv[1:]]; assert c['id']==r['id'] and c['created_at']==r['created_at'] and c['routine_name']=='Hips and hamstrings' and c['context']=='rest_day' and c['operation_key']=='smoke-mobility-a' and 'request_hash' not in c; assert x['code']=='IDEMPOTENCY_CONFLICT'; assert m['details']['field']=='moves_completed'; assert [i['id'] for i in l]==[s['id'], c['id']]; assert e==[]" \
+    "$mo_body" "$mo_replay_body" "$mo_conflict_body" "$mo_moves_body" "$mo_second_body" "$mo_list_body" "$mo_empty_body" 2>/dev/null; then
+  ok "mobility entries replay, conflict, list newest first, delete once, and leave stats and participation unchanged"
+else
+  bad "mobility acceptance failed (create=$mo_status replay=$mo_replay_status conflict=$mo_conflict_status header=$mo_header_status moves=$mo_moves_status second=$mo_second_status list=$mo_list_status get=$mo_get_status delete=$mo_delete_status again=$mo_delete_again_status gone=$mo_gone_status range=$mo_range_status stats_same=$([ "$mo_stats_before" = "$mo_stats_after" ] && echo y || echo n) part_same=$([ "$mo_part_before" = "$mo_part_after" ] && echo y || echo n))" "$(echo "$mo_body $mo_list_body" | head -c 400)"
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------

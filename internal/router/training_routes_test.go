@@ -14,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -44,6 +44,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",
 		"GET /api/v1/program-generation", "POST /api/v1/program-generation",
+		"GET /api/v1/mobility-sessions/", "POST /api/v1/mobility-sessions/", "GET /api/v1/mobility-sessions/{id}", "DELETE /api/v1/mobility-sessions/{id}",
 	} {
 		if !found[route] {
 			t.Errorf("missing route %s", route)

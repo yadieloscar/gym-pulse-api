@@ -8,7 +8,7 @@
 
 **Created**: 2026-11-03
 
-**Status**: Draft — awaiting owner approval
+**Status**: Approved (owner, 2026-11-03: "Approve, implement")
 
 **Input**: Owner request (2026-11-03) for a guided stretching feature; the owner chose to record
 finished stretching without counting it toward consistency.
