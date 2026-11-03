@@ -83,6 +83,10 @@ func (guidedScheduleService) Unskip(context.Context, uuid.UUID, uuid.UUID, model
 	return &model.ScheduledWorkout{}, nil
 }
 
+func (guidedScheduleService) Delete(context.Context, uuid.UUID, uuid.UUID) error {
+	return nil
+}
+
 type guidedSessionService struct{}
 
 func (guidedSessionService) List(context.Context, uuid.UUID, string, string) ([]model.WorkoutSession, error) {
@@ -232,6 +236,9 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 	})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
 		schedule.Unskip(w, guidedHandlerRequest(t, http.MethodPost, "/", model.RevisionRequest{OperationKey: operationKey}, userID, operationKey, params))
+	})
+	assertGuidedStatus(t, http.StatusNoContent, func(w http.ResponseWriter) {
+		schedule.Delete(w, guidedHandlerRequest(t, http.MethodDelete, "/", nil, userID, "", params))
 	})
 
 	sessions := NewWorkoutSessionHandler(guidedSessionService{})

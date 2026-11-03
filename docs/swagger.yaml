@@ -3219,6 +3219,39 @@ paths:
       tags:
       - goal-training
   /api/v1/scheduled-workouts/{id}:
+    delete:
+      description: Permanently removes a past or finalized scheduled workout with
+        its performed sets, linked workout sessions, and Apple Health export record,
+        then recomputes that day's participation. A linked sport activity stays in
+        history unlinked. The workout already written to Apple Health is not removed
+        from the device.
+      parameters:
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: CONFLICT for today's or a future unfinished workout; ACTIVE_SESSION_CONFLICT
+            while a linked session is active
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      summary: Delete a past scheduled workout
+      tags:
+      - goal-training
     patch:
       consumes:
       - application/json

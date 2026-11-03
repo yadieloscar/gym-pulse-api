@@ -28,6 +28,7 @@ type ScheduleService interface {
 	Complete(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 	Skip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 	Unskip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
+	Delete(ctx context.Context, userID, workoutID uuid.UUID) error
 }
 
 type WorkoutSessionService interface {
@@ -524,6 +525,20 @@ func (s *scheduleService) resolve(ctx context.Context, userID, workoutID uuid.UU
 	}
 	result, _, err := s.mutations.UnskipScheduledWorkout(ctx, userID, workoutID, req.ExpectedRevision, record)
 	return result, err
+}
+
+// Delete removes an owned past or finalized scheduled workout and what was
+// performed against it. Today's and future unfinished workouts belong to the
+// plan, which is edited, skipped, or regenerated instead.
+func (s *scheduleService) Delete(ctx context.Context, userID, workoutID uuid.UUID) error {
+	w, err := s.schedules.Get(ctx, userID, workoutID)
+	if err != nil {
+		return err
+	}
+	if w.FinalizedAt == nil && w.Date >= s.now().UTC().Format("2006-01-02") {
+		return &model.ConflictError{Message: "only past or finished scheduled workouts can be deleted", Authoritative: w}
+	}
+	return s.schedules.Delete(ctx, userID, workoutID)
 }
 
 func (s *scheduleService) checkedWorkout(ctx context.Context, userID, workoutID uuid.UUID, revision int64) (*model.ScheduledWorkout, error) {

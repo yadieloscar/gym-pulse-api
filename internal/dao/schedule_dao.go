@@ -20,6 +20,7 @@ type ScheduleDAO interface {
 	UpdateOutcome(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64) error
 	UpdateSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest) error
 	DeleteUnstartedRange(ctx context.Context, userID uuid.UUID, from, to string) ([]uuid.UUID, error)
+	Delete(ctx context.Context, userID, workoutID uuid.UUID) error
 }
 
 type IdempotentScheduleDAO interface {
@@ -617,4 +618,80 @@ func (r *scheduleDAO) DeleteUnstartedRange(ctx context.Context, userID uuid.UUID
 		ids = append(ids, id)
 	}
 	return ids, rows.Err()
+}
+
+// Delete removes an owned scheduled workout and everything performed against
+// it: linked workout sessions (and, by cascade, their set logs), required sets,
+// and the Apple Health export record. A linked sport activity stays in history
+// unlinked. The day's participation is recomputed from what remains, so stats
+// and the streak no longer count the deleted workout. The caller decides which
+// workouts are eligible; an active linked session still blocks deletion here.
+func (r *scheduleDAO) Delete(ctx context.Context, userID, workoutID uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning scheduled workout delete: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return err
+	}
+	var date string
+	err = tx.QueryRow(ctx, `SELECT to_char(date,'YYYY-MM-DD') FROM scheduled_workouts WHERE id=$1 AND user_id=$2 FOR UPDATE`, workoutID, userID).Scan(&date)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return &model.NotFoundError{Message: "scheduled workout not found"}
+	}
+	if err != nil {
+		return fmt.Errorf("locking scheduled workout: %w", err)
+	}
+	var active bool
+	if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM workout_sessions WHERE user_id=$1 AND scheduled_workout_id=$2 AND status='active')`, userID, workoutID).Scan(&active); err != nil {
+		return fmt.Errorf("checking active session: %w", err)
+	}
+	if active {
+		return &model.ConflictError{Message: "active session prevents deletion"}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM workout_sessions WHERE user_id=$1 AND scheduled_workout_id=$2`, userID, workoutID); err != nil {
+		return fmt.Errorf("deleting scheduled workout sessions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM health_exports WHERE user_id=$1 AND workout_kind='scheduled_workout' AND workout_id=$2`, userID, workoutID); err != nil {
+		return fmt.Errorf("deleting scheduled workout health export: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts WHERE id=$1 AND user_id=$2`, workoutID, userID); err != nil {
+		return fmt.Errorf("deleting scheduled workout: %w", err)
+	}
+	if err := recomputeParticipation(ctx, tx, userID, date); err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing scheduled workout delete: %w", err)
+	}
+	return nil
+}
+
+// recomputeParticipation rewrites a day's stored participation from the
+// evidence that still exists after a deletion, and drops the row when the day
+// has neither a scheduled opportunity nor any participation left.
+func recomputeParticipation(ctx context.Context, tx pgx.Tx, userID uuid.UUID, date string) error {
+	if _, err := tx.Exec(ctx, `
+		UPDATE day_participation dp SET
+		  scheduled_opportunity = EXISTS (
+		    SELECT 1 FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.date=$2),
+		  participated = EXISTS (
+		    SELECT 1 FROM scheduled_workouts sw
+		    WHERE sw.user_id=$1 AND sw.date=$2 AND sw.status IN ('completed','incomplete'))
+		    OR EXISTS (
+		    SELECT 1 FROM workout_sessions ws
+		    WHERE ws.user_id=$1 AND ws.date=$2 AND ws.status='completed')
+		    OR EXISTS (
+		    SELECT 1 FROM sport_activities sa WHERE sa.user_id=$1 AND sa.date=$2),
+		  revision = dp.revision + 1
+		WHERE dp.user_id=$1 AND dp.date=$2`, userID, date); err != nil {
+		return fmt.Errorf("recomputing participation: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM day_participation
+		WHERE user_id=$1 AND date=$2 AND NOT scheduled_opportunity AND NOT participated`, userID, date); err != nil {
+		return fmt.Errorf("dropping empty participation: %w", err)
+	}
+	return nil
 }

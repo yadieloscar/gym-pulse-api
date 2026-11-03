@@ -704,6 +704,25 @@ is checked first, so a stale revision returns `REVISION_CONFLICT` even when the
 operation would be a no-op. A source stays `recovered` even if its planned copy
 is later removed by regenerate or a plan transition; the sequence moves on.
 
+#### `DELETE /api/v1/scheduled-workouts/{id}`
+
+No body. Permanently removes the athlete's own past or finalized scheduled
+workout. Response 204. In one transaction it deletes the workout, its required
+sets, every workout session linked to it (with their performed sets), and its
+Apple Health export record, then recomputes that date's participation from
+what remains: the day keeps a scheduled opportunity only if another scheduled
+workout is on it, and counts as participated only if another completed or
+incomplete scheduled workout, a completed workout session, or a sport activity
+remains. A day left with neither is removed, so stats and the day streak no
+longer count the deleted workout. A linked sport activity stays in history,
+unlinked. The workout already written to Apple Health stays on the device.
+
+Today's or a future workout that is not finalized returns `409 CONFLICT` with
+the authoritative workout as `resource`; the plan edits, skips, or regenerates
+those instead. A workout with an active linked session returns
+`409 ACTIVE_SESSION_CONFLICT`. A missing or another athlete's workout returns
+404, so a repeated delete is also 404.
+
 #### `POST /api/v1/scheduled-workouts/{id}/complete`
 
 ```json
@@ -761,8 +780,9 @@ Response 200: full `WorkoutSession`.
 #### `PATCH /api/v1/workout-sessions/{id}`
 
 Optional `name`, `notes`, and `status`, plus required `operation_key` and
-`expected_revision`. Response 200: full authoritative session. Past sessions
-cannot be deleted; only a current-day unfinalized draft may become `discarded`.
+`expected_revision`. Response 200: full authoritative session. Only a
+current-day unfinalized draft may become `discarded`; a past session linked to
+a scheduled workout is removed by deleting that workout.
 When the session becomes completed, the session revision, participation, and
 exact replay response commit in one transaction.
 
@@ -941,7 +961,9 @@ to a health store; the device writes and then records.
 A finished workout is a planned workout finalized with a `completed` or
 `incomplete` outcome (`workout_kind: scheduled_workout`, the scheduled workout
 id) or an off-plan log (`workout_kind: day_log`, the log id). A missed planned
-workout and a rest log never export and answer the shared 404.
+workout and a rest log never export and answer the shared 404. Deleting the
+workout (`DELETE /api/v1/scheduled-workouts/{id}` or `DELETE /api/v1/logs/{date}`)
+deletes its export record; the service cannot remove the copy in Apple Health.
 
 #### `PUT /api/v1/health-exports/{workout_kind}/{workout_id}`
 
@@ -1170,6 +1192,12 @@ derived server-side so released clients keep their existing payload shape.
 - Replacing a day to `type_id: "rest"` while sending `overrides` → 422
   (rest days carry no overrides, mirroring POST).
 - Rest day + non-empty `set_logs` → 422.
+
+`DELETE` permanently removes the athlete's log for that date, including past
+dates, with its overrides, set logs, and Apple Health export record. Response
+204. A date with no log (or another athlete's) → 404, so a repeated delete is
+also 404. A malformed date → 422. The workout already written to Apple Health
+stays on the device.
 
 ### `GET /api/v1/exercises/history?ids=<uuid,uuid>` → `ExerciseHistory[]`
 For each requested exercise id, returns the completed sets from the **most

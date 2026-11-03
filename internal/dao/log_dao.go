@@ -489,8 +489,16 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, upda
 }
 
 func (r *logDAO) Delete(ctx context.Context, userID uuid.UUID, date string) error {
+	// Set logs and overrides cascade; the Apple Health export record has no
+	// foreign key, so the same statement removes it with the log.
 	result, err := r.pool.Exec(ctx, `
-		DELETE FROM day_logs WHERE user_id = $1 AND date = $2`,
+		WITH deleted AS (
+			DELETE FROM day_logs WHERE user_id = $1 AND date = $2 RETURNING id
+		), exports AS (
+			DELETE FROM health_exports he USING deleted
+			WHERE he.user_id = $1 AND he.workout_kind = 'day_log' AND he.workout_id = deleted.id
+		)
+		SELECT 1 FROM deleted`,
 		userID, date,
 	)
 	if err != nil {

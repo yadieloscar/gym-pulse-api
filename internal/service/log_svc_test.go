@@ -529,20 +529,18 @@ func TestLogService_Delete(t *testing.T) {
 		}
 	})
 
-	t.Run("historical workout is immutable", func(t *testing.T) {
-		called := false
-		repo := &MockLogDAO{DeleteFunc: func(context.Context, uuid.UUID, string) error {
-			called = true
+	t.Run("historical workout can be deleted", func(t *testing.T) {
+		var got string
+		repo := &MockLogDAO{DeleteFunc: func(_ context.Context, _ uuid.UUID, date string) error {
+			got = date
 			return nil
 		}}
 		svc := NewLogService(repo, &MockTemplateDAO{}, validator.New())
-		err := svc.Delete(ctx, userID, "2020-01-01")
-		var conflict *model.ConflictError
-		if !errors.As(err, &conflict) {
-			t.Fatalf("want ConflictError, got %v", err)
+		if err := svc.Delete(ctx, userID, "2020-01-01"); err != nil {
+			t.Fatalf("unexpected error: %v", err)
 		}
-		if called {
-			t.Fatal("historical delete reached persistence")
+		if got != "2020-01-01" {
+			t.Fatalf("historical delete did not reach persistence, got %q", got)
 		}
 	})
 }

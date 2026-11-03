@@ -833,6 +833,24 @@ else
   bad "program generation acceptance failed (status=$pg_status post=$pg_post_status bad=$pg_bad_status)" "$(echo "$pg_body $pg_post_body" | head -c 280)"
 fi
 
+# ---------- 13i. deleting past workouts ----------
+step "13i. DELETE a past day log and a finished scheduled workout returns 204, then 404"
+log_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_gone_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+workout_delete_status=skipped
+workout_again_status=skipped
+if [ -n "${workout_id:-}" ]; then
+  workout_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+  workout_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+fi
+if [ "$log_delete_status" = "204" ] && [ "$log_gone_status" = "404" ] && [ "$log_again_status" = "404" ] && \
+  [ "$workout_delete_status" = "204" ] && [ "$workout_again_status" = "404" ]; then
+  ok "past day log and finished scheduled workout deleted; repeats answer 404"
+else
+  bad "past workout deletion failed (log=$log_delete_status/$log_gone_status/$log_again_status workout=$workout_delete_status/$workout_again_status)" "$(cat /tmp/smoke.body | head -c 200)"
+fi
+
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
