@@ -944,6 +944,50 @@ else
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------
+step "13j. Import: GET week lists logs; preview a Hevy CSV → commit 201 → replay 200 → week shows import_id → re-import adds nothing → delete 204/404"
+import_csv=/tmp/smoke-import.csv
+printf '%s\n' '"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Bench Press (Barbell)",,"",0,"warmup",95,10,,,' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Bench Press (Barbell)",,"",1,"normal",135,5,,,' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Smoke Custom Raise",,"",0,"normal",20,12,,,' > "$import_csv"
+preview_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv")
+preview_body=$(cat /tmp/smoke.body)
+import_key="smoke-import-v1"
+commit_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports" "${auth[@]}" -H "Idempotency-Key: $import_key" \
+  -F "file=@$import_csv;type=text/csv" -F "unmatched=keep" -F "operation_key=$import_key")
+commit_body=$(cat /tmp/smoke.body)
+import_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$commit_body" 2>/dev/null || true)
+replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports" "${auth[@]}" -H "Idempotency-Key: $import_key" \
+  -F "file=@$import_csv;type=text/csv" -F "unmatched=keep" -F "operation_key=$import_key")
+replay_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$(cat /tmp/smoke.body)" 2>/dev/null || true)
+week_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs?week=2025-03-03" "${auth[@]}")
+week_ok=false
+if [ "$week_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert [(l['date'], l['import_id']) for l in d]==[('2025-03-03', sys.argv[2])]" "$(cat /tmp/smoke.body)" "$import_id" 2>/dev/null; then
+  week_ok=true
+fi
+day_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/2025-03-03" "${auth[@]}")
+day_body=$(cat /tmp/smoke.body)
+again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv")
+again_body=$(cat /tmp/smoke.body)
+bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv;filename=x.csv" -F "file=@$import_csv")
+delete_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/imports/$import_id" "${auth[@]}")
+redelete_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/imports/$import_id" "${auth[@]}")
+gone_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/logs/2025-03-03" "${auth[@]}")
+if [ "$week_ok" = true ] && [ "$preview_status" = "200" ] && [ "$commit_status" = "201" ] && [ "$replay_status" = "200" ] && [ "$replay_id" = "$import_id" ] \
+  && [ "$day_status" = "200" ] && [ "$bad_status" = "400" ] && [ "$delete_status" = "204" ] && [ "$redelete_status" = "404" ] && [ "$gone_status" = "404" ] \
+  && python3 -c "
+import json,sys
+p=json.loads(sys.argv[1]); d=json.loads(sys.argv[2]); a=json.loads(sys.argv[3]); i=sys.argv[4]
+assert p['source']=='hevy' and p['source_weight_unit']=='lb' and p['warmup_sets_skipped']==1 and p['keep']['set_count']==2 and p['skip']['set_count']==1
+assert p['unmatched_exercises']==[{'name':'Smoke Custom Raise','set_count':1}]
+assert d['import_id']==i and d['type_id']=='other' and [s['exercise_name'] for s in d['set_logs']]==['Barbell Bench Press','Smoke Custom Raise']
+assert a['days_already_present']==1 and a['keep']['day_count']==0
+" "$preview_body" "$day_body" "$again_body" "$import_id" 2>/dev/null; then
+  ok "week list 200; import previewed, committed once, replayed, deduped, and removed"
+else
+  bad "import acceptance failed (week=$week_status preview=$preview_status commit=$commit_status replay=$replay_status day=$day_status again=$again_status two-files=$bad_status delete=$delete_status/$redelete_status gone=$gone_status)" "$(echo "$day_body" | head -c 280)"
+fi
+
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then

@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **39 tables and 402 supported columns**. For the Supabase-managed
+The current inventory contains **40 tables and 418 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -393,12 +393,15 @@ scheduled/performed snapshots do not change.
 | `template_id` | `uuid` | nullable | Optional template provenance | Private |
 | `session_notes` | `text` | nullable | User session notes | Health |
 | `logged_at` | `timestamptz` | not null; `now()` | Creation instant | Health |
+| `import_id` | `uuid` | nullable | Workout import that created the log (034); null for logs recorded in GymPulse | Operational |
 
 **Current constraints and indexes**
 
 - Primary key: `id`.
 - FK `template_id → workout_templates(id) ON DELETE SET NULL`.
+- FK `import_id → workout_imports(id) ON DELETE CASCADE` (034): removing an import removes its logs, and their set logs and overrides through the existing cascades.
 - Named index `idx_logs_user_date(user_id, date)`.
+- Partial index `idx_day_logs_import(import_id) WHERE import_id IS NOT NULL` (034) serves import removal.
 - Migration 003 created unique `(user_id, date)`; migration 012 dropped it.
 - **P0 gap**: the current API still creates, gets, updates, and deletes a singular log by date and
   maps duplicate insert to `409`. Without uniqueness, duplicate rows are possible, `QueryRow` is
@@ -1027,6 +1030,41 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 033.
 
+### Table: `public.workout_imports`
+
+**Purpose**: One Strong or Hevy CSV import committed by the athlete. The file is never stored; the row keeps the options, counts, and the replay body. Each day log the import created references it.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null; generated | Import identity (application-generated on commit) | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `source` | `text` | not null | `strong` or `hevy` | Private |
+| `source_weight_unit` | `text` | not null | Unit the file's weights were in (`lb`/`kg`) | Private |
+| `weight_unit` | `text` | not null | Athlete unit the weights were converted to | Private |
+| `unmatched` | `text` | not null | `keep` or `skip` for unmatched exercise names | Private |
+| `first_date` | `date` | nullable | First imported date | Health |
+| `last_date` | `date` | nullable | Last imported date | Health |
+| `workout_count` | `integer` | not null | Source workouts imported | Health |
+| `day_count` | `integer` | not null | Day logs created | Health |
+| `set_count` | `integer` | not null | Set logs created | Health |
+| `operation_key` | `text` | not null | Client commit identity | Operational |
+| `request_hash` | `text` | not null | File hash plus options, for replay comparison | Operational |
+| `response_body` | `jsonb` | not null | Stored commit response for exact replay | Health |
+| `created_at` | `timestamptz` | not null; `now()` | Commit instant | Operational |
+
+**Current constraints and indexes**
+
+- PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: `source IN ('strong', 'hevy')`; both units `IN ('lb', 'kg')`; `unmatched IN ('keep', 'skip')`; counts ≥ 0; operation key 1–128; `workout_imports_range_check` requires `last_date >= first_date`.
+- Unique `ux_workout_imports_user_operation(user_id, operation_key)` is the commit retry identity: a matching `request_hash` replays `response_body`; a different one is an idempotency conflict. No `idempotency_records` row is written.
+- Index `idx_workout_imports_user_created(user_id, created_at DESC, id DESC)` serves the owner list.
+- Commit runs under a per-athlete advisory lock, re-reads existing log dates, and inserts the day logs and set logs with array `unnest` inserts (COPY is refused under RLS for the runtime role).
+- Rows are write-once; deleting one cascades to its day logs.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API roles have table privileges revoked, and the runtime role holds the `gym_pulse_api_access` policy.
+
+**Migration source**: 034.
+
 ### Table: `public.nutrition_days`
 
 **Purpose**: One set of daily nutrition totals per athlete and calendar date, typed, imported from Health, or (since 030) the sum of the date's food entries.
@@ -1358,7 +1396,7 @@ The count is derived from the final state after migration 033, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
 | `food_catalog` | `food_entries` | Restrict | Catalog rows are never deleted; entries keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `workout_templates` | `exercises` | Cascade | Removes mutable template composition |
@@ -1437,6 +1475,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Body weight | `body_weights` | Measurements ordered by date | Authoritative health series |
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
 | Mobility sessions | `mobility_sessions` | Owner range list, get, delete; nothing else reads it | Authoritative write-once fact; never counted |
+| Workout imports | `workout_imports`, `day_logs`, `set_logs` | Owner list, commit, delete; imported days read as ordinary day logs | Write-once batch owning the day logs it created |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
 | Food logging | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`, `nutrition_days` | Search and barcode lookups, recents, day entries with the day as their sum | Shared published facts; owner-scoped entries with snapshot values; same-transaction rollup |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
@@ -1485,6 +1524,9 @@ snapshot; `set_logs` is the preferred per-set history.
 | `program_generations` | `idx_program_generations_user_date(user_id, local_date, status)` | Daily program-draft count per athlete |
 | `mobility_sessions` | `ux_mobility_sessions_user_operation(user_id, operation_key)` unique | Create retry identity |
 | `mobility_sessions` | `idx_mobility_sessions_user_date(user_id, date DESC, created_at DESC, id DESC)` | Owner range reads newest first |
+| `workout_imports` | `ux_workout_imports_user_operation(user_id, operation_key)` unique | Commit retry identity |
+| `workout_imports` | `idx_workout_imports_user_created(user_id, created_at DESC, id DESC)` | Owner list newest first |
+| `day_logs` | `idx_day_logs_import(import_id) WHERE import_id IS NOT NULL` | Import removal |
 | `nutrition_days` | `ux_nutrition_days_user_date(user_id, date)` unique | One day per athlete and date; oldest-first range read |
 | `nutrition_targets` | `ux_nutrition_targets_user_effective(user_id, effective_from)` unique | One target per effective date; current-target lookup and range read |
 | `food_catalog` | `ux_food_catalog_source_id(source, source_id)` unique | One row per outside food; upsert identity |
@@ -2163,6 +2205,7 @@ Report one of:
 | 031 | `program_generations` daily-limit ledger, RLS and role revocation, runtime-role grant and policy |
 | 032 | `exercise_catalog` programming metadata (`pattern`, `muscle_group`, `equipment_required`, `impact`), seed for all rows, checks, `idx_exercise_catalog_pattern` |
 | 033 | `mobility_sessions` recorded stretching (write-once, row-level operation key), RLS and role revocation, runtime-role grant and policy |
+| 034 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary
 

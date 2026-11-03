@@ -31,6 +31,9 @@ type DayLog struct {
 	SetLogs      []SetLog           `json:"set_logs,omitempty"`
 	SessionNotes *string            `json:"session_notes,omitempty"`
 	LoggedAt     time.Time          `json:"logged_at"`
+	// ImportID names the workout import that created this log; null for a
+	// log recorded in GymPulse.
+	ImportID *uuid.UUID `json:"import_id"`
 }
 
 // DayLogSummary is the list-view representation for weekly queries.
@@ -43,6 +46,7 @@ type DayLogSummary struct {
 	TemplateName *string    `json:"template_name,omitempty"`
 	SessionNotes *string    `json:"session_notes,omitempty"`
 	LoggedAt     time.Time  `json:"logged_at"`
+	ImportID     *uuid.UUID `json:"import_id"`
 }
 
 // CreateDayLogRequest is the request body for POST /api/v1/logs.

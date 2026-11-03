@@ -461,6 +461,204 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/imports": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "List workout imports",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "array",
+                                "items": {
+                                    "$ref": "#/definitions/model.WorkoutImport"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Writes one day log per new date in one transaction. An identical retry returns the original import with 200.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Import a Strong or Hevy CSV",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "Strong or Hevy CSV export (max 10 MiB)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "keep or skip",
+                        "name": "unmatched",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "lb or kg when the file states no unit",
+                        "name": "source_weight_unit",
+                        "in": "formData"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Stable client operation key",
+                        "name": "operation_key",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.WorkoutImport"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/imports/preview": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Parses the file and reports what an import would write. Writes nothing.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Preview a Strong or Hevy CSV import",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Strong or Hevy CSV export (max 10 MiB)",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "lb or kg when the file states no unit",
+                        "name": "source_weight_unit",
+                        "in": "formData"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ImportPreview"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/imports/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "imports"
+                ],
+                "summary": "Remove a workout import and every day it created",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "security": [
@@ -4165,6 +4363,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "import_id": {
+                    "description": "ImportID names the workout import that created this log; null for a\nlog recorded in GymPulse.",
+                    "type": "string"
+                },
                 "logged_at": {
                     "type": "string"
                 },
@@ -4207,6 +4409,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "type": "string"
+                },
+                "import_id": {
                     "type": "string"
                 },
                 "logged_at": {
@@ -5190,6 +5395,98 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ImportPreview": {
+            "type": "object",
+            "properties": {
+                "days_already_present": {
+                    "type": "integer"
+                },
+                "days_skipped_future": {
+                    "type": "integer"
+                },
+                "empty_sets_skipped": {
+                    "type": "integer"
+                },
+                "file_first_date": {
+                    "description": "FileFirstDate and FileLastDate span every workout in the file.",
+                    "type": "string"
+                },
+                "file_last_date": {
+                    "type": "string"
+                },
+                "file_workout_count": {
+                    "type": "integer"
+                },
+                "keep": {
+                    "description": "Keep and Skip are what the import writes for each unmatched choice.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ImportTotals"
+                        }
+                    ]
+                },
+                "matched_exercise_count": {
+                    "type": "integer"
+                },
+                "sets_losing_distance": {
+                    "type": "integer"
+                },
+                "skip": {
+                    "$ref": "#/definitions/model.ImportTotals"
+                },
+                "source": {
+                    "$ref": "#/definitions/model.ImportSource"
+                },
+                "source_weight_unit": {
+                    "description": "SourceWeightUnit is the unit the file states, or null when it states\nnone and the commit must name one.",
+                    "type": "string"
+                },
+                "unmatched_exercises": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.UnmatchedExercise"
+                    }
+                },
+                "warmup_sets_skipped": {
+                    "type": "integer"
+                },
+                "weight_unit": {
+                    "description": "WeightUnit is the athlete's unit; imported weights are converted to it.",
+                    "type": "string"
+                }
+            }
+        },
+        "model.ImportSource": {
+            "type": "string",
+            "enum": [
+                "strong",
+                "hevy"
+            ],
+            "x-enum-varnames": [
+                "ImportSourceStrong",
+                "ImportSourceHevy"
+            ]
+        },
+        "model.ImportTotals": {
+            "type": "object",
+            "properties": {
+                "day_count": {
+                    "type": "integer"
+                },
+                "first_date": {
+                    "type": "string"
+                },
+                "last_date": {
+                    "type": "string"
+                },
+                "set_count": {
+                    "type": "integer"
+                },
+                "workout_count": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.MaterializeScheduleRequest": {
             "type": "object",
             "required": [
@@ -6088,7 +6385,6 @@ const docTemplate = `{
         "model.SetLog": {
             "type": "object",
             "required": [
-                "exercise_id",
                 "set_index"
             ],
             "properties": {
@@ -6104,7 +6400,17 @@ const docTemplate = `{
                 "duration_seconds": {
                     "type": "integer"
                 },
+                "exercise_category": {
+                    "type": "string"
+                },
                 "exercise_id": {
+                    "description": "ExerciseID is the owned saved-workout exercise. It is null for an\nimported set with no matching saved-workout exercise, or when that\nexercise was deleted; the name snapshot below still identifies it.",
+                    "type": "string"
+                },
+                "exercise_modality": {
+                    "type": "string"
+                },
+                "exercise_name": {
                     "type": "string"
                 },
                 "id": {
@@ -6359,6 +6665,17 @@ const docTemplate = `{
                 "UnitKindExercises",
                 "UnitKindSport"
             ]
+        },
+        "model.UnmatchedExercise": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "set_count": {
+                    "type": "integer"
+                }
+            }
         },
         "model.UpdateDayLogRequest": {
             "type": "object",
@@ -6631,6 +6948,44 @@ const docTemplate = `{
                 },
                 "week_start": {
                     "type": "string"
+                }
+            }
+        },
+        "model.WorkoutImport": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "day_count": {
+                    "type": "integer"
+                },
+                "first_date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "last_date": {
+                    "type": "string"
+                },
+                "set_count": {
+                    "type": "integer"
+                },
+                "source": {
+                    "$ref": "#/definitions/model.ImportSource"
+                },
+                "source_weight_unit": {
+                    "type": "string"
+                },
+                "unmatched": {
+                    "type": "string"
+                },
+                "weight_unit": {
+                    "type": "string"
+                },
+                "workout_count": {
+                    "type": "integer"
                 }
             }
         },

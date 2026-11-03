@@ -8,7 +8,7 @@
 
 **Created**: 2026-11-03
 
-**Status**: Draft, pending owner approval (owner direction: follow-up to the 2026-11-03 build-or-switch
+**Status**: Approved 2026-11-03, implemented (owner direction: follow-up to the 2026-11-03 build-or-switch
 review; an athlete switching apps should bring their history)
 
 **Input**: "A user switching apps picks a Strong or Hevy CSV export, sees a preview (date range,
@@ -111,8 +111,9 @@ counts, date range, and unmatched names; assert no rows were written.
 **Acceptance Scenarios**:
 
 1. **Given** a Strong layout A file, **When** previewed, **Then** the response names `strong`,
-   `source_weight_unit: "kg"`, the first and last dates, the workout, day, and set counts, the
-   warm-up sets skipped, and each unmatched name with its set count.
+   `source_weight_unit: "kg"`, the file's first and last dates, the workout, day, and set counts for
+   both unmatched choices (`keep` and `skip`), the warm-up sets skipped, and each unmatched name
+   with its set count.
 2. **Given** a Hevy file with `weight_lbs`, **When** previewed, **Then** `source_weight_unit` is
    `lb`.
 3. **Given** a Strong layout B file, **When** previewed, **Then** `source_weight_unit` is `null`.
@@ -138,7 +139,7 @@ The athlete confirms the preview and the history appears as day logs.
 5. **Given** the same file imported again, **When** committed, **Then** it creates nothing and
    reports every day as already present.
 6. **Given** the identical request replayed with the same `Idempotency-Key`, **When** committed,
-   **Then** the original 201 body returns and nothing new is written.
+   **Then** the original import returns with 200 and nothing new is written.
 7. **Given** any failure mid-import, **When** it aborts, **Then** no day log from that import exists.
 
 ### User Story 3 - Remove an import (Priority: P2)
@@ -185,6 +186,9 @@ The athlete lists their imports and removes one.
 - **FR-009**: Every query MUST be scoped to the authenticated user and work under the
   least-privilege runtime role.
 - **FR-010**: Limits: 10 MiB file (413 `REQUEST_TOO_LARGE`), 100,000 rows and 5,000 days (422).
+
+- **FR-011**: `GET /api/v1/logs?week=` MUST return weeks that contain logs (it failed with 500 since
+  the first commit; the calendar shows imported days through it).
 
 ## Key Entities
 

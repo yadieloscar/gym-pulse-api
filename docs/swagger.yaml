@@ -332,6 +332,11 @@ definitions:
         type: string
       id:
         type: string
+      import_id:
+        description: |-
+          ImportID names the workout import that created this log; null for a
+          log recorded in GymPulse.
+        type: string
       logged_at:
         type: string
       overrides:
@@ -363,6 +368,8 @@ definitions:
       date:
         type: string
       id:
+        type: string
+      import_id:
         type: string
       logged_at:
         type: string
@@ -1021,6 +1028,70 @@ definitions:
       resets_at:
         type: string
     type: object
+  model.ImportPreview:
+    properties:
+      days_already_present:
+        type: integer
+      days_skipped_future:
+        type: integer
+      empty_sets_skipped:
+        type: integer
+      file_first_date:
+        description: FileFirstDate and FileLastDate span every workout in the file.
+        type: string
+      file_last_date:
+        type: string
+      file_workout_count:
+        type: integer
+      keep:
+        allOf:
+        - $ref: '#/definitions/model.ImportTotals'
+        description: Keep and Skip are what the import writes for each unmatched choice.
+      matched_exercise_count:
+        type: integer
+      sets_losing_distance:
+        type: integer
+      skip:
+        $ref: '#/definitions/model.ImportTotals'
+      source:
+        $ref: '#/definitions/model.ImportSource'
+      source_weight_unit:
+        description: |-
+          SourceWeightUnit is the unit the file states, or null when it states
+          none and the commit must name one.
+        type: string
+      unmatched_exercises:
+        items:
+          $ref: '#/definitions/model.UnmatchedExercise'
+        type: array
+      warmup_sets_skipped:
+        type: integer
+      weight_unit:
+        description: WeightUnit is the athlete's unit; imported weights are converted
+          to it.
+        type: string
+    type: object
+  model.ImportSource:
+    enum:
+    - strong
+    - hevy
+    type: string
+    x-enum-varnames:
+    - ImportSourceStrong
+    - ImportSourceHevy
+  model.ImportTotals:
+    properties:
+      day_count:
+        type: integer
+      first_date:
+        type: string
+      last_date:
+        type: string
+      set_count:
+        type: integer
+      workout_count:
+        type: integer
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -1626,7 +1697,17 @@ definitions:
         type: boolean
       duration_seconds:
         type: integer
+      exercise_category:
+        type: string
       exercise_id:
+        description: |-
+          ExerciseID is the owned saved-workout exercise. It is null for an
+          imported set with no matching saved-workout exercise, or when that
+          exercise was deleted; the name snapshot below still identifies it.
+        type: string
+      exercise_modality:
+        type: string
+      exercise_name:
         type: string
       id:
         type: string
@@ -1638,7 +1719,6 @@ definitions:
       target_weight:
         type: number
     required:
-    - exercise_id
     - set_index
     type: object
   model.SetMutationRequest:
@@ -1799,6 +1879,13 @@ definitions:
     x-enum-varnames:
     - UnitKindExercises
     - UnitKindSport
+  model.UnmatchedExercise:
+    properties:
+      name:
+        type: string
+      set_count:
+        type: integer
+    type: object
   model.UpdateDayLogRequest:
     properties:
       overrides:
@@ -1988,6 +2075,31 @@ definitions:
         type: number
       week_start:
         type: string
+    type: object
+  model.WorkoutImport:
+    properties:
+      created_at:
+        type: string
+      day_count:
+        type: integer
+      first_date:
+        type: string
+      id:
+        type: string
+      last_date:
+        type: string
+      set_count:
+        type: integer
+      source:
+        $ref: '#/definitions/model.ImportSource'
+      source_weight_unit:
+        type: string
+      unmatched:
+        type: string
+      weight_unit:
+        type: string
+      workout_count:
+        type: integer
     type: object
   model.WorkoutSession:
     properties:
@@ -2343,6 +2455,134 @@ paths:
       summary: Export workout sets as CSV
       tags:
       - export
+  /api/v1/imports:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              items:
+                $ref: '#/definitions/model.WorkoutImport'
+              type: array
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List workout imports
+      tags:
+      - imports
+    post:
+      consumes:
+      - multipart/form-data
+      description: Writes one day log per new date in one transaction. An identical
+        retry returns the original import with 200.
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Strong or Hevy CSV export (max 10 MiB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: keep or skip
+        in: formData
+        name: unmatched
+        required: true
+        type: string
+      - description: lb or kg when the file states no unit
+        in: formData
+        name: source_weight_unit
+        type: string
+      - description: Stable client operation key
+        in: formData
+        name: operation_key
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.WorkoutImport'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Import a Strong or Hevy CSV
+      tags:
+      - imports
+  /api/v1/imports/{id}:
+    delete:
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Remove a workout import and every day it created
+      tags:
+      - imports
+  /api/v1/imports/preview:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Parses the file and reports what an import would write. Writes
+        nothing.
+      parameters:
+      - description: Strong or Hevy CSV export (max 10 MiB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      - description: lb or kg when the file states no unit
+        in: formData
+        name: source_weight_unit
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ImportPreview'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Preview a Strong or Hevy CSV import
+      tags:
+      - imports
   /api/v1/logs:
     get:
       description: Returns all day logs in the week containing the given Monday date.

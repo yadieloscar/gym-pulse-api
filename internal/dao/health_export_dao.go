@@ -41,6 +41,7 @@ const workoutDateQuery = `
 			UNION ALL
 			SELECT date FROM day_logs
 			WHERE $1 = 'day_log' AND id=$2 AND user_id=$3 AND type_id <> 'rest'
+			  AND import_id IS NULL
 		) w LIMIT 1`
 
 func (r *healthExportDAO) Record(ctx context.Context, userID uuid.UUID, export *model.HealthExport, operationKey, requestHash string) (*model.HealthExport, model.HealthExportOutcome, error) {
