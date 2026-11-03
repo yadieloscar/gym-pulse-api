@@ -102,6 +102,12 @@ definitions:
     properties:
       date:
         type: string
+      operation_key:
+        description: |-
+          OperationKey makes a create safe to replay. It is optional because logs
+          predate the idempotency contract; when present it must equal the
+          Idempotency-Key header.
+        type: string
       overrides:
         items:
           $ref: '#/definitions/model.CreateOverrideRequest'
@@ -1979,6 +1985,11 @@ paths:
       description: Logs a workout session for the given date. Only one log per date
         is allowed.
       parameters:
+      - description: Optional; equal to operation_key. A replay returns the first
+          response.
+        in: header
+        name: Idempotency-Key
+        type: string
       - description: Day log payload
         in: body
         name: body
@@ -2005,7 +2016,8 @@ paths:
               type: string
             type: object
         "409":
-          description: A log already exists for this date
+          description: A log already exists for this date, or the key was used with
+            a different payload
           schema:
             additionalProperties:
               type: string

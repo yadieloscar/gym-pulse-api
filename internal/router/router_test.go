@@ -49,6 +49,9 @@ func (fakeLogDAO) GetByDate(ctx context.Context, u uuid.UUID, d string) (*model.
 	return &model.DayLog{Date: d}, nil
 }
 func (fakeLogDAO) Create(ctx context.Context, u uuid.UUID, l *model.DayLog) error { return nil }
+func (fakeLogDAO) CreateOnce(ctx context.Context, u uuid.UUID, l *model.DayLog, key, hash string) (bool, error) {
+	return false, nil
+}
 func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, update model.DayLogUpdate) error {
 	return nil
 }
