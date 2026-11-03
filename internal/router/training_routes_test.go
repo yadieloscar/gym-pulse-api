@@ -14,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -44,6 +44,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",
 		"GET /api/v1/program-generation", "POST /api/v1/program-generation",
+		"GET /api/v1/export", "GET /api/v1/export/workout-sets",
 	} {
 		if !found[route] {
 			t.Errorf("missing route %s", route)
@@ -58,5 +59,16 @@ func TestProgramGenerationPostIsRateLimitedPerUser(t *testing.T) {
 	}
 	if !strings.Contains(string(body), `r.With(middleware.RateLimitPerUser(middleware.ProgramGenerationLimit)).Post("/program-generation"`) {
 		t.Fatal("POST /program-generation must carry the per-user generation limit")
+	}
+}
+
+func TestExportRoutesAreRateLimitedPerUser(t *testing.T) {
+	body, err := os.ReadFile("router.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "r.Use(middleware.RateLimitPerUser(middleware.ExportLimit))\n\t\t\t\t\tr.Get(\"/export\", exportHandler.Export)\n\t\t\t\t\tr.Get(\"/export/workout-sets\", exportHandler.WorkoutSets)"
+	if !strings.Contains(string(body), want) {
+		t.Fatal("export routes must share the per-user export limit")
 	}
 }

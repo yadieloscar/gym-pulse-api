@@ -494,6 +494,29 @@ else
   bad "lossless day-log acceptance failed (template=$template_status create=$create_status notes=$notes_status overrides=$overrides_status rollback=$rollback_status/$readback_status clear=$clear_status)" "$(echo "$clear_body" | head -c 280)"
 fi
 
+# ---------- 12b. keyed day-log create replays ----------
+step "12b. POST /api/v1/logs with an operation key creates one log and replays it"
+log_once_op="smoke-log-once-v1"
+log_once_payload="{\"date\":\"2026-01-16\",\"type_id\":\"push\",\"subtype_id\":\"hypertrophy\",\"template_id\":\"$template_id\",\"set_logs\":[{\"exercise_id\":\"$exercise_id\",\"set_index\":1,\"target_reps\":8,\"target_weight\":135,\"actual_reps\":8,\"actual_weight\":135,\"duration_seconds\":null,\"completed\":true}],\"operation_key\":\"$log_once_op\"}"
+log_once_first=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" -d "$log_once_payload")
+log_once_replay=$(curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" -d "$log_once_payload")
+log_once_changed_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $log_once_op" \
+  -d "${log_once_payload/\"actual_reps\":8/\"actual_reps\":9}")
+log_once_changed_body=$(cat /tmp/smoke.body)
+log_once_mismatch_status=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$API/api/v1/logs" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-log-other" -d "$log_once_payload")
+if [ "${log_once_first##*$'\n'}" = "201" ] && [ "${log_once_replay##*$'\n'}" = "201" ] \
+  && python3 -c "import json,sys; a=json.loads(sys.argv[1]); b=json.loads(sys.argv[2]); assert a['id']==b['id'] and a['logged_at']==b['logged_at']" "${log_once_first%$'\n'*}" "${log_once_replay%$'\n'*}" 2>/dev/null \
+  && [ "$log_once_changed_status" = "409" ] && echo "$log_once_changed_body" | grep -q IDEMPOTENCY_CONFLICT \
+  && [ "$log_once_mismatch_status" = "422" ]; then
+  ok "keyed create replayed the same log; changed payload 409; mismatched key 422"
+else
+  bad "keyed day-log acceptance failed (first=${log_once_first##*$'\n'} replay=${log_once_replay##*$'\n'} changed=$log_once_changed_status mismatch=$log_once_mismatch_status)" "$(echo "$log_once_changed_body" | head -c 280)"
+fi
+
 # ---------- 13. completed sport activity ----------
 step "13. POST /api/v1/sport-activities is idempotent and preserves participation"
 sport_op="smoke-sport-v1"
@@ -852,6 +875,24 @@ assert b['code']=='VALIDATION_ERROR' and b['details']['field']=='focus'
   ok "rules provider: deterministic draft, variant differs, 422 on a bad focus, average ${pg_avg_ms} ms over 10 builds"
 else
   bad "program generation acceptance failed (status=$pg_status post=$pg_post_status again=$pg_again_status variant=$pg_variant_status bad=$pg_bad_status avg_ms=$pg_avg_ms)" "$(echo "$pg_body $pg_post_body" | head -c 400)"
+fi
+
+# ---------- 13i. deleting past workouts ----------
+step "13i. DELETE a past day log and a finished scheduled workout returns 204, then 404"
+log_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_gone_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/$log_date" "${auth[@]}")
+log_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/logs/$log_date" "${auth[@]}")
+workout_delete_status=skipped
+workout_again_status=skipped
+if [ -n "${workout_id:-}" ]; then
+  workout_delete_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+  workout_again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/scheduled-workouts/$workout_id" "${auth[@]}")
+fi
+if [ "$log_delete_status" = "204" ] && [ "$log_gone_status" = "404" ] && [ "$log_again_status" = "404" ] && \
+  [ "$workout_delete_status" = "204" ] && [ "$workout_again_status" = "404" ]; then
+  ok "past day log and finished scheduled workout deleted; repeats answer 404"
+else
+  bad "past workout deletion failed (log=$log_delete_status/$log_gone_status/$log_again_status workout=$workout_delete_status/$workout_again_status)" "$(cat /tmp/smoke.body | head -c 200)"
 fi
 
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------

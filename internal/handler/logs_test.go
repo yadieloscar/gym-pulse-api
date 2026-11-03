@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -104,6 +105,64 @@ func TestLogHandler_Create(t *testing.T) {
 		NewLogHandler(&MockLogService{}).Create(rec, newReq(t, "POST", "/", "x", uid))
 		if rec.Code != http.StatusBadRequest {
 			t.Errorf("expected 400, got %d", rec.Code)
+		}
+	})
+
+	t.Run("operation key in header and body reaches the service", func(t *testing.T) {
+		keyed := body
+		keyed.OperationKey = "finish-1"
+		var got string
+		svc := &MockLogService{
+			CreateFunc: func(ctx context.Context, u uuid.UUID, r model.CreateDayLogRequest) (*model.DayLog, error) {
+				got = r.OperationKey
+				return &model.DayLog{Date: r.Date}, nil
+			},
+		}
+		req := newReq(t, "POST", "/", keyed, uid)
+		req.Header.Set("Idempotency-Key", "finish-1")
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).Create(rec, req)
+		if rec.Code != http.StatusCreated || got != "finish-1" {
+			t.Errorf("expected 201 with key finish-1, got %d and %q", rec.Code, got)
+		}
+	})
+
+	t.Run("operation key in only one location -> 422", func(t *testing.T) {
+		keyed := body
+		keyed.OperationKey = "finish-1"
+		for name, req := range map[string]*http.Request{
+			"body only":   newReq(t, "POST", "/", keyed, uid),
+			"header only": newReq(t, "POST", "/", body, uid),
+			"mismatch":    newReq(t, "POST", "/", keyed, uid),
+		} {
+			switch name {
+			case "header only":
+				req.Header.Set("Idempotency-Key", "finish-1")
+			case "mismatch":
+				req.Header.Set("Idempotency-Key", "finish-2")
+			}
+			rec := httptest.NewRecorder()
+			NewLogHandler(&MockLogService{}).Create(rec, req)
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Errorf("%s: expected 422, got %d", name, rec.Code)
+			}
+		}
+	})
+
+	t.Run("reused key with a different payload -> 409 IDEMPOTENCY_CONFLICT", func(t *testing.T) {
+		svc := &MockLogService{
+			CreateFunc: func(ctx context.Context, u uuid.UUID, r model.CreateDayLogRequest) (*model.DayLog, error) {
+				return nil, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+			},
+		}
+		keyed := body
+		keyed.OperationKey = "finish-1"
+		req := newReq(t, "POST", "/", keyed, uid)
+		req.Header.Set("Idempotency-Key", "finish-1")
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).Create(rec, req)
+		if rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "IDEMPOTENCY_CONFLICT") {
+			t.Errorf("expected 409 IDEMPOTENCY_CONFLICT, got %d %s", rec.Code, rec.Body.String())
 		}
 	})
 

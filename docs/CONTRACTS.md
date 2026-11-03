@@ -48,7 +48,8 @@
   when exceeded: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
   allow 10 requests per minute; `POST /api/v1/schedule/materialize`,
   `/schedule/regenerate`, `/schedule/recover`, `/plan-transitions/preview`,
-  and `/plan-transitions/apply` allow 30 per minute. Clients should back off
+  and `/plan-transitions/apply` allow 30 per minute; `GET /api/v1/export` and
+  `/export/workout-sets` share 6 per minute. Clients should back off
   rather than retry immediately.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
@@ -733,6 +734,25 @@ is checked first, so a stale revision returns `REVISION_CONFLICT` even when the
 operation would be a no-op. A source stays `recovered` even if its planned copy
 is later removed by regenerate or a plan transition; the sequence moves on.
 
+#### `DELETE /api/v1/scheduled-workouts/{id}`
+
+No body. Permanently removes the athlete's own past or finalized scheduled
+workout. Response 204. In one transaction it deletes the workout, its required
+sets, every workout session linked to it (with their performed sets), and its
+Apple Health export record, then recomputes that date's participation from
+what remains: the day keeps a scheduled opportunity only if another scheduled
+workout is on it, and counts as participated only if another completed or
+incomplete scheduled workout, a completed workout session, or a sport activity
+remains. A day left with neither is removed, so stats and the day streak no
+longer count the deleted workout. A linked sport activity stays in history,
+unlinked. The workout already written to Apple Health stays on the device.
+
+Today's or a future workout that is not finalized returns `409 CONFLICT` with
+the authoritative workout as `resource`; the plan edits, skips, or regenerates
+those instead. A workout with an active linked session returns
+`409 ACTIVE_SESSION_CONFLICT`. A missing or another athlete's workout returns
+404, so a repeated delete is also 404.
+
 #### `POST /api/v1/scheduled-workouts/{id}/complete`
 
 ```json
@@ -790,8 +810,9 @@ Response 200: full `WorkoutSession`.
 #### `PATCH /api/v1/workout-sessions/{id}`
 
 Optional `name`, `notes`, and `status`, plus required `operation_key` and
-`expected_revision`. Response 200: full authoritative session. Past sessions
-cannot be deleted; only a current-day unfinalized draft may become `discarded`.
+`expected_revision`. Response 200: full authoritative session. Only a
+current-day unfinalized draft may become `discarded`; a past session linked to
+a scheduled workout is removed by deleting that workout.
 When the session becomes completed, the session revision, participation, and
 exact replay response commit in one transaction.
 
@@ -970,7 +991,9 @@ to a health store; the device writes and then records.
 A finished workout is a planned workout finalized with a `completed` or
 `incomplete` outcome (`workout_kind: scheduled_workout`, the scheduled workout
 id) or an off-plan log (`workout_kind: day_log`, the log id). A missed planned
-workout and a rest log never export and answer the shared 404.
+workout and a rest log never export and answer the shared 404. Deleting the
+workout (`DELETE /api/v1/scheduled-workouts/{id}` or `DELETE /api/v1/logs/{date}`)
+deletes its export record; the service cannot remove the copy in Apple Health.
 
 #### `PUT /api/v1/health-exports/{workout_kind}/{workout_id}`
 
@@ -1172,9 +1195,23 @@ Body:
     { "exercise_id": "uuid", "set_index": 1, "target_reps": 8, "target_weight": 135,
       "actual_reps": 8, "actual_weight": 135, "duration_seconds": null, "completed": true }
   ],
-  "session_notes": "string|null"
+  "session_notes": "string|null",
+  "operation_key": "string (optional)"
 }
 ```
+
+**Optional idempotency (offline finish).** A client that may deliver the same
+finish more than once (an offline outbox, a retry after a lost response) sends
+`Idempotency-Key: <stable client operation key>` and an equal `operation_key`
+body field. The identical key and identical JSON payload returns the
+originally stored `201` body, including the original `id` and `logged_at`,
+and never creates a second log. Reusing the key with a different payload
+returns `409 IDEMPOTENCY_CONFLICT` (same shape as goal-based training). A key
+in only one location, or different values in the two locations, returns
+`422 VALIDATION_ERROR` with `details.field = "Idempotency-Key"`. Omitting both
+keeps the legacy, non-idempotent create, so released clients are unaffected.
+Replay is checked after request validation, so a replay must still be a valid
+request (the template must still be owned, and the date not in the future).
 
 `set_logs` is the per-set history behind the active workout player.
 `set_index` is 1-based (≥ 1). A `completed: true` set must include `actual_reps`
@@ -1208,6 +1245,12 @@ derived server-side so released clients keep their existing payload shape.
 - Replacing a day to `type_id: "rest"` while sending `overrides` → 422
   (rest days carry no overrides, mirroring POST).
 - Rest day + non-empty `set_logs` → 422.
+
+`DELETE` permanently removes the athlete's log for that date, including past
+dates, with its overrides, set logs, and Apple Health export record. Response
+204. A date with no log (or another athlete's) → 404, so a repeated delete is
+also 404. A malformed date → 422. The workout already written to Apple Health
+stays on the device.
 
 ### `GET /api/v1/exercises/history?ids=<uuid,uuid>` → `ExerciseHistory[]`
 For each requested exercise id, returns the completed sets from the **most
@@ -1608,6 +1651,115 @@ catalog-only search and a startup warning in staging and production),
 `FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
 to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
 (test and staging overrides). Keys never appear in logs or responses.
+
+## Data export
+
+Data export (contract 1.4.0) lets the athlete take everything they authored or
+performed out of GymPulse. Both endpoints are read-only, scoped to the
+authenticated user, and read every section from one repeatable-read snapshot,
+so a workout finished during the export appears whole or not at all. They
+share a per-user limit of 6 requests per minute (`429 RATE_LIMITED`). Both
+responses carry `Content-Disposition: attachment;
+filename="gympulse-export-YYYY-MM-DD.<json|csv>"` (UTC date of `exported_at`).
+A read failure answers the standard JSON error with no attachment header.
+
+### `GET /api/v1/export` → `200 DataExport`
+
+```json
+{
+  "schema_version": 1,
+  "exported_at": "2026-11-03T14:05:06Z",
+  "profile": { "display_name": "Sam" | null, "created_at": "RFC3339" } | null,
+  "settings": { "weight_unit": "lb" | "kg", "weekly_goal": 5 } | null,
+  "training_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "beginner",
+    "equipment": ["barbell"], "session_duration_minutes": 45, "timezone": "UTC"
+  } | null,
+  "workouts": [{
+    "id": "uuid", "source": "session" | "day_log", "date": "YYYY-MM-DD",
+    "name": "Push day", "status": "draft" | "active" | "completed" | "logged" | "rest",
+    "planned": true, "notes": "text" | null,
+    "started_at": "RFC3339" | null, "completed_at": "RFC3339" | null,
+    "sets": [{
+      "exercise_name": "Bench Press", "exercise_category": "push",
+      "exercise_modality": "strength" | "cardio", "set_index": 1,
+      "target_reps": 5 | null, "target_weight": 80 | null,
+      "actual_reps": 5 | null, "actual_weight": 82.5 | null,
+      "duration_seconds": 600 | null, "completed": true, "extra": false
+    }],
+    "exercises": [{
+      "exercise_name": "Squat", "actual_sets": 3 | null, "actual_reps": 5 | null,
+      "actual_weight": 100 | null, "notes": "text" | null, "skipped": false
+    }]
+  }],
+  "templates": [{
+    "id": "uuid", "name": "Upper A", "type_id": "strength", "subtype_id": "general",
+    "created_at": "RFC3339", "updated_at": "RFC3339",
+    "exercises": [{ "name": "Row", "sets": 3 | null, "reps": 8 | null, "weight": 60 | null,
+      "rest_seconds": 90 | null, "duration_minutes": null, "intensity": null, "notes": null }]
+  }],
+  "sport_activities": [{
+    "id": "uuid", "date": "YYYY-MM-DD", "sport_id": "tennis", "sport_name": "Tennis",
+    "duration_minutes": 60, "perceived_effort": 7 | null, "distance_meters": null,
+    "energy_kcal": null, "avg_heart_rate_bpm": null,
+    "source": "manual" | "apple_health", "notes": null
+  }],
+  "body_weights": [{ "date": "YYYY-MM-DD", "weight": 80.4, "unit": "lb" | "kg" }],
+  "nutrition": {
+    "days": [{ "date": "YYYY-MM-DD", "energy_kcal": 2400 | null, "protein_g": 140.5 | null,
+      "carbs_g": null, "fat_g": null, "source": "manual" | "apple_health" | "foods" }],
+    "targets": [{ "effective_from": "YYYY-MM-DD", "protein_g": 150, "energy_kcal": null,
+      "carbs_g": null, "fat_g": null }],
+    "food_entries": [{ "date": "YYYY-MM-DD", "kind": "food" | "quick_add",
+      "food_name": "Oats" | null, "serving_label": "1 bowl" | null, "serving_g": 250 | null,
+      "amount": 1 | null, "energy_kcal": 400 | null, "protein_g": 30 | null,
+      "carbs_g": 50 | null, "fat_g": 8 | null, "logged_at": "RFC3339" }],
+    "own_foods": [{ "name": "Oats", "brand": null, "serving_label": "1 bowl", "serving_g": 250,
+      "energy_kcal": 400, "protein_g": 30, "carbs_g": 50, "fat_g": 8, "archived": false }]
+  }
+}
+```
+
+- Every collection is `[]`, never `null`. A section the athlete never created
+  (`profile`, `settings`, `training_profile`) is `null`.
+- `workouts` combines goal-based sessions (`source: "session"`) and legacy day
+  logs (`source: "day_log"`), oldest date first. Discarded sessions are left
+  out. `planned` is true when the session fulfilled a scheduled workout. A
+  legacy day log has `status` `logged` (or `rest` for a rest day), `started_at`
+  `null`, and `completed_at` set to when it was logged; its `exercises` carries
+  per-exercise summaries recorded before sets were logged one by one (always
+  `[]` for sessions).
+- Set and template weights carry no unit of their own; they are in
+  `settings.weight_unit`. Body weights carry the unit they were entered in.
+- Sets are ordered by planned exercise order, then exercise name, then
+  `set_index`.
+- `schema_version` increases only when a field is removed or changes meaning.
+  New fields and sections are additive and keep the version; readers must
+  ignore unknown fields.
+- Programs, the schedule, weekly plans, criteria-based training blocks, and
+  Health export receipts are not in version 1.
+
+### `GET /api/v1/export/workout-sets` → `200 text/csv; charset=utf-8`
+
+One RFC 4180 row per recorded set from the same snapshot, oldest workout first,
+for spreadsheets and other training apps. Columns, in order:
+
+```text
+date,workout_name,workout_source,workout_status,planned,exercise_name,
+exercise_category,exercise_modality,set_index,target_reps,target_weight,
+actual_reps,actual_weight,weight_unit,duration_seconds,completed,extra,workout_notes
+```
+
+- A workout with no sets still has one row with empty set columns, so its date
+  and notes survive. Rest-day logs are left out.
+- Empty cells mean no value. `weight_unit` is filled only on rows that carry a
+  weight. Booleans are `true`/`false`.
+- Athlete-authored text that starts with `=`, `+`, `-`, `@`, tab, or carriage
+  return is prefixed with `'` so spreadsheets do not evaluate it as a formula.
+- Columns are only ever appended.
+
+---
 
 ## Account
 
