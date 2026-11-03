@@ -140,6 +140,7 @@ func main() {
 	settingsRepo := dao.NewSettingsDAO(pool)
 	profileRepo := dao.NewProfileDAO(pool)
 	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
+	exportRepo := dao.NewExportDAO(pool)
 	exerciseCatalogRepo := dao.NewExerciseCatalogDAO(pool)
 	planRepo := dao.NewPlanDAO(pool)
 	trainingProfileRepo := dao.NewTrainingProfileDAO(pool)
@@ -175,6 +176,7 @@ func main() {
 	}
 	profileSvc := service.NewProfileServiceWithUserBoundary(profileRepo, v, avatarStorage, authUserRepo, userOperationLocker)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
+	exportSvc := service.NewExportService(exportRepo)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
 	trainingProfileSvc := service.NewTrainingProfileService(trainingProfileRepo, trainingMutationRepo, v)
@@ -214,6 +216,7 @@ func main() {
 	settingsHandler := handler.NewSettingsHandler(settingsSvc)
 	profileHandler := handler.NewProfileHandler(profileSvc)
 	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
+	exportHandler := handler.NewExportHandler(exportSvc)
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
@@ -232,7 +235,7 @@ func main() {
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the
