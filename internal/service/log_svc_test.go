@@ -558,3 +558,67 @@ func TestParseExerciseIDs_CapsRequestSize(t *testing.T) {
 		t.Fatalf("expected %d ids at the cap, got %d (%v)", MaxExerciseIDsPerRequest, len(parsed), err)
 	}
 }
+
+func TestLogService_CreateWithOperationKey(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	req := model.CreateDayLogRequest{
+		Date:         model.UTCToday().Format("2006-01-02"),
+		TypeID:       "push",
+		SubtypeID:    "hypertrophy",
+		OperationKey: "finish-1",
+	}
+
+	t.Run("keyed create goes through CreateOnce with a stable hash", func(t *testing.T) {
+		var hashes []string
+		repo := &MockLogDAO{
+			CreateFunc: func(context.Context, uuid.UUID, *model.DayLog) error {
+				t.Fatal("keyed create must not use the unkeyed insert")
+				return nil
+			},
+			CreateOnceFunc: func(_ context.Context, uid uuid.UUID, l *model.DayLog, key, hash string) (bool, error) {
+				if uid != userID || key != "finish-1" || hash == "" {
+					t.Errorf("unexpected CreateOnce(%s, %q, %q)", uid, key, hash)
+				}
+				hashes = append(hashes, hash)
+				return false, nil
+			},
+		}
+		svc := NewLogService(repo, &MockTemplateDAO{}, validator.New())
+		for range 2 {
+			if _, err := svc.Create(ctx, userID, req); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		}
+		if len(hashes) != 2 || hashes[0] != hashes[1] {
+			t.Errorf("expected one stable hash for an identical replay, got %v", hashes)
+		}
+	})
+
+	t.Run("replay returns the stored log", func(t *testing.T) {
+		stored := uuid.New()
+		repo := &MockLogDAO{
+			CreateOnceFunc: func(_ context.Context, _ uuid.UUID, l *model.DayLog, _, _ string) (bool, error) {
+				*l = model.DayLog{ID: stored, Date: req.Date, TypeID: "push", SubtypeID: "hypertrophy"}
+				return true, nil
+			},
+		}
+		log, err := NewLogService(repo, &MockTemplateDAO{}, validator.New()).Create(ctx, userID, req)
+		if err != nil || log.ID != stored {
+			t.Fatalf("expected stored log %s, got %+v (%v)", stored, log, err)
+		}
+	})
+
+	t.Run("idempotency conflict propagates", func(t *testing.T) {
+		repo := &MockLogDAO{
+			CreateOnceFunc: func(context.Context, uuid.UUID, *model.DayLog, string, string) (bool, error) {
+				return false, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+			},
+		}
+		_, err := NewLogService(repo, &MockTemplateDAO{}, validator.New()).Create(ctx, userID, req)
+		var conflict *model.ConflictError
+		if !errors.As(err, &conflict) {
+			t.Fatalf("expected conflict, got %v", err)
+		}
+	})
+}

@@ -106,7 +106,20 @@ func (s *logService) Create(ctx context.Context, userID uuid.UUID, req model.Cre
 		SetLogs:      toSetLogs(req.SetLogs),
 	}
 
-	if err := s.repo.Create(ctx, userID, dl); err != nil {
+	if req.OperationKey == "" {
+		if err := s.repo.Create(ctx, userID, dl); err != nil {
+			return nil, err
+		}
+		return dl, nil
+	}
+
+	// A keyed create is an offline finish that may be delivered more than
+	// once; the DAO returns the first response instead of a second log.
+	hash, err := hashPayload(req)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.CreateOnce(ctx, userID, dl, req.OperationKey, hash); err != nil {
 		return nil, err
 	}
 	return dl, nil

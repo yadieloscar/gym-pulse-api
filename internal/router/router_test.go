@@ -49,6 +49,9 @@ func (fakeLogDAO) GetByDate(ctx context.Context, u uuid.UUID, d string) (*model.
 	return &model.DayLog{Date: d}, nil
 }
 func (fakeLogDAO) Create(ctx context.Context, u uuid.UUID, l *model.DayLog) error { return nil }
+func (fakeLogDAO) CreateOnce(ctx context.Context, u uuid.UUID, l *model.DayLog, key, hash string) (bool, error) {
+	return false, nil
+}
 func (fakeLogDAO) Update(ctx context.Context, u uuid.UUID, d string, update model.DayLogUpdate) error {
 	return nil
 }
@@ -164,7 +167,7 @@ var (
 func TestRouter_HidesSwaggerInProduction(t *testing.T) {
 	cfg := &config.Config{Environment: "production", AllowedOrigins: []string{"https://app.example.com"}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
 	if rec.Code != http.StatusNotFound {
@@ -194,7 +197,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 
-	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	do := func(req *http.Request) *http.Response {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
