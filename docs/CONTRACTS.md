@@ -48,7 +48,8 @@
   when exceeded: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
   allow 10 requests per minute; `POST /api/v1/schedule/materialize`,
   `/schedule/regenerate`, `/schedule/recover`, `/plan-transitions/preview`,
-  and `/plan-transitions/apply` allow 30 per minute. Clients should back off
+  and `/plan-transitions/apply` allow 30 per minute; `GET /api/v1/export` and
+  `/export/workout-sets` share 6 per minute. Clients should back off
   rather than retry immediately.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
@@ -1584,6 +1585,115 @@ catalog-only search and a startup warning in staging and production),
 `FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
 to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
 (test and staging overrides). Keys never appear in logs or responses.
+
+## Data export
+
+Data export (contract 1.4.0) lets the athlete take everything they authored or
+performed out of GymPulse. Both endpoints are read-only, scoped to the
+authenticated user, and read every section from one repeatable-read snapshot,
+so a workout finished during the export appears whole or not at all. They
+share a per-user limit of 6 requests per minute (`429 RATE_LIMITED`). Both
+responses carry `Content-Disposition: attachment;
+filename="gympulse-export-YYYY-MM-DD.<json|csv>"` (UTC date of `exported_at`).
+A read failure answers the standard JSON error with no attachment header.
+
+### `GET /api/v1/export` → `200 DataExport`
+
+```json
+{
+  "schema_version": 1,
+  "exported_at": "2026-11-03T14:05:06Z",
+  "profile": { "display_name": "Sam" | null, "created_at": "RFC3339" } | null,
+  "settings": { "weight_unit": "lb" | "kg", "weekly_goal": 5 } | null,
+  "training_profile": {
+    "primary_goal": "strength", "available_days": [1, 3, 5],
+    "usual_activity": "moderate", "experience": "beginner",
+    "equipment": ["barbell"], "session_duration_minutes": 45, "timezone": "UTC"
+  } | null,
+  "workouts": [{
+    "id": "uuid", "source": "session" | "day_log", "date": "YYYY-MM-DD",
+    "name": "Push day", "status": "draft" | "active" | "completed" | "logged" | "rest",
+    "planned": true, "notes": "text" | null,
+    "started_at": "RFC3339" | null, "completed_at": "RFC3339" | null,
+    "sets": [{
+      "exercise_name": "Bench Press", "exercise_category": "push",
+      "exercise_modality": "strength" | "cardio", "set_index": 1,
+      "target_reps": 5 | null, "target_weight": 80 | null,
+      "actual_reps": 5 | null, "actual_weight": 82.5 | null,
+      "duration_seconds": 600 | null, "completed": true, "extra": false
+    }],
+    "exercises": [{
+      "exercise_name": "Squat", "actual_sets": 3 | null, "actual_reps": 5 | null,
+      "actual_weight": 100 | null, "notes": "text" | null, "skipped": false
+    }]
+  }],
+  "templates": [{
+    "id": "uuid", "name": "Upper A", "type_id": "strength", "subtype_id": "general",
+    "created_at": "RFC3339", "updated_at": "RFC3339",
+    "exercises": [{ "name": "Row", "sets": 3 | null, "reps": 8 | null, "weight": 60 | null,
+      "rest_seconds": 90 | null, "duration_minutes": null, "intensity": null, "notes": null }]
+  }],
+  "sport_activities": [{
+    "id": "uuid", "date": "YYYY-MM-DD", "sport_id": "tennis", "sport_name": "Tennis",
+    "duration_minutes": 60, "perceived_effort": 7 | null, "distance_meters": null,
+    "energy_kcal": null, "avg_heart_rate_bpm": null,
+    "source": "manual" | "apple_health", "notes": null
+  }],
+  "body_weights": [{ "date": "YYYY-MM-DD", "weight": 80.4, "unit": "lb" | "kg" }],
+  "nutrition": {
+    "days": [{ "date": "YYYY-MM-DD", "energy_kcal": 2400 | null, "protein_g": 140.5 | null,
+      "carbs_g": null, "fat_g": null, "source": "manual" | "apple_health" | "foods" }],
+    "targets": [{ "effective_from": "YYYY-MM-DD", "protein_g": 150, "energy_kcal": null,
+      "carbs_g": null, "fat_g": null }],
+    "food_entries": [{ "date": "YYYY-MM-DD", "kind": "food" | "quick_add",
+      "food_name": "Oats" | null, "serving_label": "1 bowl" | null, "serving_g": 250 | null,
+      "amount": 1 | null, "energy_kcal": 400 | null, "protein_g": 30 | null,
+      "carbs_g": 50 | null, "fat_g": 8 | null, "logged_at": "RFC3339" }],
+    "own_foods": [{ "name": "Oats", "brand": null, "serving_label": "1 bowl", "serving_g": 250,
+      "energy_kcal": 400, "protein_g": 30, "carbs_g": 50, "fat_g": 8, "archived": false }]
+  }
+}
+```
+
+- Every collection is `[]`, never `null`. A section the athlete never created
+  (`profile`, `settings`, `training_profile`) is `null`.
+- `workouts` combines goal-based sessions (`source: "session"`) and legacy day
+  logs (`source: "day_log"`), oldest date first. Discarded sessions are left
+  out. `planned` is true when the session fulfilled a scheduled workout. A
+  legacy day log has `status` `logged` (or `rest` for a rest day), `started_at`
+  `null`, and `completed_at` set to when it was logged; its `exercises` carries
+  per-exercise summaries recorded before sets were logged one by one (always
+  `[]` for sessions).
+- Set and template weights carry no unit of their own; they are in
+  `settings.weight_unit`. Body weights carry the unit they were entered in.
+- Sets are ordered by planned exercise order, then exercise name, then
+  `set_index`.
+- `schema_version` increases only when a field is removed or changes meaning.
+  New fields and sections are additive and keep the version; readers must
+  ignore unknown fields.
+- Programs, the schedule, weekly plans, criteria-based training blocks, and
+  Health export receipts are not in version 1.
+
+### `GET /api/v1/export/workout-sets` → `200 text/csv; charset=utf-8`
+
+One RFC 4180 row per recorded set from the same snapshot, oldest workout first,
+for spreadsheets and other training apps. Columns, in order:
+
+```text
+date,workout_name,workout_source,workout_status,planned,exercise_name,
+exercise_category,exercise_modality,set_index,target_reps,target_weight,
+actual_reps,actual_weight,weight_unit,duration_seconds,completed,extra,workout_notes
+```
+
+- A workout with no sets still has one row with empty set columns, so its date
+  and notes survive. Rest-day logs are left out.
+- Empty cells mean no value. `weight_unit` is filled only on rows that carry a
+  weight. Booleans are `true`/`false`.
+- Athlete-authored text that starts with `=`, `+`, `-`, `@`, tab, or carriage
+  return is prefixed with `'` so spreadsheets do not evaluate it as a formula.
+- Columns are only ever appended.
+
+---
 
 ## Account
 

@@ -276,6 +276,37 @@ definitions:
     - name
     - operation_key
     type: object
+  model.DataExport:
+    properties:
+      body_weights:
+        items:
+          $ref: '#/definitions/model.ExportBodyWeight'
+        type: array
+      exported_at:
+        type: string
+      nutrition:
+        $ref: '#/definitions/model.ExportNutrition'
+      profile:
+        $ref: '#/definitions/model.ExportProfile'
+      schema_version:
+        type: integer
+      settings:
+        $ref: '#/definitions/model.ExportSettings'
+      sport_activities:
+        items:
+          $ref: '#/definitions/model.ExportSportActivity'
+        type: array
+      templates:
+        items:
+          $ref: '#/definitions/model.ExportTemplate'
+        type: array
+      training_profile:
+        $ref: '#/definitions/model.ExportTrainingProfile'
+      workouts:
+        items:
+          $ref: '#/definitions/model.ExportWorkout'
+        type: array
+    type: object
   model.DayEntries:
     properties:
       day:
@@ -473,6 +504,286 @@ definitions:
       max_weight_reps:
         type: integer
     type: object
+  model.ExportBodyWeight:
+    properties:
+      date:
+        type: string
+      unit:
+        type: string
+      weight:
+        type: number
+    type: object
+  model.ExportExerciseSummary:
+    properties:
+      actual_reps:
+        type: integer
+      actual_sets:
+        type: integer
+      actual_weight:
+        type: number
+      exercise_name:
+        type: string
+      notes:
+        type: string
+      skipped:
+        type: boolean
+    type: object
+  model.ExportFoodEntry:
+    properties:
+      amount:
+        type: number
+      carbs_g:
+        type: number
+      date:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      food_name:
+        type: string
+      kind:
+        type: string
+      logged_at:
+        type: string
+      protein_g:
+        type: number
+      serving_g:
+        type: number
+      serving_label:
+        type: string
+    type: object
+  model.ExportNutrition:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/model.ExportNutritionDay'
+        type: array
+      food_entries:
+        items:
+          $ref: '#/definitions/model.ExportFoodEntry'
+        type: array
+      own_foods:
+        items:
+          $ref: '#/definitions/model.ExportOwnFood'
+        type: array
+      targets:
+        items:
+          $ref: '#/definitions/model.ExportNutritionTarget'
+        type: array
+    type: object
+  model.ExportNutritionDay:
+    properties:
+      carbs_g:
+        type: number
+      date:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
+      source:
+        type: string
+    type: object
+  model.ExportNutritionTarget:
+    properties:
+      carbs_g:
+        type: number
+      effective_from:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
+    type: object
+  model.ExportOwnFood:
+    properties:
+      archived:
+        type: boolean
+      brand:
+        type: string
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      name:
+        type: string
+      protein_g:
+        type: number
+      serving_g:
+        type: number
+      serving_label:
+        type: string
+    type: object
+  model.ExportProfile:
+    properties:
+      created_at:
+        type: string
+      display_name:
+        type: string
+    type: object
+  model.ExportSet:
+    properties:
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      completed:
+        type: boolean
+      duration_seconds:
+        type: integer
+      exercise_category:
+        type: string
+      exercise_modality:
+        type: string
+      exercise_name:
+        type: string
+      extra:
+        type: boolean
+      set_index:
+        type: integer
+      target_reps:
+        type: integer
+      target_weight:
+        type: number
+    type: object
+  model.ExportSettings:
+    properties:
+      weekly_goal:
+        type: integer
+      weight_unit:
+        type: string
+    type: object
+  model.ExportSportActivity:
+    properties:
+      avg_heart_rate_bpm:
+        type: integer
+      date:
+        type: string
+      distance_meters:
+        type: integer
+      duration_minutes:
+        type: integer
+      energy_kcal:
+        type: integer
+      id:
+        type: string
+      notes:
+        type: string
+      perceived_effort:
+        type: integer
+      source:
+        type: string
+      sport_id:
+        type: string
+      sport_name:
+        type: string
+    type: object
+  model.ExportTemplate:
+    properties:
+      created_at:
+        type: string
+      exercises:
+        items:
+          $ref: '#/definitions/model.ExportTemplateExercise'
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      subtype_id:
+        type: string
+      type_id:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.ExportTemplateExercise:
+    properties:
+      duration_minutes:
+        type: integer
+      intensity:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      reps:
+        type: integer
+      rest_seconds:
+        type: integer
+      sets:
+        type: integer
+      weight:
+        type: number
+    type: object
+  model.ExportTrainingProfile:
+    properties:
+      available_days:
+        items:
+          type: integer
+        type: array
+      equipment:
+        items:
+          type: string
+        type: array
+      experience:
+        type: string
+      primary_goal:
+        type: string
+      session_duration_minutes:
+        type: integer
+      timezone:
+        type: string
+      usual_activity:
+        type: string
+    type: object
+  model.ExportWorkout:
+    properties:
+      completed_at:
+        type: string
+      date:
+        type: string
+      exercises:
+        description: |-
+          Exercises carries legacy per-exercise summaries recorded before sets
+          were logged one by one. It is always empty for sessions.
+        items:
+          $ref: '#/definitions/model.ExportExerciseSummary'
+        type: array
+      id:
+        type: string
+      name:
+        type: string
+      notes:
+        type: string
+      planned:
+        type: boolean
+      sets:
+        items:
+          $ref: '#/definitions/model.ExportSet'
+        type: array
+      source:
+        $ref: '#/definitions/model.ExportWorkoutSource'
+      started_at:
+        type: string
+      status:
+        type: string
+    type: object
+  model.ExportWorkoutSource:
+    enum:
+    - session
+    - day_log
+    type: string
+    x-enum-varnames:
+    - ExportWorkoutSession
+    - ExportWorkoutDayLog
   model.ExtraSetRequest:
     properties:
       actual_reps:
@@ -1944,6 +2255,62 @@ paths:
       summary: All-time records per exercise
       tags:
       - logs
+  /api/v1/export:
+    get:
+      description: Returns every workout with its sets, saved workouts, sport activities,
+        body weights, nutrition days, targets, and food log from one consistent snapshot.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.DataExport'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export all of the athlete's data
+      tags:
+      - export
+  /api/v1/export/workout-sets:
+    get:
+      description: Returns one CSV row per recorded set, oldest workout first, for
+        spreadsheets and other training apps.
+      produces:
+      - text/csv
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "429":
+          description: Too Many Requests
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Export workout sets as CSV
+      tags:
+      - export
   /api/v1/logs:
     get:
       description: Returns all day logs in the week containing the given Monday date.
