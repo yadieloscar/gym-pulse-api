@@ -48,7 +48,8 @@ func New(
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestIDHeaderMiddleware)
 	r.Use(middleware.LoggingMiddleware(logger))
-	r.Use(middleware.SecurityHeaders)
+	// HSTS only where TLS is guaranteed; a local HTTP API must stay reachable.
+	r.Use(middleware.SecurityHeaders(cfg.IsReleaseEnvironment()))
 	r.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 	r.Use(chimiddleware.Recoverer)
 

@@ -41,7 +41,8 @@
   trailing JSON returns `400 BAD_REQUEST`.
 - Every response carries `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`,
   and `Referrer-Policy: no-referrer`; `/api/v1/*` responses add
-  `Cache-Control: no-store`. The Swagger UI at `/docs/*` is not served in
+  `Cache-Control: no-store`. Staging and production also send
+  `Strict-Transport-Security: max-age=31536000; includeSubDomains`. The Swagger UI at `/docs/*` is not served in
   production; this document is the contract.
 - The costliest endpoints are rate limited **per authenticated user** and
   return `429 { "error": "too many requests, retry shortly", "code": "RATE_LIMITED" }`
