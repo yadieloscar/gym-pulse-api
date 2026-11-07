@@ -38,6 +38,10 @@ func (rulesDraftGenerator) Generate(_ context.Context, input GenerationInput) (*
 		for _, e := range w.Exercises {
 			rest := e.RestSeconds
 			ex := model.RawGeneratedExercise{CatalogID: e.Entry.ID.String(), TargetSets: e.Sets, RestSeconds: &rest}
+			if e.Note != "" {
+				note := e.Note
+				ex.Notes = &note
+			}
 			if e.Entry.Modality == "cardio" {
 				duration := e.DurationSeconds
 				ex.TargetDurationSeconds = &duration
