@@ -41,6 +41,7 @@ func New(
 	programGenerationHandler *handler.ProgramGenerationHandler,
 	exportHandler *handler.ExportHandler,
 	mobilitySessionHandler *handler.MobilitySessionHandler,
+	workoutImportHandler *handler.WorkoutImportHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -222,6 +223,17 @@ func New(
 					r.Use(middleware.RateLimitPerUser(middleware.ExportLimit))
 					r.Get("/export", exportHandler.Export)
 					r.Get("/export/workout-sets", exportHandler.WorkoutSets)
+				})
+
+				// Workout history import: whole-file parses share the export budget.
+				r.Route("/imports", func(r chi.Router) {
+					r.Get("/", workoutImportHandler.List)
+					r.Delete("/{id}", workoutImportHandler.Delete)
+					r.Group(func(r chi.Router) {
+						r.Use(middleware.RateLimitPerUser(middleware.ExportLimit))
+						r.Post("/preview", workoutImportHandler.Preview)
+						r.Post("/", workoutImportHandler.Commit)
+					})
 				})
 
 				// Body Weight

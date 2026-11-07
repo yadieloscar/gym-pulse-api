@@ -35,6 +35,7 @@ func (r *accountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error
 	// workout, and program rows cascade from these roots.
 	statements := []string{
 		`DELETE FROM day_logs WHERE user_id = $1`,
+		`DELETE FROM workout_imports WHERE user_id = $1`,
 		`DELETE FROM sport_activities WHERE user_id = $1`,
 		`DELETE FROM mobility_sessions WHERE user_id = $1`,
 		`DELETE FROM health_exports WHERE user_id = $1`,

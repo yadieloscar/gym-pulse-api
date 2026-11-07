@@ -49,8 +49,9 @@
   when exceeded: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
   allow 10 requests per minute; `POST /api/v1/schedule/materialize`,
   `/schedule/regenerate`, `/schedule/recover`, `/plan-transitions/preview`,
-  and `/plan-transitions/apply` allow 30 per minute; `GET /api/v1/export` and
-  `/export/workout-sets` share 6 per minute. Clients should back off
+  and `/plan-transitions/apply` allow 30 per minute; `GET /api/v1/export`,
+  `/export/workout-sets`, `POST /api/v1/imports/preview`, and
+  `POST /api/v1/imports` share 6 per minute. Clients should back off
   rather than retry immediately.
 - Validation failures return `422 { "error": "<message>", "code": "VALIDATION_ERROR", "details": {...} }`;
   the **whole struct is validated** so partial PUTs that omit `required` fields
@@ -1075,7 +1076,8 @@ to a health store; the device writes and then records.
 A finished workout is a planned workout finalized with a `completed` or
 `incomplete` outcome (`workout_kind: scheduled_workout`, the scheduled workout
 id) or an off-plan log (`workout_kind: day_log`, the log id). A missed planned
-workout and a rest log never export and answer the shared 404. Deleting the
+workout, a rest log, and an imported log (`import_id` set) never export and
+answer the shared 404. Deleting the
 workout (`DELETE /api/v1/scheduled-workouts/{id}` or `DELETE /api/v1/logs/{date}`)
 deletes its export record; the service cannot remove the copy in Apple Health.
 
@@ -1311,6 +1313,16 @@ derived server-side so released clients keep their existing payload shape.
 
 `GET` returns the full `DayLog` including a `set_logs[]` array (flat; group by
 `exercise_id` client-side).
+
+Since contract 1.6.0 (additive), every `DayLog` and weekly `DayLog` summary
+carries `import_id` (`null` unless the log was created by a workout import,
+see "Workout history import"), and each set log carries the immutable
+`exercise_name`, `exercise_category`, and `exercise_modality` snapshot.
+`exercise_id` is `null` when the set has no saved-workout exercise (an
+imported set with no single saved-workout exercise of the same name, or a set
+whose exercise was later deleted); clients group such sets by
+`exercise_name`. Set logs are ordered by when they were performed, then
+`exercise_id` and `set_index`.
 
 **PUT also replaces the day's workout** when any of `type_id`, `subtype_id`,
 `template_id` are present:
@@ -1735,6 +1747,121 @@ catalog-only search and a startup warning in staging and production),
 `FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
 to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
 (test and staging overrides). Keys never appear in logs or responses.
+
+## Workout history import
+
+Workout history import (contract 1.6.0, additive) brings an athlete's history
+over from a Strong or Hevy CSV export. The file is parsed by the API, never
+stored, and becomes one day log per new calendar date: `type_id: "other"`,
+`subtype_id: "general"`, no template, `import_id` set, every set `completed`.
+The day's `session_notes` hold the source workout names and notes. Supported
+layouts are the exact header sets in
+`specs/026-workout-history-import/spec.md`; anything else is rejected.
+
+Rules shared by preview and commit:
+
+- A date that already holds any day log (recorded in GymPulse or imported
+  earlier) is skipped whole and counted in `days_already_present`; an import
+  never modifies an existing log. Importing the same file twice adds nothing.
+- Dates after today in the athlete's training-profile timezone (UTC when none)
+  are skipped and counted in `days_skipped_future`. Export times carry no
+  timezone and are read as written in that timezone.
+- Warm-up sets (Strong `W`, Hevy `warmup`) are skipped and counted. Drop and
+  failure sets import as ordinary sets. Strong `Rest Timer` and `Note` rows are
+  ignored. A set with neither reps nor seconds is skipped and counted in
+  `empty_sets_skipped`. Distance and RPE are not stored; kept sets that had a
+  distance are counted in `sets_losing_distance`.
+- Weights are converted to the athlete's `settings.weight_unit`
+  (1 lb = 0.45359237 kg, rounded to 0.01). The file's unit comes from its
+  header or rows; the legacy Strong layout states none, so the preview reports
+  `source_weight_unit: null` and the commit must send one.
+- Exercise names resolve to the catalog (alias table, exact name,
+  `Movement (Equipment)` → `Equipment Movement`, then the movement alone) and
+  take its name, category, and modality. Other names are unmatched: `keep`
+  imports them under their own name with category `other`; `skip` drops their
+  sets. A set links to a saved-workout exercise (`exercise_id`) only when
+  exactly one of the athlete's saved-workout exercises has its resolved or
+  source name, so records and "last time" include it.
+- Imports write no participation, scheduled workouts, templates, or health
+  export records. Imported days count toward total workouts, weekly volume,
+  and the weekly goal like any off-plan log.
+- Limits: file ≤ 10 MiB (`413 REQUEST_TOO_LARGE`, `details.max_bytes`),
+  ≤ 100,000 rows and ≤ 5,000 dates (`422 IMPORT_TOO_LARGE`, `details.max_rows`
+  or `details.max_days`).
+
+File errors are `422` with one of these codes; nothing is written:
+
+| Code | When | `details` |
+| --- | --- | --- |
+| `IMPORT_UNRECOGNIZED` | Header is not a supported layout | `expected` (where each export lives) |
+| `IMPORT_INVALID_ROW` | Unreadable CSV row, date, number, set order, or set type; weight above 99,999.99 | `line`, `reason` |
+| `IMPORT_TOO_LARGE` | Row or date limit exceeded | `max_rows` or `max_days` |
+| `IMPORT_UNIT_REQUIRED` | Commit of a file that states no unit, without `source_weight_unit` | `field` |
+
+Both POST routes take `multipart/form-data` with exactly one `file` part
+(otherwise `400 BAD_REQUEST`); other fields are at most 256 bytes.
+
+### `POST /api/v1/imports/preview` → `200 ImportPreview`
+
+Fields: `file`, optional `source_weight_unit` (`lb`|`kg`). Writes nothing.
+
+```json
+{
+  "source": "strong",
+  "source_weight_unit": "kg",
+  "weight_unit": "lb",
+  "file_first_date": "2023-01-02", "file_last_date": "2025-03-24",
+  "file_workout_count": 214,
+  "keep": { "workout_count": 210, "day_count": 208, "set_count": 4310,
+            "first_date": "2023-01-02", "last_date": "2025-03-24" },
+  "skip": { "workout_count": 209, "day_count": 207, "set_count": 4102,
+            "first_date": "2023-01-02", "last_date": "2025-03-24" },
+  "days_already_present": 3,
+  "days_skipped_future": 0,
+  "warmup_sets_skipped": 388,
+  "empty_sets_skipped": 2,
+  "sets_losing_distance": 14,
+  "matched_exercise_count": 31,
+  "unmatched_exercises": [ { "name": "Cable Kickback", "set_count": 208 } ]
+}
+```
+
+`keep` and `skip` are what a commit with that `unmatched` choice writes;
+their `first_date`/`last_date` are `null` when nothing would be written.
+`unmatched_exercises` is in file order and `[]` when every name matched.
+
+### `POST /api/v1/imports` → `201 WorkoutImport`
+
+Requires `Idempotency-Key` equal to the `operation_key` field. Fields: `file`,
+`unmatched` (`keep`|`skip`), `operation_key` (1–128 characters), and
+`source_weight_unit` when the file states no unit. All days commit in one
+transaction or none do.
+
+```json
+{
+  "id": "<uuid>", "source": "strong", "source_weight_unit": "kg",
+  "weight_unit": "lb", "unmatched": "keep",
+  "first_date": "2023-01-02", "last_date": "2025-03-24",
+  "workout_count": 210, "day_count": 208, "set_count": 4310,
+  "created_at": "<RFC3339>"
+}
+```
+
+The identical file and options under the same key replay the stored import
+with `200`; the same key with a different file or options is
+`409 IDEMPOTENCY_CONFLICT`. A file with nothing new to import is
+`422 VALIDATION_ERROR` with `details.field = "file"`. A day that gained a log
+between preview and commit is `409 CONFLICT`; preview again.
+
+### `GET /api/v1/imports` → `200 { "imports": [WorkoutImport] }`
+
+Newest first; `[]` when there are none.
+
+### `DELETE /api/v1/imports/{id}` → `204`
+
+Removes the import and every day log it created, with their set logs,
+including changes made to those days since. Other logs are untouched. A
+missing or foreign id, or a repeated delete, is `404 NOT_FOUND`.
 
 ## Data export
 
