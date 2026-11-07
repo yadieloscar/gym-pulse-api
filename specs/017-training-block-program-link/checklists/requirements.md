@@ -13,8 +13,7 @@
 
 ## Requirement Completeness
 
-- [ ] No unresolved decisions remain: there are no [NEEDS CLARIFICATION] markers, but the owner
-      questions at the end of the spec are unanswered; each has a written default
+- [x] No [NEEDS CLARIFICATION] markers remain; owner answered every open question on 2026-11-07
 - [x] Requirements are testable and unambiguous
 - [x] Success criteria are measurable
 - [x] Success criteria are technology-agnostic
@@ -32,7 +31,6 @@
 
 ## Notes
 
-- Status stays Draft until the owner answers or accepts the defaults in "Open Questions for the
-  Owner". Run clarify with those answers, then plan.
+- Owner answers recorded 2026-11-07; spec Approved. Next stage: plan.
 - The sibling spec in the other repository shares feature ID `gympulse-training-block-program-link`.
 - Rollout: API spec first and deployed, then the app.

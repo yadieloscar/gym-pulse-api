@@ -11,7 +11,7 @@
 
 **Created**: 2026-11-03
 
-**Status**: Draft. Awaiting owner answers to the open questions at the end of this document.
+**Status**: Approved (owner answered every open question on 2026-11-07; see Clarifications)
 
 **Input**: Owner direction relayed from the coordinating session: "What are blocks even for? They
 duplicate logging." Today a block is fully separate from programs and workout logs. The athlete
@@ -56,6 +56,23 @@ the end, with its alternative.
   narrow new mutation sets or clears the program of a stage that is current or still ahead. It
   changes link context only. Name, instructions, targets, load level, and required exposures stay
   immutable.
+
+### Session 2026-11-07 (owner answers)
+
+The owner answered each open question interactively and accepted every drafting default:
+
+- Q: Offer or auto-create the exposure? → A: Offer. The athlete confirms each suggestion with one
+  tap; nothing is recorded without that press.
+- Q: Are `incomplete` workouts suggested? → A: Yes, prefilled as `modified`: kept in history,
+  never qualifying.
+- Q: Can stage programs change on an existing block? → A: Yes, for the current and later stages
+  only; every other stage field stays immutable.
+- Q: Do manual sport activities or off-plan sessions match? → A: No. Only scheduled workouts of the
+  effective program, including planned sport units once completed.
+- Q: Two active blocks share the program? → A: The workout is suggested to each block; each block
+  can record it once.
+- App-side answers (Today placement, wording, combined move-on and switch, starters) are recorded
+  in the sibling app spec and need no API change beyond this spec.
 
 ## Changes to the approved block spec
 
@@ -197,12 +214,11 @@ is still active and the aggregate reports Q as the new current stage's effective
 
 ## Non-Goals *(mandatory)*
 
-- Creating exposures without an explicit athlete action (pending owner answer to question 1).
+- Creating exposures without an explicit athlete action.
 - Recording the next-morning response from a notification, or sending reminder notifications.
 - Advancing, regressing, or completing a stage automatically, or suggesting that the athlete should.
 - Switching, activating, or rescheduling programs from any block endpoint.
-- Matching off-plan workout sessions, unlinked sport activities, or imported health workouts
-  (pending owner answer to question 4).
+- Matching off-plan workout sessions, unlinked sport activities, or imported health workouts.
 - Deriving performed count, duration, or intensity from logged sets.
 - Editing stage criteria after creation, or editing or deleting exposures.
 - Any diagnosis, treatment, healing, or clearance language.
@@ -300,17 +316,4 @@ is still active and the aggregate reports Q as the new current stage's effective
 
 ## Open Questions for the Owner
 
-1. **Offer or auto-create?** Default: the athlete confirms each suggested exposure with one tap.
-   Alternative: the server creates the exposure inside workout completion, and the athlete can only
-   correct its outcome later. Auto-create saves one tap but adds a hidden data change, and it needs
-   an undo rule, because exposures cannot be deleted today.
-2. **Incomplete workouts.** Default: an `incomplete` workout is suggested with outcome `modified`
-   (recorded, does not qualify). Alternative: suggest only `completed` workouts.
-3. **Editing stage programs on existing blocks.** Default: allowed for the current and later stages
-   only. Alternative: stage programs only at creation. That keeps stages fully immutable, but
-   existing blocks (including vertical jump blocks already created) would never link.
-4. **Sport sessions and off-plan workouts.** Default: only scheduled workouts of the stage program
-   match, including planned sport units once completed. Should a manual sport activity (for example
-   volleyball not on the plan) also be suggested when the stage is sport-based?
-5. **Two blocks, one program.** Default: the workout is suggested to each block. Alternative: only
-   to the most recently updated block.
+None. All five were answered on 2026-11-07 and are recorded under Clarifications.
