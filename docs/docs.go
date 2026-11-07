@@ -3619,7 +3619,7 @@ const docTemplate = `{
         },
         "/health": {
             "get": {
-                "description": "Returns 200 when the server is up.",
+                "description": "Returns 200 when the server is up, with the build version (source commit, or \"dev\").",
                 "produces": [
                     "application/json"
                 ],
