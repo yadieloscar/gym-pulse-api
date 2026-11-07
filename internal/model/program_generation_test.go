@@ -207,8 +207,8 @@ func TestProgramWorkoutsConvertsToCreateShape(t *testing.T) {
 }
 
 func TestGenerationJSONShapes(t *testing.T) {
-	body, _ := json.Marshal(GenerationStatus{Enabled: false, Limit: 5, RemainingToday: 5})
-	if string(body) != `{"enabled":false,"limit":5,"remaining_today":5,"resets_at":null}` {
+	body, _ := json.Marshal(GenerationStatus{Enabled: true, Provider: GenerationProviderRules, Limit: 5, RemainingToday: 5})
+	if string(body) != `{"enabled":true,"provider":"rules","limit":5,"remaining_today":5,"resets_at":null}` {
 		t.Fatalf("status shape: %s", body)
 	}
 	got, err := RepairGeneratedDraft(generationProfile(1), generationCatalog(), validRaw(), "m", nil)
@@ -290,6 +290,56 @@ func TestNormalizeSecondaryGoals(t *testing.T) {
 		var validation *ValidationError
 		if !errors.As(err, &validation) || validation.Field != "secondary_goals" {
 			t.Fatalf("%v must be a validation error on secondary_goals: %v", bad, err)
+		}
+	}
+}
+
+func TestNormalizeGenerationConstraints(t *testing.T) {
+	got, err := NormalizeGenerationConstraints(nil, nil, nil)
+	if err != nil || got.Avoid == nil || len(got.Avoid) != 0 || got.Focus != "" || got.Variant != 0 {
+		t.Fatalf("absent constraints must normalize to empty, not nil: %+v %v", got, err)
+	}
+	focus := " upper "
+	variant := 3
+	got, err = NormalizeGenerationConstraints([]string{" hinge ", "hinge", "vertical_push"}, &focus, &variant)
+	if err != nil || len(got.Avoid) != 2 || got.Avoid[0] != "hinge" || got.Avoid[1] != "vertical_push" || got.Focus != "upper" || got.Variant != 3 {
+		t.Fatalf("constraints must be trimmed and deduplicated: %+v %v", got, err)
+	}
+	empty := ""
+	if got, err := NormalizeGenerationConstraints(nil, &empty, nil); err != nil || got.Focus != "" {
+		t.Fatalf("an empty focus means none: %+v %v", got, err)
+	}
+	bad := "legs"
+	negative, big := -1, 1001
+	for _, tc := range []struct {
+		name    string
+		avoid   []string
+		focus   *string
+		variant *int
+		field   string
+	}{
+		{"unknown pattern", []string{"yoga"}, nil, nil, "avoid"},
+		{"too many patterns", MovementPatterns[:7], nil, nil, "avoid"},
+		{"unknown focus", nil, &bad, nil, "focus"},
+		{"negative variant", nil, nil, &negative, "variant"},
+		{"huge variant", nil, nil, &big, "variant"},
+	} {
+		_, err := NormalizeGenerationConstraints(tc.avoid, tc.focus, tc.variant)
+		var validation *ValidationError
+		if !errors.As(err, &validation) || validation.Field != tc.field {
+			t.Fatalf("%s: want a validation error on %s, got %v", tc.name, tc.field, err)
+		}
+	}
+}
+
+func TestGenerateProgramResponseAlwaysCarriesProviderAndConstraints(t *testing.T) {
+	raw, err := json.Marshal(GenerateProgramResponse{Provider: GenerationProviderRules, SecondaryGoals: []string{}, Avoid: []string{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"provider":"rules"`, `"avoid":[]`, `"focus":null`, `"secondary_goals":[]`} {
+		if !strings.Contains(string(raw), want) {
+			t.Errorf("response JSON missing %s: %s", want, raw)
 		}
 	}
 }

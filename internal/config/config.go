@@ -34,6 +34,11 @@ const (
 
 // Defaults for program generation; see docs/CONTRACTS.md "Program generation".
 const (
+	// ProgramGenerationProviderRules builds drafts in-process; ProgramGenerationProviderModel
+	// uses the Anthropic adapter and needs ANTHROPIC_API_KEY.
+	ProgramGenerationProviderRules = "rules"
+	ProgramGenerationProviderModel = "model"
+
 	DefaultProgramGenerationModel      = "claude-opus-5-5"
 	DefaultProgramGenerationDailyLimit = 5
 	DefaultProgramGenerationTimeout    = 45 * time.Second
@@ -70,20 +75,26 @@ type Config struct {
 	// Program generation calls the Anthropic API from the server. An empty key
 	// turns the feature off (the status route reports enabled: false). The
 	// base URL is overridable for tests and staging only.
-	AnthropicAPIKey             string
-	AnthropicBaseURL            string
-	ProgramGenerationModel      string
-	ProgramGenerationDailyLimit int
-	ProgramGenerationTimeout    time.Duration
-	AllowedOrigins              []string
-	Environment                 string
-	LogLevel                    string
-	DatabaseMaxConns            int32
-	DatabaseMinConns            int32
-	DatabaseLockMaxConns        int32
-	DatabaseMaxConnLifetime     time.Duration
-	DatabaseMaxConnIdleTime     time.Duration
-	DatabaseHealthCheckPeriod   time.Duration
+	AnthropicAPIKey string
+	// ProgramGenerationProvider is the effective provider: "model" only when
+	// requested and a key is present, otherwise "rules".
+	ProgramGenerationProvider string
+	// ProgramGenerationProviderFallback is true when "model" was requested
+	// without a key; main logs it.
+	ProgramGenerationProviderFallback bool
+	AnthropicBaseURL                  string
+	ProgramGenerationModel            string
+	ProgramGenerationDailyLimit       int
+	ProgramGenerationTimeout          time.Duration
+	AllowedOrigins                    []string
+	Environment                       string
+	LogLevel                          string
+	DatabaseMaxConns                  int32
+	DatabaseMinConns                  int32
+	DatabaseLockMaxConns              int32
+	DatabaseMaxConnLifetime           time.Duration
+	DatabaseMaxConnIdleTime           time.Duration
+	DatabaseHealthCheckPeriod         time.Duration
 	// MigrateOnStart lets development and test servers apply migrations at
 	// boot. Staging and production run them as a separate release step over
 	// DatabaseMigrateURL and only verify the schema at startup.
@@ -217,6 +228,17 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	generationProvider := strings.ToLower(strings.TrimSpace(os.Getenv("PROGRAM_GENERATION_PROVIDER")))
+	if generationProvider == "" {
+		generationProvider = ProgramGenerationProviderRules
+	}
+	if generationProvider != ProgramGenerationProviderRules && generationProvider != ProgramGenerationProviderModel {
+		return nil, errInvalidGenerationProvider
+	}
+	generationFallback := generationProvider == ProgramGenerationProviderModel && anthropicKey == ""
+	if generationFallback {
+		generationProvider = ProgramGenerationProviderRules
+	}
 	generationTimeout, err := positiveDurationEnv("PROGRAM_GENERATION_TIMEOUT", DefaultProgramGenerationTimeout)
 	if err != nil {
 		return nil, err
@@ -251,41 +273,47 @@ func Load() (*Config, error) {
 	}
 
 	return &Config{
-		Port:                        port,
-		DatabaseURL:                 dbURL,
-		DatabaseLockURL:             lockURL,
-		DatabaseMigrateURL:          migrateURL,
-		SupabaseJWTSecret:           jwtSecret,
-		SupabaseJWKSURL:             jwksURL,
-		SupabaseJWTIssuer:           issuer,
-		SupabaseJWTAudience:         audience,
-		SupabaseURL:                 supabaseURL,
-		SupabaseServiceRoleKey:      serviceRoleKey,
-		SupabaseAvatarBucket:        avatarBucket,
-		USDAFDCAPIKey:               usdaKey,
-		USDAFDCBaseURL:              usdaBaseURL,
-		OpenFoodFactsBaseURL:        offBaseURL,
-		FoodSourceUserAgent:         foodUserAgent,
-		AnthropicAPIKey:             anthropicKey,
-		AnthropicBaseURL:            anthropicBaseURL,
-		ProgramGenerationModel:      generationModel,
-		ProgramGenerationDailyLimit: int(generationLimit),
-		ProgramGenerationTimeout:    generationTimeout,
-		AllowedOrigins:              origins,
-		Environment:                 env,
-		LogLevel:                    logLevel,
-		DatabaseMaxConns:            maxConns,
-		DatabaseMinConns:            minConns,
-		DatabaseLockMaxConns:        lockMaxConns,
-		DatabaseMaxConnLifetime:     maxConnLifetime,
-		DatabaseMaxConnIdleTime:     maxConnIdleTime,
-		DatabaseHealthCheckPeriod:   healthCheckPeriod,
-		MigrateOnStart:              !isReleaseEnvironment,
+		Port:                              port,
+		DatabaseURL:                       dbURL,
+		DatabaseLockURL:                   lockURL,
+		DatabaseMigrateURL:                migrateURL,
+		SupabaseJWTSecret:                 jwtSecret,
+		SupabaseJWKSURL:                   jwksURL,
+		SupabaseJWTIssuer:                 issuer,
+		SupabaseJWTAudience:               audience,
+		SupabaseURL:                       supabaseURL,
+		SupabaseServiceRoleKey:            serviceRoleKey,
+		SupabaseAvatarBucket:              avatarBucket,
+		USDAFDCAPIKey:                     usdaKey,
+		USDAFDCBaseURL:                    usdaBaseURL,
+		OpenFoodFactsBaseURL:              offBaseURL,
+		FoodSourceUserAgent:               foodUserAgent,
+		AnthropicAPIKey:                   anthropicKey,
+		ProgramGenerationProvider:         generationProvider,
+		ProgramGenerationProviderFallback: generationFallback,
+		AnthropicBaseURL:                  anthropicBaseURL,
+		ProgramGenerationModel:            generationModel,
+		ProgramGenerationDailyLimit:       int(generationLimit),
+		ProgramGenerationTimeout:          generationTimeout,
+		AllowedOrigins:                    origins,
+		Environment:                       env,
+		LogLevel:                          logLevel,
+		DatabaseMaxConns:                  maxConns,
+		DatabaseMinConns:                  minConns,
+		DatabaseLockMaxConns:              lockMaxConns,
+		DatabaseMaxConnLifetime:           maxConnLifetime,
+		DatabaseMaxConnIdleTime:           maxConnIdleTime,
+		DatabaseHealthCheckPeriod:         healthCheckPeriod,
+		MigrateOnStart:                    !isReleaseEnvironment,
 	}, nil
 }
 
-// ProgramGenerationEnabled reports whether a provider key is configured.
-func (c *Config) ProgramGenerationEnabled() bool { return c.AnthropicAPIKey != "" }
+var errInvalidGenerationProvider = errors.New("PROGRAM_GENERATION_PROVIDER must be \"rules\" or \"model\"")
+
+// ProgramGenerationUsesModel reports whether the Anthropic adapter serves drafts.
+func (c *Config) ProgramGenerationUsesModel() bool {
+	return c.ProgramGenerationProvider == ProgramGenerationProviderModel
+}
 
 func canonicalHTTPSBaseURL(raw string) (string, error) {
 	canonical := strings.TrimRight(strings.TrimSpace(raw), "/")

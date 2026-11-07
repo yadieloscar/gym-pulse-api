@@ -483,6 +483,29 @@ func (h *ScheduleHandler) Unskip(w http.ResponseWriter, r *http.Request) {
 	h.resolve(w, r, h.svc.Unskip)
 }
 
+// Delete removes an owned past or finished scheduled workout.
+// @Summary Delete a past scheduled workout
+// @Description Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.
+// @Tags goal-training
+// @Param id path string true "Scheduled workout ID"
+// @Success 204
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError "CONFLICT for today's or a future unfinished workout; ACTIVE_SESSION_CONFLICT while a linked session is active"
+// @Failure 422 {object} apiError
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id} [delete]
+func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.Delete(r.Context(), middleware.MustGetUserID(r.Context()), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *ScheduleHandler) resolve(w http.ResponseWriter, r *http.Request, apply func(context.Context, uuid.UUID, uuid.UUID, model.RevisionRequest) (*model.ScheduledWorkout, error)) {
 	id, ok := pathUUID(w, r, "id")
 	if !ok {

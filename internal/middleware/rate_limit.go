@@ -26,7 +26,10 @@ const (
 	// call spends provider credit and can take up to the configured timeout.
 	// The daily ledger bounds the longer window.
 	ProgramGenerationLimit = 5
-	rateLimitWindow        = time.Minute
+	// ExportLimit bounds data exports per minute; each reads the athlete's
+	// whole history.
+	ExportLimit     = 6
+	rateLimitWindow = time.Minute
 )
 
 // RateLimitPerUser returns a middleware that allows requestLimit requests per

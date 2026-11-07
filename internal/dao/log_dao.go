@@ -18,6 +18,10 @@ type LogDAO interface {
 	ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDate(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	Create(ctx context.Context, userID uuid.UUID, log *model.DayLog) error
+	// CreateOnce creates the log at most once per operation key. A replay of
+	// the same key and request hash fills log from the stored response and
+	// reports replayed; a different hash is an idempotency conflict.
+	CreateOnce(ctx context.Context, userID uuid.UUID, log *model.DayLog, operationKey, requestHash string) (replayed bool, err error)
 	Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
@@ -402,7 +406,60 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 	}
 	defer tx.Rollback(ctx)
 
-	err = tx.QueryRow(ctx, `
+	if err := insertDayLog(ctx, tx, userID, dl); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
+const (
+	dayLogLockNamespace = "day-log:"
+	dayLogCreateScope   = "logs/create"
+)
+
+func (r *logDAO) CreateOnce(ctx context.Context, userID uuid.UUID, dl *model.DayLog, operationKey, requestHash string) (bool, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	// Serialize this user's keyed creates so two concurrent deliveries of one
+	// offline finish cannot both miss the record and insert twice.
+	if err := lockUserDomain(ctx, tx, dayLogLockNamespace, userID); err != nil {
+		return false, err
+	}
+	var replay model.DayLog
+	if found, err := findIdempotency(ctx, tx, userID, dayLogCreateScope, operationKey, requestHash, &replay); err != nil {
+		return false, err
+	} else if found {
+		*dl = replay
+		dl.UserID = userID
+		return true, nil
+	}
+
+	if err := insertDayLog(ctx, tx, userID, dl); err != nil {
+		return false, err
+	}
+	record := model.IdempotencyRecord{
+		Scope:          dayLogCreateScope,
+		OperationKey:   operationKey,
+		RequestHash:    requestHash,
+		ResponseStatus: 201,
+		ResourceType:   "day_log",
+		ResourceID:     &dl.ID,
+	}
+	if err := insertIdempotency(ctx, tx, userID, record, dl); err != nil {
+		return false, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("committing day log create: %w", err)
+	}
+	return false, nil
+}
+
+func insertDayLog(ctx context.Context, tx pgx.Tx, userID uuid.UUID, dl *model.DayLog) error {
+	err := tx.QueryRow(ctx, `
 		INSERT INTO day_logs (user_id, date, type_id, subtype_id, template_id, session_notes)
 		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, logged_at`,
@@ -421,11 +478,7 @@ func (r *logDAO) Create(ctx context.Context, userID uuid.UUID, dl *model.DayLog)
 		return err
 	}
 
-	if err := insertSetLogs(ctx, tx, dl.ID, dl.SetLogs); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
+	return insertSetLogs(ctx, tx, dl.ID, dl.SetLogs)
 }
 
 func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error {
@@ -489,8 +542,16 @@ func (r *logDAO) Update(ctx context.Context, userID uuid.UUID, date string, upda
 }
 
 func (r *logDAO) Delete(ctx context.Context, userID uuid.UUID, date string) error {
+	// Set logs and overrides cascade; the Apple Health export record has no
+	// foreign key, so the same statement removes it with the log.
 	result, err := r.pool.Exec(ctx, `
-		DELETE FROM day_logs WHERE user_id = $1 AND date = $2`,
+		WITH deleted AS (
+			DELETE FROM day_logs WHERE user_id = $1 AND date = $2 RETURNING id
+		), exports AS (
+			DELETE FROM health_exports he USING deleted
+			WHERE he.user_id = $1 AND he.workout_kind = 'day_log' AND he.workout_id = deleted.id
+		)
+		SELECT 1 FROM deleted`,
 		userID, date,
 	)
 	if err != nil {

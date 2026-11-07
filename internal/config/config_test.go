@@ -17,7 +17,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT"} {
+	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_PROVIDER", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT"} {
 		t.Setenv(k, "")
 	}
 }
@@ -597,8 +597,9 @@ func TestLoad_ProgramGenerationDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if cfg.ProgramGenerationEnabled() {
-		t.Fatal("generation must be disabled without ANTHROPIC_API_KEY")
+	// Spec 016 FR-001: the rules engine serves by default, with or without a key.
+	if cfg.ProgramGenerationUsesModel() || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules || cfg.ProgramGenerationProviderFallback {
+		t.Fatalf("default provider must be rules without a fallback: %+v", cfg)
 	}
 	if cfg.ProgramGenerationModel != DefaultProgramGenerationModel || cfg.ProgramGenerationDailyLimit != DefaultProgramGenerationDailyLimit || cfg.ProgramGenerationTimeout != DefaultProgramGenerationTimeout || cfg.AnthropicBaseURL != "" {
 		t.Fatalf("unexpected defaults: %+v", cfg)
@@ -613,7 +614,15 @@ func TestLoad_ProgramGenerationDefaultsAndOverrides(t *testing.T) {
 	if err != nil {
 		t.Fatalf("load: %v", err)
 	}
-	if !cfg.ProgramGenerationEnabled() || cfg.AnthropicAPIKey != "sk-test" || cfg.AnthropicBaseURL != "http://127.0.0.1:9999" ||
+	if cfg.ProgramGenerationUsesModel() || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules {
+		t.Fatalf("a key alone must not switch to the model provider: %+v", cfg)
+	}
+	setEnv(t, "PROGRAM_GENERATION_PROVIDER", "model")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if !cfg.ProgramGenerationUsesModel() || cfg.AnthropicAPIKey != "sk-test" || cfg.AnthropicBaseURL != "http://127.0.0.1:9999" ||
 		cfg.ProgramGenerationModel != "claude-sonnet-5-5" || cfg.ProgramGenerationDailyLimit != 2 || cfg.ProgramGenerationTimeout != 10*time.Second {
 		t.Fatalf("overrides not applied: %+v", cfg)
 	}
@@ -621,6 +630,21 @@ func TestLoad_ProgramGenerationDefaultsAndOverrides(t *testing.T) {
 	setEnv(t, "PROGRAM_GENERATION_DAILY_LIMIT", "0")
 	if _, err := Load(); err == nil {
 		t.Fatal("a zero daily limit must fail to load")
+	}
+	setEnv(t, "PROGRAM_GENERATION_DAILY_LIMIT", "2")
+
+	// "model" without a key falls back to rules and says so; an unknown value fails.
+	setEnv(t, "ANTHROPIC_API_KEY", "")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	if cfg.ProgramGenerationUsesModel() || !cfg.ProgramGenerationProviderFallback || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules {
+		t.Fatalf("model without a key must fall back to rules with a flag: %+v", cfg)
+	}
+	setEnv(t, "PROGRAM_GENERATION_PROVIDER", "oracle")
+	if _, err := Load(); err == nil {
+		t.Fatal("an unknown provider must fail to load")
 	}
 	setEnv(t, "PROGRAM_GENERATION_DAILY_LIMIT", "5")
 	setEnv(t, "PROGRAM_GENERATION_TIMEOUT", "never")
@@ -636,7 +660,7 @@ func TestLoad_ReleaseEnvironmentsStartWithoutProviderKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("production must start without a provider key: %v", err)
 	}
-	if cfg.ProgramGenerationEnabled() {
-		t.Fatal("generation must be disabled without a key")
+	if cfg.ProgramGenerationUsesModel() || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules {
+		t.Fatalf("release environments serve drafts from the rules engine without a key: %+v", cfg)
 	}
 }

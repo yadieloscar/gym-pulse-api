@@ -24,14 +24,24 @@ const (
 	// ProgramGenerationOrigin marks a draft's roadmap provenance.
 	ProgramGenerationOrigin = "generated"
 
-	maxDraftWorkouts         = 6
-	minDraftExercises        = 3
-	maxDraftExercises        = 8
-	maxDraftNameRunes        = 80
-	maxDraftRationaleRunes   = 500
-	maxDraftNotesRunes       = 200
-	maxGenerationRequestLen  = 200
-	maxSecondaryGoals        = 2
+	maxDraftWorkouts        = 6
+	minDraftExercises       = 3
+	maxDraftExercises       = 8
+	maxDraftNameRunes       = 80
+	maxDraftRationaleRunes  = 500
+	maxDraftNotesRunes      = 200
+	maxGenerationRequestLen = 200
+	maxSecondaryGoals       = 2
+	maxAvoidPatterns        = 6
+	maxGenerationVariant    = 1000
+
+	// GenerationProviderRules and GenerationProviderModel name who built a draft.
+	GenerationProviderRules = "rules"
+	GenerationProviderModel = "model"
+
+	FocusUpper               = "upper"
+	FocusLower               = "lower"
+	FocusCore                = "core"
 	defaultDraftReps         = 10
 	defaultDraftDurationSecs = 600
 	defaultDraftRestSecs     = 90
@@ -60,6 +70,7 @@ func (e *InvalidDraftError) Error() string { return "invalid generated draft: " 
 // GenerationStatus is the GET /program-generation answer.
 type GenerationStatus struct {
 	Enabled        bool       `json:"enabled"`
+	Provider       string     `json:"provider"`
 	Limit          int        `json:"limit"`
 	RemainingToday int        `json:"remaining_today"`
 	ResetsAt       *time.Time `json:"resets_at"`
@@ -71,6 +82,12 @@ type GenerateProgramRequest struct {
 	// SecondaryGoals are up to two further goals the draft should also serve.
 	// The profile's primary goal sets the structure; these steer part of it.
 	SecondaryGoals []string `json:"secondary_goals,omitempty"`
+	// Avoid lists movement patterns the engine leaves out; Focus shifts the
+	// strength slots toward upper, lower, or core; Variant rotates the exercise
+	// chosen within each pattern. The model path ignores all three.
+	Avoid   []string `json:"avoid,omitempty"`
+	Focus   *string  `json:"focus,omitempty"`
+	Variant *int     `json:"variant,omitempty"`
 	// ProposedProfile lets onboarding build a draft before the profile is
 	// saved. It is validated like a saved profile and is never stored.
 	ProposedProfile *ProposedTrainingProfile `json:"proposed_profile,omitempty"`
@@ -82,6 +99,9 @@ type GenerateProgramResponse struct {
 	Rationale      string       `json:"rationale"`
 	Request        *string      `json:"request"`
 	SecondaryGoals []string     `json:"secondary_goals"`
+	Provider       string       `json:"provider"`
+	Avoid          []string     `json:"avoid"`
+	Focus          *string      `json:"focus"`
 	RemainingToday int          `json:"remaining_today"`
 	ResetsAt       time.Time    `json:"resets_at"`
 }
@@ -198,6 +218,50 @@ func NormalizeSecondaryGoals(primary string, goals []string) ([]string, error) {
 	}
 	if len(out) > maxSecondaryGoals {
 		return nil, &ValidationError{Message: "secondary_goals holds at most 2 goals", Field: "secondary_goals"}
+	}
+	return out, nil
+}
+
+// GenerationConstraints are the normalized engine steers.
+type GenerationConstraints struct {
+	Avoid   []string
+	Focus   string // empty when none
+	Variant int
+}
+
+// NormalizeGenerationConstraints validates avoid, focus, and variant: avoid
+// holds at most 6 distinct catalog patterns; focus is upper, lower, core, or
+// absent; variant is 0..1000. Errors name the offending field.
+func NormalizeGenerationConstraints(avoid []string, focus *string, variant *int) (GenerationConstraints, error) {
+	out := GenerationConstraints{Avoid: make([]string, 0, len(avoid))}
+	for _, pattern := range avoid {
+		pattern = strings.TrimSpace(pattern)
+		if !IsMovementPattern(pattern) {
+			return out, &ValidationError{Message: "avoid must contain catalog movement patterns", Field: "avoid"}
+		}
+		if slices.Contains(out.Avoid, pattern) {
+			continue
+		}
+		out.Avoid = append(out.Avoid, pattern)
+	}
+	if len(out.Avoid) > maxAvoidPatterns {
+		return out, &ValidationError{Message: "avoid holds at most 6 patterns", Field: "avoid"}
+	}
+	if focus != nil {
+		trimmed := strings.TrimSpace(*focus)
+		switch trimmed {
+		case "":
+		case FocusUpper, FocusLower, FocusCore:
+			out.Focus = trimmed
+		default:
+			return out, &ValidationError{Message: "focus must be upper, lower, or core", Field: "focus"}
+		}
+	}
+	if variant != nil {
+		if *variant < 0 || *variant > maxGenerationVariant {
+			return out, &ValidationError{Message: "variant must be between 0 and 1000", Field: "variant"}
+		}
+		out.Variant = *variant
 	}
 	return out, nil
 }

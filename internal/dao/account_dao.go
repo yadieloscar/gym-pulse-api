@@ -36,6 +36,7 @@ func (r *accountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) error
 	statements := []string{
 		`DELETE FROM day_logs WHERE user_id = $1`,
 		`DELETE FROM sport_activities WHERE user_id = $1`,
+		`DELETE FROM mobility_sessions WHERE user_id = $1`,
 		`DELETE FROM health_exports WHERE user_id = $1`,
 		`DELETE FROM program_generations WHERE user_id = $1`,
 		`DELETE FROM food_entries WHERE user_id = $1`,
