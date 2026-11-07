@@ -4,12 +4,12 @@
 
 **Feature ID**: `gympulse-training-block-program-link`
 
-**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/021-training-block-program-link/spec.md)
+**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/030-training-block-program-link/spec.md)
 
 **Amends**: [Criteria-based training blocks](../005-criteria-based-training-blocks/spec.md)
-(`gympulse-criteria-based-training-blocks`). See "Changes to the approved block spec" below.
+(`gympulse-criteria-based-training-blocks`). See "Changes to approved specs and contracts" below.
 
-**Created**: 2026-11-03
+**Created**: 2026-11-03 · **Revised**: 2026-11-07 (review fixes)
 
 **Status**: Approved (owner answered every open question on 2026-11-07; see Clarifications)
 
@@ -23,67 +23,65 @@ action. Keep the guardrails: no medical prescription, no automatic stage moves.
 
 ## Clarifications
 
-### Session 2026-11-03 (defaults chosen while drafting)
-
-These are drafting defaults. Each one that changes user value is repeated as an owner question at
-the end, with its alternative.
+### Session 2026-11-03 (drafting defaults)
 
 - Q: Which program does a stage run? → A: Each stage may name an owned program (`program_id` on the
   stage). A stage without one inherits the block's associated program. This is the stage's
   **effective program**. A stage with neither has no link and keeps today's manual recording.
-- Q: Which workouts count as "from the block's program"? → A: A scheduled workout of the current
-  stage's effective program, finalized as `completed` or `incomplete`, dated on or after the day the
-  stage became current, and not in the future. Off-plan workout sessions and unlinked sport
-  activities never match; the athlete can still record them by hand.
 - Q: Does the server create the exposure on its own? → A: No. The server lists matching workouts
-  that have no exposure yet as **exposure suggestions**, and the athlete confirms one with a single
-  action. The exposure is created by the existing create-exposure mutation with a new optional
-  workout reference. This keeps "no hidden data changes" from `docs/PRODUCT.md`.
-- Q: What does a suggestion prefill? → A: `performed_on` = the workout date, `activity_label` = the
-  workout name, `load_level` = the stage load level, and `session_outcome` = `completed_as_planned`
-  for a `completed` workout and `modified` for an `incomplete` one. Optional performed count,
-  duration, and intensity stay empty unless the athlete enters them. The athlete may change any
-  prefilled value before saving.
-- Q: Can one workout count twice? → A: No. A workout can back at most one exposure per block. It may
+  as **exposure suggestions**, and the athlete confirms one with a single action through the
+  existing create-exposure mutation, which gains an optional workout reference.
+- Q: What does a suggestion prefill? → A: `performed_on` = the scheduled workout date,
+  `activity_label` = the workout name, `load_level` = the stage load level, and `session_outcome` =
+  `completed_as_planned` for a `completed` workout and `modified` for an `incomplete` one. Optional
+  count, duration, and intensity stay empty. The athlete may change any value before saving.
+- Q: Can one workout count twice? → A: No. A workout backs at most one exposure per block. It may
   back one exposure in each of two active blocks that share the program.
-- Q: How does Today learn about due next-morning checks without loading every block? → A: Block
-  summaries gain a bounded list of pending checks with their dates, and one new read lists due
-  checks and open suggestions across all active blocks in one call.
-- Q: Does the block API switch programs? → A: No. Program switching stays in the existing
-  plan-transition preview/apply contract, called by the app after an explicit athlete action. The
-  block API keeps its rule that it never changes programs, schedules, or workouts.
-- Q: Stages are immutable after creation. How does an existing block get stage programs? → A: One
-  narrow new mutation sets or clears the program of a stage that is current or still ahead. It
-  changes link context only. Name, instructions, targets, load level, and required exposures stay
-  immutable.
+- Q: Does the block API switch programs? → A: No. Switching stays in the existing plan-transition
+  preview/apply contract, called by the app after an explicit athlete action.
 
 ### Session 2026-11-07 (owner answers)
 
-The owner answered each open question interactively and accepted every drafting default:
-
-- Q: Offer or auto-create the exposure? → A: Offer. The athlete confirms each suggestion with one
-  tap; nothing is recorded without that press.
-- Q: Are `incomplete` workouts suggested? → A: Yes, prefilled as `modified`: kept in history,
-  never qualifying.
+- Q: Offer or auto-create the exposure? → A: Offer. Nothing is recorded without the athlete's
+  press.
+- Q: Are `incomplete` workouts suggested? → A: Yes, prefilled as `modified`: kept in history, never
+  qualifying.
 - Q: Can stage programs change on an existing block? → A: Yes, for the current and later stages
-  only; every other stage field stays immutable.
-- Q: Do manual sport activities or off-plan sessions match? → A: No. Only scheduled workouts of the
-  effective program, including planned sport units once completed.
-- Q: Two active blocks share the program? → A: The workout is suggested to each block; each block
-  can record it once.
-- App-side answers (Today placement, wording, combined move-on and switch, starters) are recorded
-  in the sibling app spec and need no API change beyond this spec.
+  only. Every other stage field stays immutable.
+- Q: Do manual sport activities or off-plan sessions match? → A: No.
+- Q: Two active blocks share the program? → A: The workout is suggested to each block; each can
+  record it once.
 
-## Changes to the approved block spec
+### Session 2026-11-07 (review fixes, owner answers)
 
-This feature intentionally changes these statements in `005-criteria-based-training-blocks`:
+- Q: How does the athlete decline a suggestion? → A: "Not this one" stores a dismissal for that
+  workout in that block, and it is never suggested to that block again. Suggestions also include
+  only workouts finalized **after** the stage's program link took effect, so sessions finished (and
+  possibly recorded by hand) before linking never resurface.
+- Q: Do sport days in the stage program match? → A: No. Only `exercises` units are suggested.
+  Planned sport units (for example the knee tendon program's Saturday volleyball) are never
+  suggested; the athlete can still record them by hand.
+- Q: When does a stage's window start? → A: At the later of two timestamps: the moment the stage
+  became current (the transition's `created_at`, or block creation for stage one) and the moment
+  its effective program link last changed. Comparison uses the workout's `finalized_at`, not dates,
+  so a workout finished at 07:00 is never suggested to a stage entered at 09:00.
+- Q: Which error codes? → A: State conflicts (stage earlier than current, block read-only) reuse
+  the existing 409 `CONFLICT` with `resource`, as the block DAO already does for read-only blocks.
+  A second exposure for the same workout returns the new 409 `EXPOSURE_SOURCE_ALREADY_RECORDED`, so
+  the app can say "Already counted".
+- Q: How does the app detect this feature? → A: There is no runtime contract version. The app
+  treats a 404 without the shared error shape from the new due read, or a block aggregate without
+  `exposure_suggestions`, as an API that predates this feature (the nutrition pattern).
 
-| 005 statement | Change |
-| --- | --- |
-| "An optional owned `program_id` is context only." | The block program, and a new per-stage program, now select which completed workouts are suggested as exposures. They still never change the program. |
-| FR-018 "MUST NOT alter programs, schedules, workouts…" | Unchanged. Blocks now **read** completed scheduled workouts; they still never write them. |
-| Assumption "A stage's definition becomes immutable after block creation" | Narrowed: the stage program can be set or cleared on a stage that is current or still ahead. Every other stage field stays immutable. |
-| Non-goal "Replacing workout logging" | Unchanged in spirit: workout logging stays the only place sets are recorded; an exposure now references that workout instead of duplicating it. |
+## Changes to approved specs and contracts
+
+| Source | Statement | Change |
+| --- | --- | --- |
+| 005 / CONTRACTS | "An optional owned `program_id` is context only." | The block program and the new per-stage program select which finished workouts are suggested. They still never change the program. |
+| 005 FR-018 | "MUST NOT alter programs, schedules, workouts…" | Unchanged. Blocks now **read** finished scheduled workouts; they never write them. |
+| 005 Assumption | "A stage's definition becomes immutable after block creation" | Narrowed: the stage program can be set or cleared on the current or a later stage. Every other stage field stays immutable. |
+| 005 Non-goal | "Replacing workout logging" | Kept: sets are logged only in the player; an exposure now references that workout. |
+| CONTRACTS `DELETE /api/v1/scheduled-workouts/{id}` (API spec 021) | Deletes the workout and its sessions in one transaction | Extended: the same transaction clears the reference on any exposure that points at it (the exposure and its facts stay, because block history is append-only) and removes any dismissal of it. |
 
 The guardrails stay: no diagnosis, prescription, or clearance; qualification stays server-derived
 from `completed_as_planned` plus `baseline`; stage movement stays an explicit athlete mutation.
@@ -92,76 +90,103 @@ from `completed_as_planned` plus `baseline`; stage movement stays an explicit at
 
 ### User Story 1 - Count a logged workout toward the stage (Priority: P1)
 
-An athlete in an active block finishes a scheduled workout from the current stage's program. The
-API returns that workout as an exposure suggestion. The athlete confirms it, and the API creates one
+An athlete in an active block finishes a scheduled gym workout from the current stage's program.
+The API returns it as an exposure suggestion. The athlete confirms it and the API creates one
 exposure that references the workout, with a pending next-morning response.
 
 **Why this priority**: This removes the duplicated logging that makes blocks unusable today.
 
 **Independent Test**: Create a block whose stage one names program P, complete a scheduled workout
-of P, read suggestions, create the exposure from the suggestion, and verify one exposure exists
-with the workout reference and the suggestion is gone. Repeat with the same workout and verify a
-stable conflict and no second exposure.
+of P, read suggestions, create the exposure from the suggestion, and verify one exposure with the
+reference and no remaining suggestion. Repeat with the same workout under a new key and verify
+`EXPOSURE_SOURCE_ALREADY_RECORDED` and no second exposure.
 
 **Acceptance Scenarios**:
 
-1. **Given** an active block whose current stage's effective program is P, **When** a scheduled
-   workout of P dated today is completed, **Then** the block's suggestions include that workout
-   with its date, name, finalized status, and the prefill values above.
+1. **Given** an active block whose current stage's effective program is P, **When** an
+   `exercises` scheduled workout of P is finalized after the stage window started, **Then** the
+   aggregate's `exposure_suggestions` include it with ID, date, name, finalized status, and the
+   prefill values.
 2. **Given** a suggestion, **When** the athlete creates an exposure with its
    `scheduled_workout_id`, **Then** the exposure stores the reference, the suggestion disappears,
    and the block revision increments once.
 3. **Given** a workout already backs an exposure in this block, **When** another exposure with the
    same reference is created under a new operation key, **Then** the API returns 409
    `EXPOSURE_SOURCE_ALREADY_RECORDED` with the current aggregate and creates nothing.
-4. **Given** a workout of another program, an off-plan session, a future workout, a `missed` or
-   `skipped` workout, or a workout dated before the stage became current, **When** suggestions are
-   read, **Then** it is not suggested, and creating an exposure that references it returns 422
-   `VALIDATION_ERROR` with `details.field = "scheduled_workout_id"`.
+4. **Given** a workout that is not suggestible (another program, a sport unit, `planned`,
+   `in_progress` or `missed`, finalized before the window started, or dismissed in this block),
+   **When** suggestions are read, **Then** it is absent, and an exposure that references it returns
+   422 `VALIDATION_ERROR` with `details.field = "scheduled_workout_id"`.
 5. **Given** a foreign or missing scheduled workout ID, **When** it is referenced, **Then** the API
-   returns the standard 404 `NOT_FOUND` without revealing ownership.
+   returns the standard 404 `NOT_FOUND`.
 6. **Given** an exposure created without a reference, **When** it is saved, **Then** behavior is
-   exactly as in contract 005 (manual recording still works).
+   exactly as in contract 005.
 
 ---
 
-### User Story 2 - List due next-morning checks across blocks (Priority: P1)
+### User Story 2 - Decline a suggestion (Priority: P1)
 
-The app needs to show due checks on Today. The API returns, across the athlete's active blocks,
-every exposure whose next-morning response is still pending and whose date is before today in the
-athlete's training-profile timezone, plus open exposure suggestions.
+The athlete does not want a suggested workout to count (for example a session they cut short for
+an unrelated reason). They dismiss it, and it is never suggested to that block again.
 
-**Why this priority**: The qualifying rule depends on the next-morning check. If it is reachable
-only inside the block, it is forgotten and nothing qualifies.
+**Why this priority**: Without a decline, an unwanted suggestion stays on Today until the stage
+moves.
 
-**Independent Test**: Record an exposure dated yesterday and one dated today; read the due list
-and verify only yesterday's appears, with block name, stage name, activity label, and date. Record
-its response and verify the list is empty.
+**Independent Test**: Dismiss a suggestion, verify it is gone from the aggregate and the due read,
+replay the same dismissal and verify the same response, and verify the workout cannot be
+referenced by a new exposure in that block.
 
 **Acceptance Scenarios**:
 
-1. **Given** pending exposures dated yesterday and today, **When** the due list is read, **Then**
-   only the exposure dated before today appears as due, and the one dated today is counted as not
-   yet due.
-2. **Given** a recorded response, **When** the list is read again, **Then** that exposure is gone.
-3. **Given** completed or archived blocks with pending exposures, **When** the list is read,
-   **Then** they are excluded.
-4. **Given** block summaries, **When** they are listed, **Then** each summary carries
-   `pending_next_morning` (at most 20 entries, oldest first) alongside the existing count.
+1. **Given** a suggestion, **When** the athlete dismisses it with a current revision and an
+   operation key, **Then** the dismissal is stored, the suggestion disappears, and the revision
+   increments once.
+2. **Given** the same dismissal is retried, **When** key and payload match, **Then** the original
+   response is replayed.
+3. **Given** a workout that is not currently suggested to this block, **When** it is dismissed,
+   **Then** the API returns 422 `VALIDATION_ERROR` with `details.field = "scheduled_workout_id"`.
+4. **Given** two blocks share the program, **When** the workout is dismissed in one, **Then** it is
+   still suggested to the other.
 
 ---
 
-### User Story 3 - Name a program per stage (Priority: P2)
+### User Story 3 - List due next-morning checks across blocks (Priority: P1)
 
-The athlete creates a block whose stages each name the owned program they run, or sets the program
-of an existing block's current or upcoming stage. The block aggregate reports each stage's program
-and effective program so the app can offer the switch on stage moves.
+The API returns, across active blocks, every exposure whose next-morning response is pending and
+whose `performed_on` is before today in the training-profile timezone, plus open suggestions, in
+one request.
 
-**Why this priority**: Multi-phase plans (vertical jump: four phase programs) need the block to know
-which program belongs to which stage before the app can offer the switch.
+**Why this priority**: The qualifying rule depends on the next-morning check; buried inside the
+block, it is forgotten and nothing qualifies.
 
-**Independent Test**: Create a four-stage block with four owned programs and verify each stage
-returns its program; set stage three's program on an existing block and verify only that link
+**Independent Test**: Record exposures dated yesterday and today; read the due list and verify only
+yesterday's is due, with block name, stage name, activity label, and date; record its response and
+verify it is gone.
+
+**Acceptance Scenarios**:
+
+1. **Given** pending exposures dated yesterday and today, **When** the due read runs, **Then** only
+   the exposure dated before today is listed as due.
+2. **Given** an exposure counted today for a workout dated yesterday, **When** the due read runs,
+   **Then** that check is due immediately.
+3. **Given** a recorded response, **When** the read runs again, **Then** that exposure is gone.
+4. **Given** completed or archived blocks, **When** the read runs, **Then** their pending
+   exposures and suggestions are excluded.
+5. **Given** block summaries, **When** they are listed, **Then** each carries
+   `pending_next_morning` (at most 20, oldest first) alongside the existing count.
+
+---
+
+### User Story 4 - Name a program per stage (Priority: P2)
+
+The athlete creates a block whose stages name owned programs, or sets the program of an existing
+block's current or later stage. The aggregate reports each stage's program and effective program.
+
+**Why this priority**: Multi-phase plans need the block to know which program belongs to which
+stage before the app can offer the switch.
+
+**Independent Test**: Create a four-stage block with four owned programs and verify each stage;
+set stage three's program on an existing block and verify only that link and its link time
 changed.
 
 **Acceptance Scenarios**:
@@ -169,151 +194,152 @@ changed.
 1. **Given** owned programs, **When** a block is created with `program_id` on stages, **Then** the
    aggregate returns each stage's `program_id` and `effective_program_id`.
 2. **Given** a foreign or missing stage program, **When** creation or update is attempted, **Then**
-   the request returns the standard 404 and changes nothing.
+   the standard 404 is returned and nothing changes.
 3. **Given** an active block, **When** the athlete sets or clears the program of the current or a
-   later stage with a current revision, **Then** only that link changes, the revision increments
-   once, and a matching retry replays the original response.
-4. **Given** a stage earlier than the current stage, or a completed or archived block, **When** the
-   program is changed, **Then** the API returns 409 `TRAINING_BLOCK_STATE_CONFLICT`.
-5. **Given** a stage program that later becomes unavailable, **When** the block is read, **Then**
-   the stage's `program_id` is null and its effective program falls back to the block program.
+   later stage with a current revision, **Then** only that link changes, the stage's link time
+   moves to now, the revision increments once, and a matching retry replays the response.
+4. **Given** a stage earlier than the current stage, or a completed or archived block, **When** its
+   program is changed, **Then** the API returns 409 `CONFLICT` with the current aggregate.
+5. **Given** the current stage's program is set mid-stage, **When** suggestions are read, **Then**
+   workouts finalized before the change are not suggested.
 
 ---
 
-### User Story 4 - Stage moves stay explicit and program-neutral (Priority: P2)
+### User Story 5 - Stage moves stay explicit and program-neutral (Priority: P2)
 
 Advance, regress, complete, and archive keep their 005 behavior. The response includes the new
-current stage's effective program so the app can offer a switch, but the API changes no program.
+current stage's effective program so the app can offer a switch; the API changes no program.
 
-**Independent Test**: Advance a block whose next stage names program Q while P is active; verify P
-is still active and the aggregate reports Q as the new current stage's effective program.
+**Independent Test**: Advance a block whose next stage names Q while P is active; verify P stays
+active and the aggregate reports Q.
 
 **Acceptance Scenarios**:
 
 1. **Given** criteria are complete, **When** the athlete advances, **Then** the next stage becomes
    current and the active program is unchanged.
-2. **Given** suggestions existed for the previous stage, **When** the stage changes, **Then** they
-   are no longer suggested; workouts already recorded keep their exposure and stage.
+2. **Given** an uncounted workout finalized before the advance, **When** suggestions are read for
+   the new stage, **Then** it is not suggested, even if it shares the program and the date.
 
 ### Edge Cases
 
-- A workout's finalized status changes later through a replay or recovery path: an existing
-  exposure keeps its stored session outcome; suggestions always reflect the current status.
-- A completed workout whose scheduled date is in the past (logged late) is suggested if its date is
-  on or after the stage start and not in the future.
-- Two active blocks share the effective program: the workout is suggested to each; each block may
-  record it once.
-- A stage program equal to the block program is valid and needs no special handling.
-- A plan transition replaces unstarted scheduled workouts only; completed workouts and their
-  exposures are untouched.
-- Planned sport units: a scheduled sport workout finalized `completed` matches like any other
-  scheduled workout of the program.
-- Account deletion removes stage program links and source references with the block.
-- The block API never deletes a referenced scheduled workout. If another path removes it, the
-  exposure keeps its facts and its reference becomes null.
+- A workout's finalized status changes later: an existing exposure keeps its stored outcome;
+  suggestions always reflect the current status.
+- A workout logged late (scheduled date in the past, finalized now) is suggested if finalized inside
+  the window; its `performed_on` prefill is the scheduled date, so its check is due at once.
+- A deleted scheduled workout (CONTRACTS `DELETE /api/v1/scheduled-workouts/{id}`): its exposure
+  stays with a null reference; its dismissal is removed; nothing about it is suggested.
+- Two active blocks share the effective program: suggested to each; each records or dismisses it
+  once.
+- A plan transition replaces unstarted workouts only; finished workouts and exposures are untouched.
+- A stage program that becomes unavailable reads back as null and falls back to the block program;
+  its link time moves to that moment, so older workouts do not resurface.
+- Account deletion removes stage links, references, and dismissals with the block.
 
 ## Non-Goals *(mandatory)*
 
 - Creating exposures without an explicit athlete action.
-- Recording the next-morning response from a notification, or sending reminder notifications.
-- Advancing, regressing, or completing a stage automatically, or suggesting that the athlete should.
+- Next-morning notifications or reminders.
+- Advancing, regressing, or completing a stage automatically, or prompting the athlete to.
 - Switching, activating, or rescheduling programs from any block endpoint.
-- Matching off-plan workout sessions, unlinked sport activities, or imported health workouts.
+- Matching sport units, off-plan sessions, sport activities, or imported health workouts.
 - Deriving performed count, duration, or intensity from logged sets.
-- Editing stage criteria after creation, or editing or deleting exposures.
+- Undoing a dismissal, editing stage criteria, or editing or deleting exposures.
 - Any diagnosis, treatment, healing, or clearance language.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: A stage MUST accept an optional owned `program_id` at block creation; the aggregate
-  MUST return `program_id` and server-derived `effective_program_id` for every stage.
-- **FR-002**: A new mutation MUST set or clear the program of the current stage or a later stage of
-  an active block, with `expected_revision` and `operation_key`, and MUST NOT change any other stage
-  field.
+- **FR-001**: A stage MUST accept an optional owned `program_id` at creation; the aggregate MUST
+  return `program_id`, server-derived `effective_program_id`, and the link time for every stage.
+- **FR-002**: A new mutation MUST set or clear the program of the current or a later stage of an
+  active block, with `expected_revision` and `operation_key`, MUST update that stage's link time,
+  and MUST NOT change any other stage field. Other states return 409 `CONFLICT` with `resource`.
 - **FR-003**: Program references MUST be ownership-scoped; foreign and missing programs MUST return
-  the same 404 shape; an unavailable program MUST read back as null.
-- **FR-004**: The block aggregate MUST include `exposure_suggestions` for the current stage: each
-  owned scheduled workout of the effective program, finalized `completed` or `incomplete`, dated
-  from the stage start date (local, training-profile timezone) through today, with no exposure in
-  this block referencing it. Each suggestion MUST carry the scheduled workout ID, date, name,
-  finalized status, and the prefill values.
-- **FR-005**: Create-exposure MUST accept an optional `scheduled_workout_id`. When present, the
-  server MUST verify ownership, the effective-program match, finalized status, and the date window,
-  and MUST store the reference with the exposure.
-- **FR-006**: A scheduled workout MUST back at most one exposure per block, enforced by the
-  database; a duplicate under a new operation key MUST return 409
-  `EXPOSURE_SOURCE_ALREADY_RECORDED` with the current aggregate.
-- **FR-007**: Exposures MUST return their optional `scheduled_workout_id`; all other exposure fields
-  and the qualifying rule MUST be unchanged.
-- **FR-008**: Block summaries MUST include `pending_next_morning`, at most 20 entries oldest first,
+  the same 404; an unavailable program MUST read back as null.
+- **FR-004**: The aggregate MUST include `exposure_suggestions` for the current stage: owned
+  scheduled workouts of kind `exercises` whose `program_id` is the effective program, with status
+  `completed` or `incomplete`, `finalized_at` after the stage window start (FR-005), and neither an
+  exposure nor a dismissal in this block referencing them. Each suggestion MUST carry the workout
+  ID, date, name, finalized status, and prefill values.
+- **FR-005**: The stage window start MUST be the later of the moment the stage became current and
+  the stage's effective-link time, compared with `finalized_at`.
+- **FR-006**: Create-exposure MUST accept an optional `scheduled_workout_id`; when present the
+  server MUST accept it only if the workout is currently suggested to this block, and MUST store
+  the reference.
+- **FR-007**: A workout MUST back at most one exposure per block, enforced by the database; a
+  duplicate under a new key MUST return 409 `EXPOSURE_SOURCE_ALREADY_RECORDED` with the aggregate.
+- **FR-008**: A new dismiss mutation MUST store one dismissal per block and workout, accept only a
+  currently suggested workout, and follow the revision and idempotency rules.
+- **FR-009**: Exposures MUST return their optional `scheduled_workout_id`; all other fields and the
+  qualifying rule MUST be unchanged.
+- **FR-010**: Block summaries MUST include `pending_next_morning`, at most 20 entries oldest first,
   each with exposure ID, performed date, activity label, and stage name.
-- **FR-009**: A new read MUST return, across active blocks only, due next-morning checks (pending,
-  dated before today) and open exposure suggestions, bounded and ordered oldest first, with block
-  ID, block name, revision, and stage name per entry.
-- **FR-010**: Transition responses MUST include the new current stage's effective program; no
+- **FR-011**: A new read MUST return, across active blocks only and in one request, due checks
+  (pending, `performed_on` before today) and open suggestions, bounded and oldest first, each with
+  block ID, name, revision, and stage name.
+- **FR-012**: Transition responses MUST include the new current stage's effective program; no
   transition MUST change programs, schedules, or workouts.
-- **FR-011**: All new mutations MUST use the existing idempotency, revision, atomicity, and
-  stable-error rules of contract 005.
-- **FR-012**: All changes MUST be additive: existing request bodies stay valid, new response fields
-  are optional for clients, and an app that ignores them keeps its current behavior.
-- **FR-013**: `docs/CONTRACTS.md` MUST document the new fields, mutation, read, and error code under
-  a new contract minor version.
-- **FR-014**: The migration MUST be additive (nullable columns, a partial unique index, no backfill)
-  and its down migration MUST remove only what it added.
-- **FR-015**: Reads MUST remain bounded; the suggestion and due queries MUST be index-backed and
-  MUST NOT scan other athletes' rows.
+- **FR-013**: Deleting a scheduled workout MUST, in its existing transaction, null the reference on
+  exposures that point at it and remove its dismissals.
+- **FR-014**: All new mutations MUST use the 005 idempotency, revision, atomicity, and stable-error
+  rules.
+- **FR-015**: All changes MUST be additive. Existing requests stay valid; an app that ignores new
+  fields keeps its behavior; the new read returns the shared 404 shape only for foreign IDs, so an
+  older API's plain 404 is distinguishable.
+- **FR-016**: `docs/CONTRACTS.md` MUST document the new fields, mutations, read, and error code as
+  contract 1.6.0 (or the next free minor version at plan time).
+- **FR-017**: The migration MUST be additive (nullable columns, link-time column defaulting to
+  block creation, dismissal table, partial unique index) with no data rewrite, and its down
+  migration MUST remove only what it added.
+- **FR-018**: Suggestion and due queries MUST be index-backed, bounded, and owner-scoped.
 
 ### Key Entities
 
-- **Stage program link**: Optional owned program on a stage. Effective program = stage program,
-  else block program, else none.
-- **Exposure source**: Optional reference from an exposure to the scheduled workout it records;
-  unique per block.
-- **Exposure suggestion**: Derived, not stored. A finalized scheduled workout of the current stage's
-  effective program with no exposure in this block.
+- **Stage program link**: Optional owned program on a stage, with the time the effective link last
+  changed. Effective program = stage program, else block program, else none.
+- **Exposure source**: Optional reference from an exposure to a scheduled workout; unique per block.
+- **Suggestion dismissal**: Athlete's stored "not this one" for a workout in a block.
+- **Exposure suggestion**: Derived. A finished gym workout of the current stage's effective program,
+  finalized inside the stage window, with no exposure or dismissal in this block.
 - **Due next-morning check**: Derived. A pending exposure in an active block dated before today.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: For a workout of the stage program, recording the exposure needs one confirm request
-  and zero re-entered fields.
+- **SC-001**: Recording a suggested workout needs one request and zero re-entered fields.
 - **SC-002**: Five identical retries of any new or changed mutation produce one durable effect; a
   second exposure for the same workout in one block is impossible (database-enforced, test-proven).
-- **SC-003**: Ownership tests prove an athlete cannot reference, be suggested, or infer another
-  athlete's programs, scheduled workouts, or exposures.
+- **SC-003**: Ownership tests prove an athlete cannot reference, dismiss, be suggested, or infer
+  another athlete's programs, workouts, or exposures.
 - **SC-004**: Compatibility tests prove existing block, program, schedule, workout, sport,
-  participation, and statistics responses are unchanged for requests that do not use the new
-  fields.
-- **SC-005**: Today's due list and suggestions arrive in one request whose latency stays within the
-  existing block list budget for 5 active blocks with 50 exposures each.
-- **SC-006**: Contract and API terminology contain zero diagnosis, treatment, healing, or clearance
+  participation, delete, and statistics responses are unchanged for requests without new fields.
+- **SC-005**: The due read serves Today in one request within the existing block list latency
+  budget for 5 active blocks with 50 exposures each.
+- **SC-006**: A test proves workouts finalized before a stage transition or a link change are never
+  suggested to the new stage or link.
+- **SC-007**: Contract and API terminology contain zero diagnosis, treatment, healing, or clearance
   claims.
 
 ## Assumptions
 
-- Scheduled workouts carry their program through the existing program and schedule model; no new
-  program relation is needed beyond the stage link.
-- "Stage start date" is the local date of the last transition into the current stage, or the block
-  creation date for stage one.
+- `scheduled_workouts.program_id` and `finalized_at` (migration 012) identify the program and the
+  finalization moment; no new workout column is needed.
 - The training-profile timezone decides "today" exactly as it does for exposure dates in 005.
-- Migration numbering is decided at plan time after fetching `main`; open branches already use 032.
+- Migration number and contract version are confirmed at plan time after fetching `main`
+  (`main` holds migration 033 and contract 1.5.0 on 2026-11-07).
 
 ## Rollout
 
-1. **API first** (this spec): migration, model, service, handlers, tests, and a `docs/CONTRACTS.md`
-   minor version. Additive; the released app keeps working because it ignores the new fields.
-2. **Deploy the API** to Railway and verify with the smoke script against the new contract version.
-3. **App second** ([app spec 021](../../../gym-pulse-app/specs/021-training-block-program-link/spec.md)):
-   consumes suggestions, the due list, and stage programs. It must tolerate an API without them
-   (linking hidden, current manual flow kept) during the mixed-version window.
-4. **Starter amendments** (app, later): the vertical jump starter (app spec 020) and the knee tendon
-   starter (app spec 018) set stage programs at creation instead of naming the program in stage
-   text.
+1. **API first** (this spec): migration, model, service, handlers, tests, CONTRACTS 1.6.0, and the
+   delete-transaction change. Additive; the released app ignores the new fields.
+2. **Deploy the API** and verify with the smoke script.
+3. **App second** ([app spec 030](../../../gym-pulse-app/specs/030-training-block-program-link/spec.md)):
+   detects the feature (FR-015) and keeps the manual flow against an older API.
+4. **Starters** (app spec 030 User Story 5): the knee tendon block links its program; the vertical
+   jump plan can create a four-stage block linked to its phase programs. No further API change.
 
 ## Open Questions for the Owner
 
-None. All five were answered on 2026-11-07 and are recorded under Clarifications.
+None. All were answered on 2026-11-07 and are recorded under Clarifications.
