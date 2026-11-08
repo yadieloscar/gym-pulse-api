@@ -484,7 +484,13 @@ duration, cardio exercises carry `target_duration_seconds` (30..3600) and null
 reps; `target_sets` 1..10; `rest_seconds` 0..600; `target_weight` always null;
 `primary_goal` equals the profile's; `name` 1..80 characters; `preferred_weekday`
 is assigned from the profile's sorted available days. A generated answer that
-cannot be repaired into that shape is never returned.
+cannot be repaired into that shape is never returned. With the `rules`
+provider every exercise carries `notes`: for strength work the rep range and
+effort in athlete words ("8 to 12 reps, leave 1 to 2 in reserve."), for cardio
+the intensity ("Easy pace, you can talk."); `target_reps` is the lower bound of
+the range. Strength, hypertrophy, and power drafts with two or more days
+alternate heavier and moderate days; full-body days alternate two fixed sets
+(A and B); the rationale ends with one progression sentence.
 
 Errors:
 
@@ -1215,7 +1221,7 @@ convention as `/stats/distribution`):
     { "id": "<uuid>", "name": "Barbell Bench Press", "category": "push",
       "modality": "strength", "mechanic": "compound", "sort_order": 1,
       "pattern": "horizontal_push", "muscle_group": "chest",
-      "equipment_required": ["barbell"], "impact": "low" }
+      "equipment_required": ["barbell"], "impact": "low", "sub_pattern": null }
   ]
 }
 ```
@@ -1227,10 +1233,13 @@ convention as `/stats/distribution`):
   `locomotion`, `isolation`), `muscle_group` (`chest`, `back`, `shoulders`,
   `arms`, `quads`, `hamstrings`, `glutes`, `calves`, `core`, `full_body`),
   `equipment_required` (non-empty subset of the training-profile equipment
-  values; `["bodyweight"]` means always available), `impact` (`low` | `high`).
+  values; `["bodyweight"]` means always available), `impact` (`low` | `high`),
+  and `sub_pattern` (migration 034; `incline_push`, `chest_isolation`,
+  `shoulder_isolation`, `rear_delt`, `triceps`, `biceps`, `quad_isolation`,
+  `hamstring_isolation`, `glute_isolation`, `calf`, or `null`).
 - Unknown `category` → 422 `VALIDATION_ERROR`. Valid categories are the
   workout type ids (push, pull, legs, upper, lower, full, core, cardio, …).
-- Catalog is seeded by migration (~80 entries); no write endpoints in v1.
+- Catalog is seeded by migration (83 entries); no write endpoints in v1.
 
 ---
 

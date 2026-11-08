@@ -189,6 +189,32 @@ composition; Wilson 2012 and Schumann 2022 for concurrent training). Tables, all
   that").
 - Engine-built drafts carry `roadmap.model = "gympulse-rules-v1"`.
 
+### Evidence amendment (2026-11-07)
+
+Decisions and sources are in the workspace brief
+`docs/briefs/2026-11-07-training-regimes-research.md`. Table values added here:
+
+- **Weekly set bands per muscle group** (Schoenfeld 2017; Pelland 2025/2026; minimum effective
+  dose reviews): strength 6–16, hypertrophy 10–20, power 6–12, conditioning 4–12,
+  general_health 6–12, body_composition 8–16. Counted as direct sets: an exercise's sets go to
+  its `muscle_group`.
+- **Heavy / moderate undulation** (2022 volume-equated periodization meta-analysis): strength
+  heavy 5 × 4 × 180 s, moderate 8 × 3 × 120 s; hypertrophy heavy 6–8 × 4 × 150 s, moderate
+  10–12 × 3 × 90 s; power keeps the explosive opener and alternates its strength work the same way
+  as strength. Beginners use the moderate day only.
+- **Effort** (Robinson 2024; Refalo 2023, 2025): 1–2 reps in reserve for hypertrophy and body
+  composition, 2–3 for strength and power main work, "keep moving" for circuits, "stop with 2–3
+  in reserve" for beginners.
+- **Rep ranges**: strength main 3–5 (advanced), 4–6 (intermediate), 6–8 (beginner); accessories
+  6–10; hypertrophy 6–8 heavy / 10–12 moderate, isolation 12–20; general health 8–12; body
+  composition 10–15; circuits 12–15.
+- **Minimalist budget** (minimum effective dose reviews): under 20 minutes, three compounds, two
+  sets each, usual rest.
+- **Cardio intensity lines** (Garber 2011; Milanović 2015): steady "Easy pace, you can talk.";
+  intervals "Hard efforts: N × M minutes with easy minutes between."; finisher "Easy to moderate."
+- **Progression line** (Plotkin 2022): "Add a rep each week until you reach the top of the range,
+  then add a little load."
+
 ## Resolved Technical Questions
 
 - Migration number: `032`; `031` is spec 015's ledger.
