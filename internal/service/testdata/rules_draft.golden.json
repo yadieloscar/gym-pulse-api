@@ -1,0 +1,165 @@
+{
+  "name": "3-day strength plan",
+  "rationale": "Full-body days on Monday, Wednesday, and Friday. Built around back squat, goblet squat, and barbell bench press. Heavier and moderate days alternate through the week. Could not fit vertical pull with your equipment and limits. Add a rep each week until you reach the top of the range, then add a little load.",
+  "workouts": [
+    {
+      "name": "Full body A",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000001",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000006",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000003",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000009",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000014",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": "8 to 10 reps, leave about 2 in reserve."
+        }
+      ]
+    },
+    {
+      "name": "Full body B",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000002",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 120,
+          "notes": "8 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000007",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 120,
+          "notes": "8 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000004",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 120,
+          "notes": "8 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000010",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 120,
+          "notes": "8 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 120,
+          "notes": "8 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000015",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": "8 to 10 reps, leave about 2 in reserve."
+        }
+      ]
+    },
+    {
+      "name": "Full body A",
+      "exercises": [
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000001",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000006",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000003",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000009",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000008",
+          "target_sets": 4,
+          "target_reps": 5,
+          "target_duration_seconds": null,
+          "rest_seconds": 180,
+          "notes": "5 reps, leave about 2 in reserve."
+        },
+        {
+          "catalog_id": "00000000-0000-0000-0000-000000000014",
+          "target_sets": 3,
+          "target_reps": 8,
+          "target_duration_seconds": null,
+          "rest_seconds": 90,
+          "notes": "8 to 10 reps, leave about 2 in reserve."
+        }
+      ]
+    }
+  ]
+}

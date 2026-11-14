@@ -1,0 +1,71 @@
+openapi: 3.1.0
+info:
+  title: GymPulse program generation (rule-based engine amendment)
+  version: 1.4.0
+  description: Additive changes to spec 015's program-generation contract and the exercise catalog.
+paths:
+  /api/v1/program-generation:
+    get:
+      summary: Generation availability
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'https://gym-pulse/spec015#/components/schemas/GenerationStatus'
+                  - type: object
+                    properties:
+                      provider: {type: string, enum: [rules, model], description: Which generator serves drafts; the daily limit applies to model only}
+    post:
+      summary: Build a program draft
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: 'https://gym-pulse/spec015#/components/schemas/GenerateProgramRequest'
+                - type: object
+                  properties:
+                    avoid:
+                      type: array
+                      maxItems: 6
+                      items: {type: string, enum: [squat, hinge, lunge, horizontal_push, vertical_push, horizontal_pull, vertical_pull, carry, core, explosive, locomotion, isolation]}
+                      description: Movement patterns left out of the draft
+                    focus: {type: string, enum: [upper, lower, core], nullable: true}
+                    variant: {type: integer, minimum: 0, maximum: 1000, description: Rotates the exercise chosen within each pattern; same input and variant give the same draft}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: 'https://gym-pulse/spec015#/components/schemas/GenerateProgramResponse'
+                  - type: object
+                    properties:
+                      provider: {type: string, enum: [rules, model]}
+                      avoid: {type: array, items: {type: string}}
+                      focus: {type: string, nullable: true}
+        '422':
+          description: VALIDATION_ERROR with details.field one of avoid, focus, variant, secondary_goals, request, proposed_profile.<field>; avoid also when the constraints leave fewer than three eligible exercises for a workout
+  /api/v1/exercise-catalog:
+    get:
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  properties:
+                    id: {type: string, format: uuid}
+                    name: {type: string}
+                    category: {type: string}
+                    modality: {type: string, enum: [strength, cardio]}
+                    mechanic: {type: string, enum: [compound, isolation], nullable: true}
+                    sort_order: {type: integer}
+                    pattern: {type: string, enum: [squat, hinge, lunge, horizontal_push, vertical_push, horizontal_pull, vertical_pull, carry, core, explosive, locomotion, isolation]}
+                    muscle_group: {type: string, enum: [chest, back, shoulders, arms, quads, hamstrings, glutes, calves, core, full_body]}
+                    equipment_required: {type: array, items: {type: string, enum: [bodyweight, bands, dumbbells, barbell, machines, cardio_machine, full_gym]}}
+                    impact: {type: string, enum: [low, high]}

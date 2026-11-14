@@ -25,7 +25,7 @@ func NewExerciseCatalogDAO(pool *pgxpool.Pool) ExerciseCatalogDAO {
 
 func (r *exerciseCatalogDAO) List(ctx context.Context, category string) ([]model.CatalogExercise, error) {
 	query := `
-		SELECT id, name, category, modality, mechanic, sort_order
+		SELECT id, name, category, modality, mechanic, sort_order, pattern, muscle_group, equipment_required, impact, sub_pattern
 		FROM exercise_catalog`
 	args := []any{}
 	if category != "" {
@@ -43,7 +43,7 @@ func (r *exerciseCatalogDAO) List(ctx context.Context, category string) ([]model
 	exercises := []model.CatalogExercise{}
 	for rows.Next() {
 		var e model.CatalogExercise
-		if err := rows.Scan(&e.ID, &e.Name, &e.Category, &e.Modality, &e.Mechanic, &e.SortOrder); err != nil {
+		if err := rows.Scan(&e.ID, &e.Name, &e.Category, &e.Modality, &e.Mechanic, &e.SortOrder, &e.Pattern, &e.MuscleGroup, &e.EquipmentRequired, &e.Impact, &e.SubPattern); err != nil {
 			return nil, fmt.Errorf("scanning catalog exercise: %w", err)
 		}
 		exercises = append(exercises, e)

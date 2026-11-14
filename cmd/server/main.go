@@ -140,6 +140,7 @@ func main() {
 	settingsRepo := dao.NewSettingsDAO(pool)
 	profileRepo := dao.NewProfileDAO(pool)
 	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
+	exportRepo := dao.NewExportDAO(pool)
 	exerciseCatalogRepo := dao.NewExerciseCatalogDAO(pool)
 	planRepo := dao.NewPlanDAO(pool)
 	trainingProfileRepo := dao.NewTrainingProfileDAO(pool)
@@ -150,6 +151,7 @@ func main() {
 	performedSetRepo := dao.NewPerformedSetDAO(pool)
 	participationRepo := dao.NewParticipationDAO(pool)
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
+	mobilitySessionRepo := dao.NewMobilitySessionDAO(pool)
 	healthExportRepo := dao.NewHealthExportDAO(pool)
 	nutritionRepo := dao.NewNutritionDAO(pool)
 	foodRepo := dao.NewFoodDAO(pool)
@@ -175,6 +177,7 @@ func main() {
 	}
 	profileSvc := service.NewProfileServiceWithUserBoundary(profileRepo, v, avatarStorage, authUserRepo, userOperationLocker)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
+	exportSvc := service.NewExportService(exportRepo)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
 	trainingProfileSvc := service.NewTrainingProfileService(trainingProfileRepo, trainingMutationRepo, v)
@@ -183,6 +186,7 @@ func main() {
 	workoutSessionSvc := service.NewWorkoutSessionService(workoutSessionRepo, scheduleRepo, participationRepo, trainingProfileRepo, trainingMutationRepo, idempotencyRepo, v)
 	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
+	mobilitySessionSvc := service.NewMobilitySessionService(mobilitySessionRepo, trainingProfileRepo)
 	healthExportSvc := service.NewHealthExportService(healthExportRepo)
 	nutritionSvc := service.NewNutritionService(nutritionRepo, trainingProfileRepo)
 	if cfg.USDAFDCAPIKey == "" && (cfg.Environment == "staging" || cfg.Environment == "production") {
@@ -193,13 +197,14 @@ func main() {
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
-	var draftGenerator service.DraftGenerator
-	if cfg.ProgramGenerationEnabled() {
+	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).
+	draftGenerator := service.NewRulesDraftGenerator()
+	if cfg.ProgramGenerationUsesModel() {
 		draftGenerator = service.NewAnthropicDraftGenerator(cfg.AnthropicAPIKey, cfg.AnthropicBaseURL, cfg.ProgramGenerationModel, cfg.ProgramGenerationTimeout)
-	} else if cfg.Environment == "staging" || cfg.Environment == "production" {
-		logger.Warn("ANTHROPIC_API_KEY is empty; program generation is disabled")
+	} else if cfg.ProgramGenerationProviderFallback {
+		logger.Warn("PROGRAM_GENERATION_PROVIDER=model without ANTHROPIC_API_KEY; the rules engine serves drafts instead")
 	}
-	programGenerationSvc := service.NewProgramGenerationService(trainingProfileRepo, exerciseCatalogRepo, programGenerationRepo, draftGenerator, cfg.ProgramGenerationDailyLimit, cfg.ProgramGenerationModel)
+	programGenerationSvc := service.NewProgramGenerationService(trainingProfileRepo, exerciseCatalogRepo, programGenerationRepo, draftGenerator, cfg.ProgramGenerationProvider, cfg.ProgramGenerationDailyLimit, cfg.ProgramGenerationModel)
 
 	accountRepo := dao.NewAccountDAO(pool)
 	var authDeleter service.AuthUserDeleter
@@ -214,6 +219,7 @@ func main() {
 	settingsHandler := handler.NewSettingsHandler(settingsSvc)
 	profileHandler := handler.NewProfileHandler(profileSvc)
 	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
+	exportHandler := handler.NewExportHandler(exportSvc)
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
@@ -224,6 +230,7 @@ func main() {
 	workoutSessionHandler := handler.NewWorkoutSessionHandler(workoutSessionSvc)
 	participationHandler := handler.NewParticipationHandler(participationSvc)
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
+	mobilitySessionHandler := handler.NewMobilitySessionHandler(mobilitySessionSvc)
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
 	foodHandler := handler.NewFoodHandler(foodSvc)
@@ -232,7 +239,7 @@ func main() {
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

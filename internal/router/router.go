@@ -39,6 +39,8 @@ func New(
 	foodHandler *handler.FoodHandler,
 	trainingBlockHandler *handler.TrainingBlockHandler,
 	programGenerationHandler *handler.ProgramGenerationHandler,
+	exportHandler *handler.ExportHandler,
+	mobilitySessionHandler *handler.MobilitySessionHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -46,7 +48,8 @@ func New(
 	r.Use(chimiddleware.RequestID)
 	r.Use(middleware.RequestIDHeaderMiddleware)
 	r.Use(middleware.LoggingMiddleware(logger))
-	r.Use(middleware.SecurityHeaders)
+	// HSTS only where TLS is guaranteed; a local HTTP API must stay reachable.
+	r.Use(middleware.SecurityHeaders(cfg.IsReleaseEnvironment()))
 	r.Use(middleware.CORSMiddleware(cfg.AllowedOrigins))
 	r.Use(chimiddleware.Recoverer)
 
@@ -100,6 +103,7 @@ func New(
 				})
 				r.Route("/scheduled-workouts/{id}", func(r chi.Router) {
 					r.Patch("/", scheduleHandler.Patch)
+					r.Delete("/", scheduleHandler.Delete)
 					r.Put("/sets/{set_id}", scheduleHandler.PutSet)
 					r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 					r.Post("/extra-sets", scheduleHandler.AddExtra)
@@ -122,6 +126,12 @@ func New(
 					r.Get("/{id}", sportActivityHandler.Get)
 					r.Post("/{id}/link", sportActivityHandler.Link)
 					r.Post("/{id}/unlink", sportActivityHandler.Unlink)
+				})
+				r.Route("/mobility-sessions", func(r chi.Router) {
+					r.Get("/", mobilitySessionHandler.List)
+					r.Post("/", mobilitySessionHandler.Create)
+					r.Get("/{id}", mobilitySessionHandler.Get)
+					r.Delete("/{id}", mobilitySessionHandler.Delete)
 				})
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)
@@ -205,6 +215,13 @@ func New(
 					r.Put("/weekly", planHandler.PutWeekly)
 					r.Put("/overrides/{date}", planHandler.PutOverride)
 					r.Delete("/overrides/{date}", planHandler.DeleteOverride)
+				})
+
+				// Data export: whole-history reads, bounded per minute.
+				r.Group(func(r chi.Router) {
+					r.Use(middleware.RateLimitPerUser(middleware.ExportLimit))
+					r.Get("/export", exportHandler.Export)
+					r.Get("/export/workout-sets", exportHandler.WorkoutSets)
 				})
 
 				// Body Weight

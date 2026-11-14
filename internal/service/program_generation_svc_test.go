@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -114,6 +116,10 @@ type genFixture struct {
 }
 
 func newGenFixture(t *testing.T, profile *model.TrainingProfile, generator *fakeGenerator) *genFixture {
+	return newGenFixtureWithProvider(t, profile, generator, model.GenerationProviderModel)
+}
+
+func newGenFixtureWithProvider(t *testing.T, profile *model.TrainingProfile, generator *fakeGenerator, provider string) *genFixture {
 	t.Helper()
 	f := &genFixture{}
 	f.profiles = &fakeGenProfileDAO{profile: profile, calls: &f.calls}
@@ -126,7 +132,11 @@ func newGenFixture(t *testing.T, profile *model.TrainingProfile, generator *fake
 	if generator != nil {
 		gen = generator
 	}
-	svc, ok := NewProgramGenerationService(f.profiles, &fakeGenCatalogDAO{catalog: genCatalog(), calls: &f.calls}, f.ledger, gen, 5, "claude-opus-5-5").(*programGenerationService)
+	catalog := genCatalog()
+	if provider == model.GenerationProviderRules {
+		catalog = rulesCatalog()
+	}
+	svc, ok := NewProgramGenerationService(f.profiles, &fakeGenCatalogDAO{catalog: catalog, calls: &f.calls}, f.ledger, gen, provider, 5, "claude-opus-5-5").(*programGenerationService)
 	if !ok {
 		t.Fatal("unexpected service type")
 	}
@@ -332,5 +342,75 @@ func TestProgramGenerationTimeoutAnswersWithinTheDeadline(t *testing.T) {
 	}
 	if len(f.ledger.completed) != 1 || f.ledger.completed[0] != model.GenerationFailed {
 		t.Fatalf("a cancelled call must still be recorded as failed: %v", f.ledger.completed)
+	}
+}
+
+// Spec 016: the rules path never touches the ledger, reports its provider, and
+// maps the engine's too-constrained answer to a validation error on avoid.
+func TestProgramGenerationRulesPathSkipsTheLedger(t *testing.T) {
+	f := newGenFixtureWithProvider(t, genProfile(), nil, model.GenerationProviderRules)
+	f.svc.generator = NewRulesDraftGenerator()
+	f.ledger.used = 5 // would be the limit on the model path
+	status, err := f.svc.Status(context.Background(), uuid.New())
+	if err != nil || !status.Enabled || status.Provider != model.GenerationProviderRules || status.RemainingToday != 5 || status.ResetsAt != nil {
+		t.Fatalf("rules status: %+v %v", status, err)
+	}
+	focus := "upper"
+	variant := 2
+	resp, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Avoid: []string{"hinge"}, Focus: &focus, Variant: &variant, SecondaryGoals: []string{"conditioning"}})
+	if err != nil {
+		t.Fatalf("rules generate: %v", err)
+	}
+	for _, call := range f.calls {
+		if call == "reserve:2026-10-30" || strings.HasPrefix(call, "complete:") {
+			t.Fatalf("rules path must not touch the ledger: %v", f.calls)
+		}
+	}
+	if resp.Provider != model.GenerationProviderRules || len(resp.Avoid) != 1 || resp.Avoid[0] != "hinge" || resp.Focus == nil || *resp.Focus != "upper" || resp.RemainingToday != 5 {
+		t.Fatalf("response bookkeeping: %+v", resp)
+	}
+	if resp.Draft.Roadmap["model"] != RulesModelID || resp.Draft.PrimaryGoal != "hypertrophy" || len(resp.Draft.Workouts) != 3 {
+		t.Fatalf("draft: %+v", resp.Draft)
+	}
+	for _, w := range resp.Draft.Workouts {
+		for _, e := range w.Exercises {
+			if strings.Contains(e.Name, "Deadlift") {
+				t.Fatalf("avoided hinge appeared: %s", e.Name)
+			}
+		}
+	}
+	// Equal input, equal output: the service adds nothing non-deterministic.
+	again, err := f.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Avoid: []string{"hinge"}, Focus: &focus, Variant: &variant, SecondaryGoals: []string{"conditioning"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := json.Marshal(resp.Draft)
+	b, _ := json.Marshal(again.Draft)
+	if string(a) != string(b) {
+		t.Fatal("rules drafts must be byte-identical for equal input")
+	}
+
+	// Too constrained → 422 on avoid, nothing reserved.
+	bodyweight := genProfile()
+	bodyweight.Equipment = []string{"bodyweight"}
+	bodyweight.SessionDurationMinutes = 20
+	g := newGenFixtureWithProvider(t, bodyweight, nil, model.GenerationProviderRules)
+	g.svc.generator = NewRulesDraftGenerator()
+	_, err = g.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Avoid: []string{"horizontal_push", "lunge", "isolation", "core", "locomotion", "squat"}})
+	var validation *model.ValidationError
+	if !errors.As(err, &validation) || validation.Field != "avoid" {
+		t.Fatalf("want a validation error on avoid, got %v", err)
+	}
+	// Bad constraints fail before the catalog is read.
+	bad := "sideways"
+	h := newGenFixtureWithProvider(t, genProfile(), nil, model.GenerationProviderRules)
+	h.svc.generator = NewRulesDraftGenerator()
+	if _, err := h.svc.Generate(context.Background(), uuid.New(), model.GenerateProgramRequest{Focus: &bad}); !errors.As(err, &validation) || validation.Field != "focus" {
+		t.Fatalf("want a validation error on focus, got %v", err)
+	}
+	for _, call := range h.calls {
+		if call == "catalog" {
+			t.Fatal("invalid constraints must fail before the catalog is read")
+		}
 	}
 }

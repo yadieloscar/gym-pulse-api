@@ -83,6 +83,7 @@ type MockLogDAO struct {
 	ListByWeekFunc      func(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error)
 	GetByDateFunc       func(ctx context.Context, userID uuid.UUID, date string) (*model.DayLog, error)
 	CreateFunc          func(ctx context.Context, userID uuid.UUID, l *model.DayLog) error
+	CreateOnceFunc      func(ctx context.Context, userID uuid.UUID, l *model.DayLog, operationKey, requestHash string) (bool, error)
 	UpdateFunc          func(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
@@ -108,6 +109,13 @@ func (m *MockLogDAO) Create(ctx context.Context, userID uuid.UUID, l *model.DayL
 		return m.CreateFunc(ctx, userID, l)
 	}
 	return nil
+}
+
+func (m *MockLogDAO) CreateOnce(ctx context.Context, userID uuid.UUID, l *model.DayLog, operationKey, requestHash string) (bool, error) {
+	if m.CreateOnceFunc != nil {
+		return m.CreateOnceFunc(ctx, userID, l, operationKey, requestHash)
+	}
+	return false, nil
 }
 
 func (m *MockLogDAO) Update(ctx context.Context, userID uuid.UUID, date string, update model.DayLogUpdate) error {
