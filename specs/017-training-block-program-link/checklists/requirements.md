@@ -31,6 +31,6 @@
 
 ## Notes
 
-- Owner answers recorded 2026-11-07; spec Approved. Next stage: plan.
+- Owner answers recorded 2026-11-07; spec Approved. Plan written 2026-11-14 (detection amended per research R1). Next stage: tasks.
 - The sibling spec in the other repository shares feature ID `gympulse-training-block-program-link`.
 - Rollout: API spec first and deployed, then the app.
