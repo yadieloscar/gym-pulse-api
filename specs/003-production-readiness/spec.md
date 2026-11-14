@@ -29,6 +29,14 @@ request is safe.
 Production exposes liveness and database-backed readiness signals, uses bounded database resources,
 accepts the app's documented methods and idempotency header, and runs on supported patched images.
 
+### Ship one reviewed image
+
+A commit merged to `main` that passes CI is built into one container image. That exact image (same
+digest) reaches staging first and production only after an explicit approval. Pending migrations run
+as a separate release step before the new version takes traffic, over a session-mode connection, and
+a staging or production server refuses to start against a schema that is behind or dirty. Operators
+can tell which build is serving.
+
 ### Trust release evidence
 
 CI uses real statement coverage, runs on protected-branch pushes, and reports reachable Go and
@@ -49,6 +57,21 @@ container vulnerabilities. Contract documentation matches executable behavior.
    critical finding.
 9. Service and middleware statement coverage are at least 90 percent under the same calculation CI
    enforces.
+10. A successful `main` CI run for the commit still at the tip of `main` produces one pushed image;
+    staging and production deploy that image's digest, and production waits for an approval on the
+    `production` environment. An older commit whose CI finishes late never deploys.
+    Deploys are serialized per environment, so a pending production approval never blocks staging.
+11. Staging and production servers never run migrations on boot. The release step `./migrate`
+    applies pending migrations over `DATABASE_MIGRATE_URL` (the schema owner, direct or session
+    mode) before deployment; request connections may use the least-privilege runtime role
+    (spec 011).
+12. A staging or production server exits at startup when the recorded schema version is lower than
+    the newest migration in its image, or is dirty at or below that version. A newer schema
+    (rollback image) is accepted. A schema left dirty by a newer release's failed migration is
+    served with a repair warning, so the previous build keeps restarting.
+13. Development and test servers keep migrating on boot so local compose and CI smoke are unchanged.
+14. `GET /health` reports the build version, and a deploy is complete only when the target
+    environment's `/health` reports the deployed commit and `/ready` succeeds.
 
 ## Non-goals
 
@@ -67,3 +90,8 @@ container vulnerabilities. Contract documentation matches executable behavior.
 - API additions are backward-compatible and deploy before the linked app release.
 - Database changes are forward migrations. Rollback is roll-forward if reverting would re-expose
   tables.
+- Railway hosts staging and production from a GHCR image built by GitHub Actions. Environment tags
+  (`:staging`, `:production`) are moved to the accepted digest, then Railway redeploys. Railway's
+  pre-deploy command is the migration release step; config lives in `.railway/railway.ts`.
+- Deployments require Railway and GitHub environment credentials configured by the owner; the
+  pipeline never provisions accounts or secrets.

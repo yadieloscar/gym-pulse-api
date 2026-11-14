@@ -1,0 +1,101 @@
+name: Deploy environment
+
+# Promotes one already-built image digest to a Railway environment. Called by
+# deploy.yml; the GitHub environment supplies RAILWAY_TOKEN (a Railway project
+# token scoped to the matching environment) and the API_URL variable.
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: staging or production
+        required: true
+        type: string
+      digest:
+        description: sha256 digest of the image to deploy
+        required: true
+        type: string
+      version:
+        description: commit the image was built from; /health must report it
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  RAILWAY_CLI: '@railway/cli@5.63.4'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    # One deploy per environment at a time; a newer release waiting here
+    # replaces an older waiting one, and an in-flight deploy is never cancelled.
+    # Per-environment groups keep staging moving while production awaits approval.
+    concurrency:
+      group: deploy-${{ inputs.environment }}
+      cancel-in-progress: false
+    environment:
+      name: ${{ inputs.environment }}
+      url: ${{ vars.API_URL }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.version }}
+
+      - name: Check environment configuration
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          API_URL: ${{ vars.API_URL }}
+          TARGET: ${{ inputs.environment }}
+        run: |
+          [[ -n "$RAILWAY_TOKEN" ]] || { echo "::error::RAILWAY_TOKEN is not set on the $TARGET environment"; exit 1; }
+          [[ "$API_URL" == https://* ]] || { echo "::error::API_URL on the $TARGET environment must be an https URL"; exit 1; }
+
+      - name: Log in to GHCR
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+
+      # Railway's service source is the environment tag. Moving the tag to the
+      # accepted digest is what makes production run the image staging ran.
+      # skopeo copies the manifest bytes unchanged; `docker buildx imagetools
+      # create` would wrap them in a new index with a different digest.
+      - name: Point the environment tag at the release digest
+        env:
+          TARGET: ${{ inputs.environment }}
+          DIGEST: ${{ inputs.digest }}
+        run: |
+          command -v skopeo >/dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq skopeo; }
+          skopeo copy --all --preserve-digests "docker://$IMAGE@$DIGEST" "docker://$IMAGE:$TARGET"
+          tagged=$(skopeo inspect --format '{{.Digest}}' "docker://$IMAGE:$TARGET")
+          [[ "$tagged" == "$DIGEST" ]] || { echo "::error::$IMAGE:$TARGET is $tagged, want $DIGEST"; exit 1; }
+
+      # Railway pulls the tag again, runs ./migrate as the pre-deploy step, and
+      # shifts traffic once /ready passes. A failed migration stops the deploy.
+      - name: Redeploy on Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: npx --yes "$RAILWAY_CLI" redeploy --service api --yes
+
+      - name: Wait for the release to serve
+        env:
+          API_URL: ${{ vars.API_URL }}
+          VERSION: ${{ inputs.version }}
+        run: ./scripts/wait-for-deploy.sh "$API_URL" "$VERSION" 900
+
+      - name: Record release evidence
+        env:
+          TARGET: ${{ inputs.environment }}
+          DIGEST: ${{ inputs.digest }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          {
+            echo "### $TARGET"
+            echo "- commit: \`$VERSION\`"
+            echo "- image: \`$IMAGE@$DIGEST\`"
+            echo "- finished: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_STEP_SUMMARY"

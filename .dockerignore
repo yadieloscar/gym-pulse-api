@@ -15,3 +15,5 @@ coverage/
 .specify/
 specs/
 docs/*.md
+# Railway IaC typecheck toolchain (node_modules) is not part of the image.
+.railway
