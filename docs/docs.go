@@ -3787,6 +3787,10 @@ const docTemplate = `{
                 },
                 "sort_order": {
                     "type": "integer"
+                },
+                "sub_pattern": {
+                    "description": "SubPattern refines isolation and push entries (migration 034); nil otherwise.",
+                    "type": "string"
                 }
             }
         },

@@ -50,20 +50,31 @@ func TestBuildHypertrophyThreeDaysIntermediate(t *testing.T) {
 			if !e.Entry.EligibleFor(in.Equipment) {
 				t.Fatalf("%s needs %v", e.Entry.Name, e.Entry.EquipmentRequired)
 			}
-			if e.Entry.Modality == "strength" && (e.Reps < 6 || e.Reps > 20 || e.RestSeconds < 60 || e.RestSeconds > 180) {
-				t.Fatalf("%s targets out of the hypertrophy range: %+v", e.Entry.Name, e)
+			if e.Entry.Modality == "strength" && (e.Reps < 6 || e.Reps > 20 || e.RestSeconds < 60 || e.RestSeconds > 180 || e.Note == "") {
+				t.Fatalf("%s targets out of the hypertrophy range or without a note: %+v", e.Entry.Name, e)
 			}
 		}
-		if first := w.Exercises[0]; first.Entry.Pattern != model.PatternSquat || first.Reps != 8 || first.Sets != 4 || first.RestSeconds != 120 {
-			t.Fatalf("first slot must be a squat at 8 × 4 rest 120: %+v", first)
+		// Heavy days (first, third) use 6–8; the moderate day uses 10–12 (FR-015).
+		first := w.Exercises[0]
+		if first.Entry.Pattern != model.PatternSquat {
+			t.Fatalf("first slot must be a squat: %+v", first)
+		}
+		if i%2 == 0 && (first.Reps != 6 || first.Sets != 4 || first.RestSeconds != 150 || first.Note != "6 to 8 reps, leave 1 to 2 in reserve.") {
+			t.Fatalf("heavy day squat: %+v", first)
+		}
+		if i%2 == 1 && (first.Reps != 10 || first.Sets != 3 || first.RestSeconds != 90 || first.Note != "10 to 12 reps, leave 1 to 2 in reserve.") {
+			t.Fatalf("moderate day squat: %+v", first)
 		}
 	}
-	if x.Split != "full-body days" || len(x.MainLifts) == 0 {
-		t.Fatalf("explanation: %+v", x)
+	// Full-body days alternate A and B: day 1 and day 3 share a first lift, day 2 differs.
+	if d.Workouts[0].Name != "Full body A" || d.Workouts[1].Name != "Full body B" || d.Workouts[2].Name != "Full body A" {
+		t.Fatalf("A/B names: %s %s %s", d.Workouts[0].Name, d.Workouts[1].Name, d.Workouts[2].Name)
 	}
-	// Day offsets rotate the squat choice across the three days when alternatives exist.
-	if names(d.Workouts[0])[0] == names(d.Workouts[1])[0] {
-		t.Fatalf("day 1 and day 2 start with the same lift: %v %v", names(d.Workouts[0]), names(d.Workouts[1]))
+	if names(d.Workouts[0])[0] != names(d.Workouts[2])[0] || names(d.Workouts[0])[0] == names(d.Workouts[1])[0] {
+		t.Fatalf("A/B alternation: %v %v %v", names(d.Workouts[0]), names(d.Workouts[1]), names(d.Workouts[2]))
+	}
+	if x.Split != "full-body days" || len(x.MainLifts) == 0 || x.UndulationNote == "" || x.ProgressionLine != progressionLine {
+		t.Fatalf("explanation: %+v", x)
 	}
 }
 
@@ -86,7 +97,7 @@ func equalDrafts(a, b Draft) bool {
 		}
 		for j := range a.Workouts[i].Exercises {
 			x, y := a.Workouts[i].Exercises[j], b.Workouts[i].Exercises[j]
-			if x.Entry.ID != y.Entry.ID || x.Sets != y.Sets || x.Reps != y.Reps || x.DurationSeconds != y.DurationSeconds || x.RestSeconds != y.RestSeconds {
+			if x.Entry.ID != y.Entry.ID || x.Sets != y.Sets || x.Reps != y.Reps || x.DurationSeconds != y.DurationSeconds || x.RestSeconds != y.RestSeconds || x.Note != y.Note {
 				return false
 			}
 		}
@@ -94,12 +105,12 @@ func equalDrafts(a, b Draft) bool {
 	return true
 }
 
-func TestBeginnerGetsFewerSimplerExercises(t *testing.T) {
+func TestBeginnerGetsFewerSimplerExercisesAndNoUndulation(t *testing.T) {
 	in := input(model.GoalPower, []int{1, 2, 3, 4}, "beginner", []string{"full_gym"}, 90)
 	d, x := mustBuild(t, in)
 	for _, w := range d.Workouts {
-		if len(w.Exercises) > 5 {
-			t.Fatalf("beginner cap is 5, got %d", len(w.Exercises))
+		if len(w.Exercises) > 5 || !w.Heavy {
+			t.Fatalf("beginner cap is 5 and every day uses the same targets: %d heavy=%v", len(w.Exercises), w.Heavy)
 		}
 		for _, e := range w.Exercises {
 			if e.Entry.Pattern == model.PatternExplosive {
@@ -108,12 +119,14 @@ func TestBeginnerGetsFewerSimplerExercises(t *testing.T) {
 			if e.Entry.Modality == "strength" && !e.Entry.IsCompound() && e.Entry.Pattern != model.PatternCore {
 				t.Fatalf("beginners get compounds plus core only: %s", e.Entry.Name)
 			}
+			if e.Entry.Modality == "strength" && !strings.Contains(e.Note, "2 to 3 in reserve") {
+				t.Fatalf("beginner effort cue: %+v", e)
+			}
 		}
 	}
-	if !strings.Contains(x.BeginnerNote, "beginner") {
-		t.Fatalf("beginner note missing: %+v", x)
+	if !strings.Contains(x.BeginnerNote, "beginner") || x.UndulationNote != "" {
+		t.Fatalf("beginner explanation: %+v", x)
 	}
-	// A sedentary beginner skips high-impact cardio.
 	in.PrimaryGoal, in.UsualActivity = model.GoalConditioning, "sedentary"
 	in.Equipment = []string{"bodyweight"}
 	d, _ = mustBuild(t, in)
@@ -136,8 +149,8 @@ func TestBodyweightOnly(t *testing.T) {
 			}
 		}
 		last := w.Exercises[len(w.Exercises)-1]
-		if last.Entry.Modality != "cardio" || last.DurationSeconds != 900 {
-			t.Fatalf("general health ends with a 15-minute finisher: %+v", last)
+		if last.Entry.Modality != "cardio" || last.DurationSeconds != 900 || last.Note != noteModerate {
+			t.Fatalf("general health ends with a 15-minute finisher with an intensity line: %+v", last)
 		}
 	}
 	if x.EquipmentNote == "" {
@@ -145,7 +158,7 @@ func TestBodyweightOnly(t *testing.T) {
 	}
 }
 
-func TestShortSessionHoldsThreeAndFinisherCostsASlot(t *testing.T) {
+func TestShortAndMinimalSessions(t *testing.T) {
 	in := input(model.GoalBodyComposition, []int{1, 3, 5}, "intermediate", []string{"full_gym"}, 20)
 	d, _ := mustBuild(t, in)
 	for _, w := range d.Workouts {
@@ -153,41 +166,46 @@ func TestShortSessionHoldsThreeAndFinisherCostsASlot(t *testing.T) {
 			t.Fatalf("20-minute session holds 3 exercises, got %d", len(w.Exercises))
 		}
 	}
-	// One interval day, then steady finishers.
-	if d.Workouts[0].Exercises[2].Sets != 4 || d.Workouts[0].Exercises[2].DurationSeconds != 180 {
-		t.Fatalf("body composition first day uses intervals: %+v", d.Workouts[0].Exercises[2])
+	if d.Workouts[0].Exercises[2].Sets != 4 || d.Workouts[0].Exercises[2].DurationSeconds != 180 || !strings.HasPrefix(d.Workouts[0].Exercises[2].Note, "Hard efforts") {
+		t.Fatalf("body composition first day uses intervals with a line: %+v", d.Workouts[0].Exercises[2])
 	}
-	if d.Workouts[1].Exercises[2].DurationSeconds != 900 {
-		t.Fatalf("second finisher is steady: %+v", d.Workouts[1].Exercises[2])
+	if d.Workouts[1].Exercises[2].DurationSeconds != 900 || d.Workouts[2].Exercises[2].Entry.Modality != "strength" {
+		t.Fatalf("second finisher steady, third day none: %+v %+v", d.Workouts[1].Exercises[2], d.Workouts[2].Exercises[2])
 	}
-	if d.Workouts[2].Exercises[2].Entry.Modality != "strength" {
-		t.Fatal("finishers stop after two days")
+	// Under 20 minutes: three compounds at two sets each (FR-017).
+	in = input(model.GoalStrength, []int{1, 3}, "intermediate", []string{"barbell"}, 15)
+	d, _ = mustBuild(t, in)
+	for _, w := range d.Workouts {
+		if len(w.Exercises) != 3 {
+			t.Fatalf("minimal session holds 3: %v", names(w))
+		}
+		for _, e := range w.Exercises {
+			if e.Sets != minimalSets || !e.Entry.IsCompound() {
+				t.Fatalf("minimal session: two sets of compounds, got %+v", e)
+			}
+		}
 	}
 }
 
 func TestConditioningDays(t *testing.T) {
 	in := input(model.GoalConditioning, []int{1, 2, 3, 4}, "intermediate", []string{"cardio_machine", "dumbbells"}, 45)
 	d, x := mustBuild(t, in)
-	if x.Split != "cardio and circuit days" {
-		t.Fatalf("split: %s", x.Split)
+	if x.Split != "cardio and circuit days" || x.ProgressionLine != "" {
+		t.Fatalf("conditioning explanation: %+v", x)
 	}
 	cardio := d.Workouts[0]
-	if cardio.Kind != KindCardio || cardio.Exercises[0].Entry.Modality != "cardio" || cardio.Exercises[0].Sets != 4 || cardio.Exercises[0].DurationSeconds != 240 {
+	if cardio.Kind != KindCardio || cardio.Exercises[0].Entry.Modality != "cardio" || cardio.Exercises[0].Sets != 4 || cardio.Exercises[0].DurationSeconds != 240 || !strings.HasPrefix(cardio.Exercises[0].Note, "Hard efforts: 4 × 4") {
 		t.Fatalf("first cardio day opens with intervals: %+v", cardio.Exercises[0])
-	}
-	if third := d.Workouts[2]; third.Exercises[0].DurationSeconds != 240 {
-		t.Fatalf("second cardio day may use intervals too: %+v", third.Exercises[0])
 	}
 	circuit := d.Workouts[1]
 	for _, e := range circuit.Exercises {
-		if e.Entry.Modality == "strength" && (e.Reps != 15 || e.RestSeconds != 45) {
-			t.Fatalf("circuit targets 15 reps rest 45: %+v", e)
+		if e.Entry.Modality == "strength" && (e.Reps != 15 || e.RestSeconds != 45 || !strings.Contains(e.Note, "keep moving")) {
+			t.Fatalf("circuit targets 15 reps rest 45 with the circuit cue: %+v", e)
 		}
 	}
 	if last := circuit.Exercises[len(circuit.Exercises)-1]; last.Entry.Modality != "cardio" || last.DurationSeconds != 600 {
 		t.Fatalf("circuit ends with a 10-minute finisher: %+v", last)
 	}
-	// No cardio machine: bodyweight locomotion serves the cardio slots.
 	in.Equipment = []string{"bodyweight"}
 	d, _ = mustBuild(t, in)
 	if d.Workouts[0].Exercises[0].Entry.Modality != "cardio" || !slices.Equal(d.Workouts[0].Exercises[0].Entry.EquipmentRequired, []string{"bodyweight"}) {
@@ -198,19 +216,30 @@ func TestConditioningDays(t *testing.T) {
 func TestPowerNonBeginnerLeadsWithExplosiveWork(t *testing.T) {
 	in := input(model.GoalPower, []int{1, 3, 5}, "advanced", []string{"barbell", "dumbbells"}, 60)
 	d, _ := mustBuild(t, in)
-	for _, w := range d.Workouts {
+	for i, w := range d.Workouts {
 		first := w.Exercises[0]
-		if first.Entry.Pattern != model.PatternExplosive || first.Reps != 2 || first.Sets != 5 || first.RestSeconds != 240 {
-			t.Fatalf("explosive first at 2 × 5 rest 240: %+v", first)
+		if first.Entry.Pattern != model.PatternExplosive || first.Reps != 2 || first.Sets != 5 || first.RestSeconds != 240 || !strings.Contains(first.Note, "fast reps") {
+			t.Fatalf("explosive first at 2 × 5 rest 240 with the fast cue: %+v", first)
 		}
-		if len(w.Exercises) > 1 && w.Exercises[1].Entry.IsCompound() && w.Exercises[1].Reps != 3 {
-			t.Fatalf("main strength work at 3 reps: %+v", w.Exercises[1])
+		// Heavy and moderate strength work alternate behind the opener.
+		wantReps := 3
+		if i%2 == 1 {
+			wantReps = 5
+		}
+		if w.Exercises[1].Entry.IsCompound() && w.Exercises[1].Reps != wantReps {
+			t.Fatalf("day %d main strength work at %d reps: %+v", i, wantReps, w.Exercises[1])
 		}
 		for _, e := range w.Exercises {
 			if e.Entry.Modality == "cardio" {
 				t.Fatal("no cardio inside a power session")
 			}
 		}
+	}
+	// Bodyweight power athletes now get jumps instead of nothing (migration 034 entries).
+	in.Equipment = []string{"bodyweight"}
+	d, _ = mustBuild(t, in)
+	if first := d.Workouts[0].Exercises[0]; first.Entry.Pattern != model.PatternExplosive || !strings.Contains(first.Entry.Name, "Jump") {
+		t.Fatalf("bodyweight power opener should be a jump: %+v", first.Entry)
 	}
 }
 
@@ -253,7 +282,6 @@ func TestAvoidAndFocus(t *testing.T) {
 	if !slices.Contains(x.Honoured, "hinges") || !slices.Contains(x.Honoured, "overhead pressing") || !strings.Contains(x.FocusNote, "Upper body") {
 		t.Fatalf("explanation must record the honoured limits: %+v", x)
 	}
-	// Lower focus flips the share.
 	in.Avoid, in.Focus = nil, AreaLower
 	d, _ = mustBuild(t, in)
 	for _, w := range d.Workouts {
@@ -270,7 +298,6 @@ func TestAvoidAndFocus(t *testing.T) {
 			t.Fatalf("lower focus share too small: %d of %d (%v)", lower, strength, names(w))
 		}
 	}
-	// Core focus leads each session with core work.
 	in.Focus = AreaCore
 	d, _ = mustBuild(t, in)
 	if d.Workouts[0].Exercises[0].Entry.Pattern != model.PatternCore {
@@ -278,20 +305,34 @@ func TestAvoidAndFocus(t *testing.T) {
 	}
 }
 
+// FR-016: under hypertrophy with a focus, an isolation exercise opens the session.
+func TestHypertrophyFocusOpensWithIsolation(t *testing.T) {
+	in := input(model.GoalHypertrophy, []int{1, 3, 5}, "intermediate", []string{"full_gym"}, 60)
+	in.Focus = AreaUpper
+	d, _ := mustBuild(t, in)
+	first := d.Workouts[0].Exercises[0]
+	if first.Entry.Pattern != model.PatternIsolation || focusAreaOf(first.Entry.MuscleGroup) != AreaUpper {
+		t.Fatalf("hypertrophy upper focus opens with an upper isolation: %v", names(d.Workouts[0]))
+	}
+	// Strength keeps compounds first.
+	in.PrimaryGoal = model.GoalStrength
+	d, _ = mustBuild(t, in)
+	if !d.Workouts[0].Exercises[0].Entry.IsCompound() {
+		t.Fatalf("strength focus keeps compounds first: %v", names(d.Workouts[0]))
+	}
+}
+
 func TestTooConstrained(t *testing.T) {
-	// Six avoided patterns on bodyweight-only equipment leave nothing to build from.
 	in := input(model.GoalStrength, []int{1}, "intermediate", []string{"bodyweight"}, 20)
 	in.Avoid = []string{model.PatternHorizontalPush, model.PatternLunge, model.PatternIsolation, model.PatternCore, model.PatternLocomotion, model.PatternSquat}
 	_, _, err := Build(in)
 	if !errors.Is(err, ErrTooConstrained) {
 		t.Fatalf("want ErrTooConstrained, got %v", err)
 	}
-	// The same six on a barbell still build: the engine tops up from what is left.
 	in.Equipment = []string{"barbell"}
 	if _, _, err := Build(in); err != nil {
 		t.Fatalf("barbell with six avoided patterns must still build: %v", err)
 	}
-	// Dropping a slot with no eligible exercise is noted, not fatal.
 	in.Avoid = []string{model.PatternHinge}
 	in.Equipment = []string{"bands"}
 	in.SessionMinutes = 60
@@ -326,7 +367,6 @@ func TestVariantsRotateWithinPatterns(t *testing.T) {
 		}
 		seen[key] = true
 	}
-	// A single-entry slot stays fixed across variants: carries on a bodyweight-only lower day.
 	in = input(model.GoalStrength, []int{1}, "intermediate", []string{"dumbbells"}, 60)
 	in.Avoid = []string{model.PatternSquat}
 	a, _ := mustBuild(t, in)
@@ -343,15 +383,21 @@ func TestSecondaryGoals(t *testing.T) {
 	in.SecondaryGoals = []string{model.GoalConditioning}
 	d, x := mustBuild(t, in)
 	finishers := 0
-	for _, w := range d.Workouts {
+	for i, w := range d.Workouts {
 		for _, e := range w.Exercises {
 			if e.Entry.Modality == "cardio" {
 				finishers++
-				if e.DurationSeconds != 600 {
-					t.Fatalf("secondary conditioning finisher is 10 minutes: %+v", e)
+				if e.DurationSeconds != 600 || e.Note != noteModerate {
+					t.Fatalf("secondary conditioning finisher is 10 minutes with a line: %+v", e)
 				}
-			} else if e.Entry.IsCompound() && e.Entry.Pattern != model.PatternCore && e.Reps != 5 {
-				t.Fatalf("primary strength targets untouched: %+v", e)
+			} else if e.Entry.IsCompound() && e.Entry.Pattern != model.PatternCore {
+				want := 5
+				if i%2 == 1 {
+					want = 8
+				}
+				if e.Reps != want {
+					t.Fatalf("primary strength targets untouched (day %d wants %d): %+v", i, want, e)
+				}
 			}
 		}
 	}
@@ -373,7 +419,7 @@ func TestSecondaryGoals(t *testing.T) {
 	in.SecondaryGoals = []string{model.GoalStrength}
 	d, _ = mustBuild(t, in)
 	first := d.Workouts[0].Exercises[0]
-	if first.Reps != 5 || first.Sets != 4 || first.RestSeconds != 180 || d.Workouts[0].Exercises[1].Reps != 8 {
+	if first.Reps != 5 || first.Sets != 4 || first.RestSeconds != 180 || d.Workouts[0].Exercises[1].Reps != 6 {
 		t.Fatalf("secondary strength makes the first compound heavier and leaves the rest: %+v %+v", first, d.Workouts[0].Exercises[1])
 	}
 
@@ -388,5 +434,50 @@ func TestSecondaryGoals(t *testing.T) {
 	}
 	if x.SecondaryNote != "" {
 		t.Fatal("no secondary note without secondary goals")
+	}
+}
+
+// FR-014: weekly sets per muscle group stay inside the goal's band.
+func TestWeeklySetBands(t *testing.T) {
+	in := input(model.GoalHypertrophy, []int{1, 2, 3, 4, 5, 6}, "advanced", []string{"full_gym"}, 90)
+	d, _ := mustBuild(t, in)
+	band := weeklySetBands[model.GoalHypertrophy]
+	for group, sets := range weeklySets(d) {
+		if sets > band.Max {
+			t.Fatalf("%s has %d weekly sets, above %d", group, sets, band.Max)
+		}
+	}
+	// The rule is covered alone: an over-served group loses an isolation exercise.
+	b := newBuilder(in, 6)
+	byName := map[string]model.CatalogExercise{}
+	for _, e := range fixtureCatalog() {
+		byName[e.Name] = e
+	}
+	over := Draft{Workouts: []Workout{{Kind: KindUpper, Exercises: []Exercise{
+		{Entry: byName["Barbell Bench Press"], Sets: 8}, {Entry: byName["Incline Barbell Bench Press"], Sets: 8}, {Entry: byName["Dumbbell Bench Press"], Sets: 8},
+		{Entry: byName["Cable Fly"], Sets: 8},
+	}}}}
+	ruleWeeklySetBands(b, &over)
+	if slices.Contains(names(over.Workouts[0]), "Cable Fly") || weeklySets(over)["chest"] > band.Max {
+		t.Fatalf("over-served chest should lose its isolation exercise first and end inside the band: %v sets %d", names(over.Workouts[0]), weeklySets(over)["chest"])
+	}
+	// A focus area may carry half again its band.
+	in.Focus = AreaUpper
+	fb := newBuilder(in, 6)
+	if fb.bandMax(band, "chest") != band.Max+band.Max/2 || fb.bandMax(band, "quads") != band.Max {
+		t.Fatalf("focus relaxes the band for its area only: %d %d", fb.bandMax(band, "chest"), fb.bandMax(band, "quads"))
+	}
+}
+
+// FR-020: every rule has a name and the order reads top to bottom.
+func TestRuleListIsNamedAndOrdered(t *testing.T) {
+	want := []string{"cardio day", "explosive opener", "focus opener", "fill slots", "circuit finisher", "secondary strength", "secondary hypertrophy", "cardio finisher", "top up"}
+	for i, rule := range workoutRules {
+		if rule.name != want[i] || rule.apply == nil {
+			t.Fatalf("workout rule %d: %q", i, rule.name)
+		}
+	}
+	if len(weeklyRules) != 1 || weeklyRules[0].name != "weekly set bands" {
+		t.Fatalf("weekly rules: %+v", weeklyRules)
 	}
 }
