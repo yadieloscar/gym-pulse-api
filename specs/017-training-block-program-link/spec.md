@@ -9,7 +9,7 @@
 **Amends**: [Criteria-based training blocks](../005-criteria-based-training-blocks/spec.md)
 (`gympulse-criteria-based-training-blocks`). See "Changes to approved specs and contracts" below.
 
-**Created**: 2026-11-03 · **Revised**: 2026-11-07 (review fixes)
+**Created**: 2026-11-03 · **Revised**: 2026-11-07 (review fixes), 2026-11-14 (planning: detection)
 
 **Status**: Approved (owner answered every open question on 2026-11-07; see Clarifications)
 
@@ -69,9 +69,12 @@ action. Keep the guardrails: no medical prescription, no automatic stage moves.
   the existing 409 `CONFLICT` with `resource`, as the block DAO already does for read-only blocks.
   A second exposure for the same workout returns the new 409 `EXPOSURE_SOURCE_ALREADY_RECORDED`, so
   the app can say "Already counted".
-- Q: How does the app detect this feature? → A: There is no runtime contract version. The app
-  treats a 404 without the shared error shape from the new due read, or a block aggregate without
-  `exposure_suggestions`, as an API that predates this feature (the nutrition pattern).
+- Q: How does the app detect this feature? → A: There is no runtime contract version. Amended
+  2026-11-14 in planning (research R1): an older API answers `GET /training-blocks/due` with
+  `400 BAD_REQUEST` because it parses "due" as a block ID, so a status code cannot signal support.
+  The app detects support by fields: every block summary carries `pending_next_morning` and every
+  aggregate carries `exposure_suggestions`, both always arrays. The app calls the due read only
+  after seeing one of them.
 
 ## Changes to approved specs and contracts
 
@@ -285,8 +288,8 @@ active and the aggregate reports Q.
 - **FR-014**: All new mutations MUST use the 005 idempotency, revision, atomicity, and stable-error
   rules.
 - **FR-015**: All changes MUST be additive. Existing requests stay valid; an app that ignores new
-  fields keeps its behavior; the new read returns the shared 404 shape only for foreign IDs, so an
-  older API's plain 404 is distinguishable.
+  fields keeps its behavior; `pending_next_morning` and `exposure_suggestions` MUST always be present
+  as arrays (never omitted or null) so their presence signals support.
 - **FR-016**: `docs/CONTRACTS.md` MUST document the new fields, mutations, read, and error code as
   contract 1.6.0 (or the next free minor version at plan time).
 - **FR-017**: The migration MUST be additive (nullable columns, link-time column defaulting to

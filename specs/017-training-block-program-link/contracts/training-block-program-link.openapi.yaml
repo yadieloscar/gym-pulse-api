@@ -1,0 +1,135 @@
+# Additive changes to the training-block contract (see specs/005 contracts for the base).
+# docs/CONTRACTS.md stays the client-facing source of truth; this file is the design draft for it.
+openapi: 3.1.0
+info:
+  title: Training blocks linked to real training
+  version: 1.6.0-draft
+paths:
+  /api/v1/training-blocks:
+    get:
+      summary: Unchanged query; each summary gains pending_next_morning and stage program fields.
+    post:
+      summary: Unchanged route; each stage may carry program_id.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                stages:
+                  items:
+                    properties:
+                      program_id: { type: [string, "null"], format: uuid }
+  /api/v1/training-blocks/due:
+    get:
+      summary: Due next-morning checks and open suggestions across active blocks.
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TrainingBlocksDue" }
+  /api/v1/training-blocks/{block_id}/exposures:
+    post:
+      summary: Unchanged route; optional scheduled_workout_id records a suggestion.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                scheduled_workout_id: { type: [string, "null"], format: uuid }
+      responses:
+        "404": { description: Missing or foreign workout (shared NOT_FOUND shape) }
+        "409": { description: "REVISION_CONFLICT, IDEMPOTENCY_CONFLICT, or EXPOSURE_SOURCE_ALREADY_RECORDED with resource" }
+        "422": { description: "VALIDATION_ERROR, details.field = scheduled_workout_id, when not a current suggestion" }
+  /api/v1/training-blocks/{block_id}/stages/{stage_id}/program:
+    put:
+      summary: Set or clear the program of the current or a later stage.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required: [expected_revision, operation_key]
+              properties:
+                program_id: { type: [string, "null"], format: uuid }
+                expected_revision: { type: integer, minimum: 1 }
+                operation_key: { type: string, format: uuid }
+      responses:
+        "200": { description: Full aggregate, revision incremented once }
+        "404": { description: Missing or foreign block, stage, or program }
+        "409": { description: "CONFLICT (earlier stage or read-only block), REVISION_CONFLICT, IDEMPOTENCY_CONFLICT" }
+  /api/v1/training-blocks/{block_id}/suggestions/{scheduled_workout_id}/dismiss:
+    post:
+      summary: Store "not this one" for a current suggestion.
+      parameters:
+        - { name: Idempotency-Key, in: header, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required: [expected_revision, operation_key]
+              properties:
+                expected_revision: { type: integer, minimum: 1 }
+                operation_key: { type: string, format: uuid }
+      responses:
+        "200": { description: Full aggregate, revision incremented once }
+        "404": { description: Missing or foreign block or workout }
+        "409": { description: "CONFLICT (read-only block), REVISION_CONFLICT, IDEMPOTENCY_CONFLICT" }
+        "422": { description: "VALIDATION_ERROR, details.field = scheduled_workout_id" }
+components:
+  schemas:
+    TrainingStage:
+      description: Existing stage plus link fields.
+      properties:
+        program_id: { type: [string, "null"], format: uuid }
+        effective_program_id: { type: [string, "null"], format: uuid }
+        program_linked_at: { type: string, format: date-time }
+    TrainingExposure:
+      properties:
+        scheduled_workout_id: { type: [string, "null"], format: uuid }
+    TrainingBlockSummary:
+      properties:
+        pending_next_morning:
+          type: array
+          maxItems: 20
+          items:
+            required: [exposure_id, performed_on, activity_label, stage_name]
+            properties:
+              exposure_id: { type: string, format: uuid }
+              performed_on: { type: string, format: date }
+              activity_label: { type: string }
+              stage_name: { type: string }
+    TrainingBlock:
+      properties:
+        exposure_suggestions:
+          type: array
+          maxItems: 20
+          items: { $ref: "#/components/schemas/ExposureSuggestion" }
+    ExposureSuggestion:
+      required: [scheduled_workout_id, date, name, status, finalized_at, prefill]
+      properties:
+        scheduled_workout_id: { type: string, format: uuid }
+        date: { type: string, format: date }
+        name: { type: string }
+        status: { enum: [completed, incomplete] }
+        finalized_at: { type: string, format: date-time }
+        prefill:
+          required: [performed_on, activity_label, load_level, session_outcome]
+          properties:
+            performed_on: { type: string, format: date }
+            activity_label: { type: string, maxLength: 120 }
+            load_level: { enum: [easy, demanding] }
+            session_outcome: { enum: [completed_as_planned, modified] }
+    TrainingBlocksDue:
+      required: [due_checks, suggestions]
+      properties:
+        due_checks:
+          type: array
+          maxItems: 20
+          items:
+            required: [block_id, block_name, block_revision, stage_name, exposure_id, performed_on, activity_label]
+        suggestions:
+          type: array
+          maxItems: 20
+          items:
+            description: ExposureSuggestion plus block_id, block_name, block_revision, stage_name.
