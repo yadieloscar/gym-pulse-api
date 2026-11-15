@@ -145,6 +145,7 @@ func main() {
 	profileRepo := dao.NewProfileDAO(pool)
 	bodyWeightRepo := dao.NewBodyWeightDAO(pool)
 	exportRepo := dao.NewExportDAO(pool)
+	workoutImportRepo := dao.NewWorkoutImportDAO(pool)
 	exerciseCatalogRepo := dao.NewExerciseCatalogDAO(pool)
 	planRepo := dao.NewPlanDAO(pool)
 	trainingProfileRepo := dao.NewTrainingProfileDAO(pool)
@@ -156,6 +157,7 @@ func main() {
 	participationRepo := dao.NewParticipationDAO(pool)
 	sportActivityRepo := dao.NewSportActivityDAO(pool)
 	mobilitySessionRepo := dao.NewMobilitySessionDAO(pool)
+	kneeKitRepo := dao.NewKneeKitDAO(pool)
 	healthExportRepo := dao.NewHealthExportDAO(pool)
 	nutritionRepo := dao.NewNutritionDAO(pool)
 	foodRepo := dao.NewFoodDAO(pool)
@@ -182,6 +184,7 @@ func main() {
 	profileSvc := service.NewProfileServiceWithUserBoundary(profileRepo, v, avatarStorage, authUserRepo, userOperationLocker)
 	bodyWeightSvc := service.NewBodyWeightService(bodyWeightRepo, v)
 	exportSvc := service.NewExportService(exportRepo)
+	workoutImportSvc := service.NewWorkoutImportService(workoutImportRepo)
 	exerciseCatalogSvc := service.NewExerciseCatalogService(exerciseCatalogRepo)
 	planSvc := service.NewPlanService(planRepo, templateRepo, v)
 	trainingProfileSvc := service.NewTrainingProfileService(trainingProfileRepo, trainingMutationRepo, v)
@@ -191,6 +194,7 @@ func main() {
 	participationSvc := service.NewParticipationService(scheduleSvc, participationRepo)
 	sportActivitySvc := service.NewSportActivityService(sportActivityRepo, trainingProfileRepo)
 	mobilitySessionSvc := service.NewMobilitySessionService(mobilitySessionRepo, trainingProfileRepo)
+	kneeKitSvc := service.NewKneeKitService(kneeKitRepo, trainingProfileRepo)
 	healthExportSvc := service.NewHealthExportService(healthExportRepo)
 	nutritionSvc := service.NewNutritionService(nutritionRepo, trainingProfileRepo)
 	if cfg.USDAFDCAPIKey == "" && (cfg.Environment == "staging" || cfg.Environment == "production") {
@@ -224,6 +228,7 @@ func main() {
 	profileHandler := handler.NewProfileHandler(profileSvc)
 	bodyWeightHandler := handler.NewBodyWeightHandler(bodyWeightSvc)
 	exportHandler := handler.NewExportHandler(exportSvc)
+	workoutImportHandler := handler.NewWorkoutImportHandler(workoutImportSvc)
 	exerciseCatalogHandler := handler.NewExerciseCatalogHandler(exerciseCatalogSvc)
 	planHandler := handler.NewPlanHandler(planSvc)
 	accountHandler := handler.NewAccountHandler(accountSvc)
@@ -235,6 +240,7 @@ func main() {
 	participationHandler := handler.NewParticipationHandler(participationSvc)
 	sportActivityHandler := handler.NewSportActivityHandler(sportActivitySvc)
 	mobilitySessionHandler := handler.NewMobilitySessionHandler(mobilitySessionSvc)
+	kneeKitHandler := handler.NewKneeKitHandler(kneeKitSvc)
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
 	foodHandler := handler.NewFoodHandler(foodSvc)
@@ -243,7 +249,7 @@ func main() {
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

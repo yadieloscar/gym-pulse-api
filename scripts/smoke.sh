@@ -19,6 +19,8 @@
 #  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
 #  13. nutrition target and days: save, replay, conflicts, Health precedence, clear, ranges
 #  14. mobility sessions replay, conflict, delete, and never move stats or participation (contract 1.4.0)
+#  15. knee kit days: create, replay, conflicts, full replacement, range, export, and never move
+#      stats or participation (contract 1.7.0)
 #
 # Requirements:
 #   - API container running on :8080 (see README local development instructions)
@@ -966,7 +968,110 @@ else
   bad "mobility acceptance failed (create=$mo_status replay=$mo_replay_status conflict=$mo_conflict_status header=$mo_header_status moves=$mo_moves_status second=$mo_second_status list=$mo_list_status get=$mo_get_status delete=$mo_delete_status again=$mo_delete_again_status gone=$mo_gone_status range=$mo_range_status stats_same=$([ "$mo_stats_before" = "$mo_stats_after" ] && echo y || echo n) part_same=$([ "$mo_part_before" = "$mo_part_after" ] && echo y || echo n))" "$(echo "$mo_body $mo_list_body" | head -c 400)"
 fi
 
+# ---------- 13j. knee kit days (contract 1.7.0) ----------
+step "13j. Knee Kit: day 201 → replay 201 → conflicts 409 → replace 200 (empty day kept) → 422s → range oldest first → export; stats and participation unchanged"
+kk_stats_before=$(curl -s "$API/api/v1/stats" "${auth[@]}")
+kk_part_before=$(curl -s "$API/api/v1/participation?from=$nu_before&to=$nu_today" "${auth[@]}")
+kk_payload='{"completed_items":["morning-check","isometric-hold"],"morning_pain":3,"activity_pain":null,"sharp_pain":false,"limping":false,"expected_revision":0,"operation_key":"smoke-kk-a"}'
+kk_status=$(nu_put "/api/v1/knee-kit/days/$nu_yesterday" "smoke-kk-a" "$kk_payload")
+kk_body=$(cat /tmp/smoke.body)
+kk_replay_status=$(nu_put "/api/v1/knee-kit/days/$nu_yesterday" "smoke-kk-a" "$kk_payload")
+kk_replay_body=$(cat /tmp/smoke.body)
+kk_idem_status=$(nu_put "/api/v1/knee-kit/days/$nu_yesterday" "smoke-kk-a" "${kk_payload/\"morning_pain\":3/\"morning_pain\":4}")
+kk_idem_body=$(cat /tmp/smoke.body)
+kk_stale_status=$(nu_put "/api/v1/knee-kit/days/$nu_yesterday" "smoke-kk-stale" '{"completed_items":[],"expected_revision":0,"operation_key":"smoke-kk-stale"}')
+kk_stale_body=$(cat /tmp/smoke.body)
+kk_replace_status=$(nu_put "/api/v1/knee-kit/days/$nu_yesterday" "smoke-kk-b" '{"completed_items":[],"expected_revision":1,"operation_key":"smoke-kk-b"}')
+kk_replace_body=$(cat /tmp/smoke.body)
+kk_second_status=$(nu_put "/api/v1/knee-kit/days/$nu_before" "smoke-kk-c" '{"completed_items":["wall-sit"],"activity_pain":6,"sharp_pain":true,"limping":true,"expected_revision":0,"operation_key":"smoke-kk-c"}')
+kk_header_status=$(nu_put "/api/v1/knee-kit/days/$nu_today" "other-key" '{"completed_items":[],"expected_revision":0,"operation_key":"smoke-kk-d"}')
+kk_dup_status=$(nu_put "/api/v1/knee-kit/days/$nu_today" "smoke-kk-e" '{"completed_items":["wall-sit","wall-sit"],"expected_revision":0,"operation_key":"smoke-kk-e"}')
+kk_dup_body=$(cat /tmp/smoke.body)
+kk_slug_status=$(nu_put "/api/v1/knee-kit/days/$nu_today" "smoke-kk-f" '{"completed_items":["Wall_Sit"],"expected_revision":0,"operation_key":"smoke-kk-f"}')
+kk_pain_status=$(nu_put "/api/v1/knee-kit/days/$nu_today" "smoke-kk-g" '{"completed_items":[],"morning_pain":11,"expected_revision":0,"operation_key":"smoke-kk-g"}')
+kk_pain_body=$(cat /tmp/smoke.body)
+kk_missing_status=$(nu_put "/api/v1/knee-kit/days/$nu_today" "smoke-kk-h" '{"expected_revision":0,"operation_key":"smoke-kk-h"}')
+kk_future_status=$(nu_put "/api/v1/knee-kit/days/$nu_tomorrow" "smoke-kk-i" '{"completed_items":[],"expected_revision":0,"operation_key":"smoke-kk-i"}')
+kk_future_body=$(cat /tmp/smoke.body)
+kk_range_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/knee-kit/days?from=$nu_before&to=$nu_today" "${auth[@]}")
+kk_range_body=$(cat /tmp/smoke.body)
+kk_empty_body=$(curl -s "$API/api/v1/knee-kit/days?from=2020-01-01&to=2020-01-31" "${auth[@]}")
+kk_long_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/knee-kit/days?from=2024-01-01&to=2025-01-02" "${auth[@]}")
+kk_export_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/export" "${auth[@]}")
+kk_export_body=$(cat /tmp/smoke.body)
+kk_stats_after=$(curl -s "$API/api/v1/stats" "${auth[@]}")
+kk_part_after=$(curl -s "$API/api/v1/participation?from=$nu_before&to=$nu_today" "${auth[@]}")
+if [ "$kk_status" = "201" ] && [ "$kk_replay_status" = "201" ] && [ "$kk_idem_status" = "409" ] && [ "$kk_stale_status" = "409" ] && \
+  [ "$kk_replace_status" = "200" ] && [ "$kk_second_status" = "201" ] && [ "$kk_header_status" = "422" ] && [ "$kk_dup_status" = "422" ] && \
+  [ "$kk_slug_status" = "422" ] && [ "$kk_pain_status" = "422" ] && [ "$kk_missing_status" = "422" ] && [ "$kk_future_status" = "422" ] && \
+  [ "$kk_range_status" = "200" ] && [ "$kk_long_status" = "422" ] && [ "$kk_export_status" = "200" ] && \
+  [ "$kk_stats_before" = "$kk_stats_after" ] && [ "$kk_part_before" = "$kk_part_after" ] && \
+  python3 -c "
+import json,sys
+c,r,i,s,p,d,n,f,g,e,x=[json.loads(v) for v in sys.argv[1:12]]
+before,yesterday=sys.argv[12:14]
+assert c==r and c['date']==yesterday and c['revision']==1, 'create/replay'
+assert c['completed_items']==['isometric-hold','morning-check'] and c['morning_pain']==3 and c['activity_pain'] is None, 'stored values'
+assert c['sharp_pain'] is False and c['limping'] is False and 'user_id' not in c, 'flags'
+assert i['code']=='IDEMPOTENCY_CONFLICT', 'idempotency'
+assert s['code']=='REVISION_CONFLICT' and s['details']['actual_revision']==1 and s['resource']['id']==c['id'], 'stale'
+assert p['id']==c['id'] and p['revision']==2 and p['completed_items']==[] and p['morning_pain'] is None, 'replace'
+assert d['details']['field']=='completed_items' and n['details']['field']=='morning_pain' and f['details']['field']=='date', '422 fields'
+assert [day['date'] for day in g['days']]==[before,yesterday] and g['days'][0]['completed_items']==['wall-sit'] and g['days'][0]['limping'] is True and g['days'][1]['revision']==2, 'range'
+assert e=={'days':[]}, 'empty range'
+k=x['knee_kit_days']
+assert x['schema_version']==1 and [day['date'] for day in k]==[before,yesterday] and k[0]['activity_pain']==6 and k[0]['sharp_pain'] is True and k[1]['completed_items']==[], 'export'
+" "$kk_body" "$kk_replay_body" "$kk_idem_body" "$kk_stale_body" "$kk_replace_body" "$kk_dup_body" "$kk_pain_body" "$kk_future_body" "$kk_range_body" "$kk_empty_body" "$kk_export_body" "$nu_before" "$nu_yesterday" 2>/tmp/smoke.kk.err; then
+  ok "knee kit day created, replayed, conflicted on a changed payload and a stale revision, fully replaced to an empty day, validated, listed oldest first, exported, and left stats and participation unchanged"
+else
+  bad "knee kit acceptance failed (create=$kk_status replay=$kk_replay_status idem=$kk_idem_status stale=$kk_stale_status replace=$kk_replace_status second=$kk_second_status header=$kk_header_status dup=$kk_dup_status slug=$kk_slug_status pain=$kk_pain_status missing=$kk_missing_status future=$kk_future_status range=$kk_range_status long=$kk_long_status export=$kk_export_status stats_same=$([ "$kk_stats_before" = "$kk_stats_after" ] && echo y || echo n) part_same=$([ "$kk_part_before" = "$kk_part_after" ] && echo y || echo n))" "$(tail -n 1 /tmp/smoke.kk.err 2>/dev/null | head -c 300) $(echo "$kk_range_body" | head -c 300)"
+fi
+
 # ---------- 14. account deletion (LAST: wipes the smoke user) ----------
+step "13j. Import: GET week lists logs; preview a Hevy CSV → commit 201 → replay 200 → week shows import_id → re-import adds nothing → delete 204/404"
+import_csv=/tmp/smoke-import.csv
+printf '%s\n' '"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Bench Press (Barbell)",,"",0,"warmup",95,10,,,' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Bench Press (Barbell)",,"",1,"normal",135,5,,,' \
+  '"Smoke Push","3 Mar 2025, 18:00","3 Mar 2025, 18:45","","Smoke Custom Raise",,"",0,"normal",20,12,,,' > "$import_csv"
+preview_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv")
+preview_body=$(cat /tmp/smoke.body)
+import_key="smoke-import-v1"
+commit_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports" "${auth[@]}" -H "Idempotency-Key: $import_key" \
+  -F "file=@$import_csv;type=text/csv" -F "unmatched=keep" -F "operation_key=$import_key")
+commit_body=$(cat /tmp/smoke.body)
+import_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$commit_body" 2>/dev/null || true)
+replay_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports" "${auth[@]}" -H "Idempotency-Key: $import_key" \
+  -F "file=@$import_csv;type=text/csv" -F "unmatched=keep" -F "operation_key=$import_key")
+replay_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$(cat /tmp/smoke.body)" 2>/dev/null || true)
+week_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs?week=2025-03-03" "${auth[@]}")
+week_ok=false
+if [ "$week_status" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert [(l['date'], l['import_id']) for l in d]==[('2025-03-03', sys.argv[2])]" "$(cat /tmp/smoke.body)" "$import_id" 2>/dev/null; then
+  week_ok=true
+fi
+day_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/logs/2025-03-03" "${auth[@]}")
+day_body=$(cat /tmp/smoke.body)
+again_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv")
+again_body=$(cat /tmp/smoke.body)
+bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/imports/preview" "${auth[@]}" -F "file=@$import_csv;type=text/csv;filename=x.csv" -F "file=@$import_csv")
+delete_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/imports/$import_id" "${auth[@]}")
+redelete_status=$(curl -s -o /dev/null -w "%{http_code}" -X DELETE "$API/api/v1/imports/$import_id" "${auth[@]}")
+gone_status=$(curl -s -o /dev/null -w "%{http_code}" "$API/api/v1/logs/2025-03-03" "${auth[@]}")
+if [ "$week_ok" = true ] && [ "$preview_status" = "200" ] && [ "$commit_status" = "201" ] && [ "$replay_status" = "200" ] && [ "$replay_id" = "$import_id" ] \
+  && [ "$day_status" = "200" ] && [ "$bad_status" = "400" ] && [ "$delete_status" = "204" ] && [ "$redelete_status" = "404" ] && [ "$gone_status" = "404" ] \
+  && python3 -c "
+import json,sys
+p=json.loads(sys.argv[1]); d=json.loads(sys.argv[2]); a=json.loads(sys.argv[3]); i=sys.argv[4]
+assert p['source']=='hevy' and p['source_weight_unit']=='lb' and p['warmup_sets_skipped']==1 and p['keep']['set_count']==2 and p['skip']['set_count']==1
+assert p['unmatched_exercises']==[{'name':'Smoke Custom Raise','set_count':1}]
+assert d['import_id']==i and d['type_id']=='other' and [s['exercise_name'] for s in d['set_logs']]==['Barbell Bench Press','Smoke Custom Raise']
+assert a['days_already_present']==1 and a['keep']['day_count']==0
+" "$preview_body" "$day_body" "$again_body" "$import_id" 2>/dev/null; then
+  ok "week list 200; import previewed, committed once, replayed, deduped, and removed"
+else
+  bad "import acceptance failed (week=$week_status preview=$preview_status commit=$commit_status replay=$replay_status day=$day_status again=$again_status two-files=$bad_status delete=$delete_status/$redelete_status gone=$gone_status)" "$(echo "$day_body" | head -c 280)"
+fi
+
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then
