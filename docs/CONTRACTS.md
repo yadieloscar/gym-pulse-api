@@ -1071,6 +1071,94 @@ Response 200 is the owned entry. A missing or foreign UUID returns the shared
 Removes the owned entry. A repeat delete, or a missing or foreign id, returns
 `404 NOT_FOUND`. Account deletion removes every entry.
 
+### Knee Kit days (contract 1.7.0)
+
+A Knee Kit day is one athlete's daily knee checklist and pain log for one local
+calendar date: the checklist items they ticked, an optional morning and
+activity pain score, and two warning flags. The checklist content is bundled in
+the app; the API stores item ids as facts and does not check them against a
+catalog. The API never diagnoses and computes no guidance, traffic light, or
+streak: the app derives those from the range read. Days are never counted:
+stats (`this_week`, `streak_weeks`, totals), participation, records, exercise
+history, volume, distribution, plan, schedule, day status, sport activities,
+mobility sessions, and health exports ignore them. Additive in contract 1.7.0;
+older clients never call these routes. Neither route carries a route-specific
+rate limit, as for nutrition days.
+
+`KneeKitDay`:
+
+```json
+{
+  "id": "<uuid>", "date": "2026-11-14",
+  "completed_items": ["isometric-hold", "morning-check"],
+  "morning_pain": 3, "activity_pain": null,
+  "sharp_pain": false, "limping": false,
+  "revision": 1, "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+`completed_items` is always an array (`[]` when nothing is ticked), stored and
+returned **sorted ascending by id**, not in request order: it is a set.
+`morning_pain` and `activity_pain` are always present, `null` when not logged.
+
+#### `GET /api/v1/knee-kit/days?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Both dates are required and inclusive; a malformed date, `from` after `to`, or
+a range longer than 366 days returns `422 VALIDATION_ERROR` (the same rule and
+error shape as nutrition days). Response `200` is `{ "days": [KneeKitDay] }`,
+oldest first; `days` is `[]` when the athlete has none in the range. The read
+does not need a training profile.
+
+#### `PUT /api/v1/knee-kit/days/{date}`
+
+Creates or **fully replaces** the athlete's record for one date. Requires
+`Idempotency-Key` equal to `operation_key` (otherwise `422` on
+`Idempotency-Key`). `date` is `YYYY-MM-DD` and may not be after the athlete's
+local today in their saved training-profile timezone; an athlete without a
+training profile receives the shared `404 NOT_FOUND`, as for nutrition days.
+
+```json
+{
+  "completed_items": ["morning-check", "isometric-hold"],
+  "morning_pain": 3,
+  "activity_pain": null,
+  "sharp_pain": false,
+  "limping": false,
+  "expected_revision": 0,
+  "operation_key": "knee-day:2026-11-14:<uuid>"
+}
+```
+
+| Field | Rule |
+|---|---|
+| `date` (path) | `YYYY-MM-DD`, a real calendar date, not after the athlete's local today. |
+| `completed_items` | Required array; may be `[]`; absent or `null` is rejected. At most 12 entries, each a lowercase slug (`a-z`, `0-9`, single hyphens between parts) of 1–64 characters, no duplicates. Order is not significant. |
+| `morning_pain`, `activity_pain` | Optional whole number 0–10; omitted or `null` means not logged. |
+| `sharp_pain`, `limping` | Optional boolean; omitted means `false`. |
+| `expected_revision` | Required whole number, 0 or greater: `0` when the client believes no record exists for the date, otherwise the stored `revision`. |
+| `operation_key` | Trimmed, 1–128 characters. |
+
+A violation returns `422 VALIDATION_ERROR` with `details.field` naming the
+field (`date`, `completed_items`, `morning_pain`, `activity_pain`,
+`expected_revision`, or `operation_key`). A value of the wrong JSON type (a
+fractional pain score, a non-boolean flag, a non-array `completed_items`) is
+`400 BAD_REQUEST`.
+
+Response `201` with the stored `KneeKitDay` when the record was created
+(`revision` 1), `200` when an existing record was replaced (`revision`
+incremented by one). Every field is replaced: a pain value left out becomes
+`null` and a flag left out becomes `false`. There is no delete-by-empty: a save
+with no items, no pain values, and both flags false is still stored, because
+the athlete unticked things. A record is removed only by account deletion.
+
+A stale `expected_revision` returns `409 REVISION_CONFLICT` with
+`details.expected_revision`, `details.actual_revision`, and the stored day
+under `resource`; `actual_revision` is `0` and `resource` is omitted when no
+record exists. An identical retry with the same `operation_key` replays the
+original status and body, even after the day has since changed; the same items
+in a different order are the same payload. The same key with a different date
+or body returns `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to the athlete.
+
 ### Health exports
 
 Health exports remember the health-store identity the device received when it
@@ -1810,7 +1898,9 @@ A read failure answers the standard JSON error with no attachment header.
       "carbs_g": 50 | null, "fat_g": 8 | null, "logged_at": "RFC3339" }],
     "own_foods": [{ "name": "Oats", "brand": null, "serving_label": "1 bowl", "serving_g": 250,
       "energy_kcal": 400, "protein_g": 30, "carbs_g": 50, "fat_g": 8, "archived": false }]
-  }
+  },
+  "knee_kit_days": [{ "date": "YYYY-MM-DD", "completed_items": ["morning-check"],
+    "morning_pain": 3 | null, "activity_pain": null, "sharp_pain": false, "limping": false }]
 }
 ```
 
@@ -1830,6 +1920,9 @@ A read failure answers the standard JSON error with no attachment header.
 - `schema_version` increases only when a field is removed or changes meaning.
   New fields and sections are additive and keep the version; readers must
   ignore unknown fields.
+- `knee_kit_days` (added in contract 1.7.0, additive, `schema_version` still
+  1) holds every Knee Kit day oldest first; `completed_items` is sorted and
+  `[]` when nothing was ticked. Exports made by an older API omit the key.
 - Programs, the schedule, weekly plans, criteria-based training blocks, and
   Health export receipts are not in version 1.
 
