@@ -7,7 +7,7 @@ No table or column changes. Migration 026 changes who can reach the existing sch
 | Role | Connection | Attributes | Privileges |
 |---|---|---|---|
 | Owner (`gympulse` locally, `postgres` on Supabase) | `DATABASE_MIGRATE_URL` | Unchanged | Owns all tables; runs migrations only |
-| `gym_pulse_api` | `DATABASE_URL`, `DATABASE_LOCK_URL` | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; `LOGIN` only when an operator or `scripts/ci/runtime-role.sql` adds it | `USAGE` on `public`, `auth`; `SELECT, INSERT, UPDATE, DELETE` on the 30 application tables; `SELECT` on `auth.users.id` only (migration 041); default DML on future owner-created tables in `public` |
+| `gym_pulse_api` | `DATABASE_URL`, `DATABASE_LOCK_URL` | `NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`; `LOGIN` only when an operator or `scripts/ci/runtime-role.sql` adds it | `USAGE` on `public`, `auth`; `SELECT, INSERT, UPDATE, DELETE` on the 30 application tables; `SELECT` on `auth.users.id` only (migration 039); default DML on future owner-created tables in `public` |
 
 Explicitly absent: `CREATE` on `public`, any privilege on `schema_migrations`, `TRUNCATE`,
 `REFERENCES`, `TRIGGER`, ownership of any object, membership in any other role.

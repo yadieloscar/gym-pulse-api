@@ -90,7 +90,7 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
 2. **Grant** by deploying the release that contains migration 026 with the current configuration
    (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL). The
    migration grants schema usage, table DML, default DML for future tables, and creates the
-   `gym_pulse_api_access` policy on every application table. Migrations 026 and 041 together
+   `gym_pulse_api_access` policy on every application table. Migrations 026 and 039 together
    leave the role with `SELECT` on `auth.users.id` only, never the emails or password hashes
    in the other columns. If the log shows a warning that either statement failed, run
    `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; REVOKE SELECT ON auth.users FROM gym_pulse_api;
