@@ -44,8 +44,8 @@ against a migrated PostgreSQL; `go test ./...`, `golangci-lint run`, `./scripts/
 
 **Project Type**: Go web service
 
-**Performance Goals**: A meal log is one transaction with one food read, one multi-row insert, and
-one day rollup regardless of item count (SC-001). The list is two queries for up to 50 meals × 20
+**Performance Goals**: A meal log is one transaction with one food read, at most 20 entry inserts,
+and one day rollup regardless of item count (SC-001). The list is two queries for up to 50 meals × 20
 items.
 
 **Constraints**: Additive only (FR-016); owner-scoped with the shared 404; no values stored on a
@@ -100,16 +100,17 @@ migrations/039_create_saved_meals.{up,down}.sql
 internal/
 ├── dao/{saved_meal_dao.go,saved_meal_dao_test.go}    # list, create, update, delete, log transactions
 ├── dao/saved_meal_integration_test.go                # //go:build integration
-├── dao/food_entry_dao.go                             # extract the typed-totals conversion for reuse
+├── dao/food_dao.go                                   # listFoodsByIDs takes a querier so it runs in a transaction
 ├── dao/account_dao.go                                # delete saved_meals before user_foods
 ├── dao/export_dao.go                                 # readExportSavedMeals
 ├── dao/supabase_security_migration_test.go           # expect the two tables
 ├── handler/{saved_meal.go,saved_meal_test.go}        # five routes
 ├── handler/response.go                               # SAVED_MEAL_LIMIT_REACHED mapping; details.index
-├── model/{saved_meal.go,saved_meal_test.go}          # SavedMeal, items, requests, outcomes, limit error
+├── model/{saved_meal.go,saved_meal_test.go}          # SavedMeal, items, requests, outcomes, limit error, item values and totals
+├── model/types.go                                    # ValidationError.Index
 ├── model/export.go                                   # ExportSavedMeal under ExportNutrition
 ├── router/router.go                                  # routes under /api/v1/nutrition
-└── service/{saved_meal_svc.go,saved_meal_svc_test.go} # validation, hashing, item values and totals
+└── service/{saved_meal_svc.go,saved_meal_svc_test.go} # request validation, local-date rule, hashing
 scripts/smoke.sh                                      # step 13k: save → list → log → replay → edit → delete
 ```
 
@@ -117,10 +118,17 @@ scripts/smoke.sh                                      # step 13k: save → list 
 rather than growing `food_svc.go` (481 lines) and `food_entry_dao.go` (418 lines). The meal DAO
 shares the package-level helpers the entry DAO already exposes inside `internal/dao`
 (`lockUserDomain`, `findIdempotency`, `insertIdempotency`, `getFood`, `lockNutritionDay`,
-`insertFoodEntry`, `recomputeNutritionDay`), so the day rollup has one implementation. The only
-edit to shipped entry code is extracting the "typed totals become one quick add" block from
-`CreateEntry` into a helper both callers use; behaviour is unchanged and covered by the existing
-conversion test.
+`insertFoodEntry`, `recomputeNutritionDay`), so the day rollup has one implementation.
+
+*Amended during implementation (2026-11-15)*: the plan first proposed extracting the "typed totals
+become one quick add" block out of `CreateEntry`. The existing static test
+`TestFoodEntryDAOCreateKeepsAtomicOrder` pins that block inside `CreateEntry`, and weakening a test
+to make room for a refactor is not allowed, so `CreateEntry` is untouched and the meal DAO has its
+own ten-line `convertTypedTotals` that mirrors it. The only edit to shipped food code is that
+`ListFoodsByIDs` now delegates to `listFoodsByIDs(ctx, querier, …)` so the same read runs inside a
+transaction. Item values and totals are pure functions in `internal/model`
+(`NewSavedMealItem`, `SumMealItems`) called by the DAO, because the response is stored in the
+idempotency ledger inside the transaction.
 
 ## Design Assessment
 

@@ -14,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -40,6 +40,8 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"POST /api/v1/nutrition/foods", "PUT /api/v1/nutrition/foods/{id}", "DELETE /api/v1/nutrition/foods/{id}",
 		"GET /api/v1/nutrition/days/{date}/entries", "POST /api/v1/nutrition/days/{date}/entries",
 		"PUT /api/v1/nutrition/entries/{id}", "DELETE /api/v1/nutrition/entries/{id}",
+		"GET /api/v1/nutrition/meals", "POST /api/v1/nutrition/meals", "PUT /api/v1/nutrition/meals/{id}", "DELETE /api/v1/nutrition/meals/{id}",
+		"POST /api/v1/nutrition/days/{date}/meal-logs",
 		"GET /api/v1/training-blocks/", "POST /api/v1/training-blocks/", "GET /api/v1/training-blocks/{block_id}/",
 		"POST /api/v1/training-blocks/{block_id}/exposures", "POST /api/v1/training-blocks/{block_id}/exposures/{exposure_id}/next-morning",
 		"POST /api/v1/training-blocks/{block_id}/transitions",

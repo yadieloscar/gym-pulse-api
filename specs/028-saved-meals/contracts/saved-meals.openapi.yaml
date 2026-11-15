@@ -50,7 +50,7 @@ paths:
 components:
   responses:
     ValidationError:
-      description: 'VALIDATION_ERROR; details.field is one of name, items, date, meal, logged_at, expected_revision, operation_key, Idempotency-Key. With field items, details.index is the zero-based item at fault when one item is the cause.'
+      description: 'VALIDATION_ERROR; details.field is one of name, items, date, meal, expected_revision, operation_key, Idempotency-Key. With field items, details.index is the zero-based item at fault when one item is the cause.'
       content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
   schemas:
     Error:

@@ -25,7 +25,7 @@ prefix for the list and the count).
 | `meal_id` | UUID | Not null, `saved_meals(id)` cascade delete |
 | `position` | SMALLINT | Not null; `CHECK (position BETWEEN 0 AND 19)` |
 | `catalog_food_id` | UUID | Nullable; `food_catalog(id)` restrict |
-| `user_food_id` | UUID | Nullable; `user_foods(id)` restrict |
+| `user_food_id` | UUID | Nullable; `user_foods(id)` no action, deferrable initially deferred (see `research.md`) |
 | `serving_label` | TEXT | Not null; `CHECK (char_length(serving_label) BETWEEN 1 AND 60)` |
 | `serving_g` | NUMERIC(7,1) | Not null; `CHECK (serving_g > 0 AND serving_g <= 5000)` |
 | `amount` | NUMERIC(5,2) | Not null; `CHECK (amount BETWEEN 0.1 AND 50)` |
@@ -35,8 +35,8 @@ Checks: `ck_saved_meal_items_food`: exactly one of `catalog_food_id`, `user_food
 Indexes: `ux_saved_meal_items_position(meal_id, position)` unique (order, and the 20-item cap with
 the position check); `ux_saved_meal_items_food_serving(meal_id, COALESCE(catalog_food_id,
 user_food_id), serving_g, serving_label)` unique (no duplicate food and serving in one meal);
-`ix_saved_meal_items_user_food(user_food_id) WHERE user_food_id IS NOT NULL` (foreign-key side for
-the restrict check and the private-food ownership join).
+`ix_saved_meal_items_user_food(user_food_id) WHERE user_food_id IS NOT NULL` (referencing side of
+the own-food key).
 
 Both tables: RLS enabled, Data API roles revoked, `gym_pulse_api_access` policy and DML grants for
 the runtime role, as migration 030 does for the food tables.
@@ -74,7 +74,8 @@ ledger `204` → commit.
    `422` with the item index.
 6. `lockNutritionDay`; a `manual` or `apple_health` day with no entries becomes one `quick_add`
    entry, returned under `converted` (spec 014 rule, same code path).
-7. One multi-row insert into `food_entries`, item `i` with `logged_at = base + i µs`.
+7. One insert per item into `food_entries` through `insertFoodEntry`, item `i` with
+   `logged_at = base + i µs`.
 8. `recomputeNutritionDay` once; set `saved_meals.last_logged_at = now()` (revision unchanged).
 9. Ledger `201` with the response body; commit.
 
@@ -83,10 +84,10 @@ none.
 
 ## Read
 
-`ListMeals`: one query for the athlete's meals joined to their items, ordered `last_logged_at DESC
-NULLS LAST, created_at DESC, id`, items by `position`; one query for the distinct foods. At most 50
-meals × 20 items. Item values and meal totals are computed in the service from each food's current
-`per_100g`.
+`ListMeals`: inside one read-only repeatable-read transaction, one query for the athlete's meals
+ordered `last_logged_at DESC NULLS LAST, created_at DESC, id`, one for their items by `position`,
+and two for the foods (catalog, own). At most 50 meals × 20 items. Item values and meal totals are
+computed by `model.NewSavedMealItem` and `model.SumMealItems` from each food's current `per_100g`.
 
 ## Deletion and export
 

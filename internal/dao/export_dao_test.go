@@ -23,6 +23,8 @@ func TestExportDAOReadsOneOwnedReadOnlySnapshot(t *testing.T) {
 		"WHERE fe.user_id=$1",
 		"uf.user_id = fe.user_id",
 		"FROM knee_kit_days WHERE user_id=$1 ORDER BY date",
+		"WHERE sm.user_id=$1",
+		"uf.user_id = sm.user_id",
 	} {
 		if !strings.Contains(source, invariant) {
 			t.Errorf("export DAO missing %q", invariant)

@@ -162,6 +162,7 @@ func main() {
 	nutritionRepo := dao.NewNutritionDAO(pool)
 	foodRepo := dao.NewFoodDAO(pool)
 	foodEntryRepo := dao.NewFoodEntryDAO(pool)
+	savedMealRepo := dao.NewSavedMealDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
 	programGenerationRepo := dao.NewProgramGenerationDAO(pool, cfg.ProgramGenerationTimeout+generationLedgerMargin)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
@@ -203,6 +204,7 @@ func main() {
 	usdaSource := service.NewUSDAFoodSource(cfg.USDAFDCBaseURL, cfg.USDAFDCAPIKey, nil)
 	openFoodFactsSource := service.NewOpenFoodFactsSource(cfg.OpenFoodFactsBaseURL, cfg.FoodSourceUserAgent, nil)
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
+	savedMealSvc := service.NewSavedMealService(savedMealRepo, trainingProfileRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
 	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).
@@ -244,12 +246,13 @@ func main() {
 	healthExportHandler := handler.NewHealthExportHandler(healthExportSvc)
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
 	foodHandler := handler.NewFoodHandler(foodSvc)
+	savedMealHandler := handler.NewSavedMealHandler(savedMealSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

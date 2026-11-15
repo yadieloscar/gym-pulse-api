@@ -213,7 +213,7 @@ func TestExportOfNewAthleteIsEmptyArrays(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(got)
-	for _, want := range []string{`"profile":null`, `"workouts":[]`, `"templates":[]`, `"food_entries":[]`, `"own_foods":[]`, `"knee_kit_days":[]`} {
+	for _, want := range []string{`"profile":null`, `"workouts":[]`, `"templates":[]`, `"food_entries":[]`, `"own_foods":[]`, `"saved_meals":[]`, `"knee_kit_days":[]`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("missing %s in %s", want, body)
 		}

@@ -43,6 +43,7 @@ func New(
 	mobilitySessionHandler *handler.MobilitySessionHandler,
 	kneeKitHandler *handler.KneeKitHandler,
 	workoutImportHandler *handler.WorkoutImportHandler,
+	savedMealHandler *handler.SavedMealHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -159,6 +160,11 @@ func New(
 					r.Post("/days/{date}/entries", foodHandler.CreateEntry)
 					r.Put("/entries/{id}", foodHandler.UpdateEntry)
 					r.Delete("/entries/{id}", foodHandler.DeleteEntry)
+					r.Get("/meals", savedMealHandler.List)
+					r.Post("/meals", savedMealHandler.Create)
+					r.Put("/meals/{id}", savedMealHandler.Update)
+					r.Delete("/meals/{id}", savedMealHandler.Delete)
+					r.Post("/days/{date}/meal-logs", savedMealHandler.Log)
 				})
 				r.Route("/training-blocks", func(r chi.Router) {
 					r.Get("/", trainingBlockHandler.List)

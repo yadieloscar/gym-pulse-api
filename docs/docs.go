@@ -1317,6 +1317,80 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nutrition/days/{date}/meal-logs": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Optional items replace the saved items for this log only. Typed totals already on the day are converted into one quick_add entry (converted).",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Log a saved meal to a day as one food entry per item, all or nothing",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local calendar date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "meal, optional items",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.LogMealRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.MealLogged"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nutrition/entries/{id}": {
             "put": {
                 "security": [
@@ -1736,6 +1810,222 @@ const docTemplate = `{
                     {
                         "type": "string",
                         "description": "Food id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Current revision",
+                        "name": "expected_revision",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/meals": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Item values and totals are computed from each food's current facts; a meal stores none.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "The athlete's saved meals, most recently logged first",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedMeals"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Save a meal: a name and 1 to 20 foods, each with a serving and amount",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Name and items",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveMealRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedMeal"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/meals/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Replace a saved meal's name and items; days already logged do not change",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved meal id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Name and items with expected_revision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveMealRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedMeal"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Delete a saved meal; entries it logged stay on their days",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved meal id",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -4900,6 +5190,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.ExportOwnFood"
                     }
                 },
+                "saved_meals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportSavedMeal"
+                    }
+                },
                 "targets": {
                     "type": "array",
                     "items": {
@@ -4990,6 +5286,37 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "display_name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExportSavedMeal": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportSavedMealItem"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExportSavedMealItem": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "food_name": {
+                    "type": "string"
+                },
+                "serving_g": {
+                    "type": "number"
+                },
+                "serving_label": {
                     "type": "string"
                 }
             }
@@ -5698,6 +6025,26 @@ const docTemplate = `{
                 }
             }
         },
+        "model.LogMealRequest": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.MealItemInput"
+                    }
+                },
+                "logged_at": {
+                    "type": "string"
+                },
+                "meal": {
+                    "$ref": "#/definitions/model.MealRef"
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
         "model.MaterializeScheduleRequest": {
             "type": "object",
             "required": [
@@ -5723,6 +6070,65 @@ const docTemplate = `{
                 },
                 "to": {
                     "type": "string"
+                }
+            }
+        },
+        "model.MealItemInput": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "food": {
+                    "$ref": "#/definitions/model.FoodRef"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
+                }
+            }
+        },
+        "model.MealLogged": {
+            "type": "object",
+            "properties": {
+                "converted": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.FoodEntry"
+                    }
+                },
+                "day": {
+                    "$ref": "#/definitions/model.NutritionDay"
+                },
+                "entries": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.FoodEntry"
+                    }
+                }
+            }
+        },
+        "model.MealRef": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.MealTotals": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "protein_g": {
+                    "type": "number"
                 }
             }
         },
@@ -6373,6 +6779,26 @@ const docTemplate = `{
                 }
             }
         },
+        "model.SaveMealRequest": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.MealItemInput"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
         "model.SaveNutritionDayRequest": {
             "type": "object",
             "properties": {
@@ -6457,6 +6883,78 @@ const docTemplate = `{
                 },
                 "serving": {
                     "$ref": "#/definitions/model.Serving"
+                }
+            }
+        },
+        "model.SavedMeal": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SavedMealItem"
+                    }
+                },
+                "last_logged_at": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "totals": {
+                    "$ref": "#/definitions/model.MealTotals"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.SavedMealItem": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "available": {
+                    "type": "boolean"
+                },
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "food": {
+                    "$ref": "#/definitions/model.Food"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "serving": {
+                    "$ref": "#/definitions/model.Serving"
+                }
+            }
+        },
+        "model.SavedMeals": {
+            "type": "object",
+            "properties": {
+                "meals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.SavedMeal"
+                    }
                 }
             }
         },

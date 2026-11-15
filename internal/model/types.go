@@ -34,6 +34,9 @@ func (e *NotFoundError) Error() string { return e.Message }
 type ValidationError struct {
 	Message string
 	Field   string
+	// Index is the zero-based position of the list item at fault, when one
+	// item of a list field is the cause.
+	Index *int
 }
 
 func (e *ValidationError) Error() string { return e.Message }

@@ -198,11 +198,18 @@ func getFood(ctx context.Context, q querier, userID, id uuid.UUID) (*model.Food,
 }
 
 func (r *foodDAO) ListFoodsByIDs(ctx context.Context, userID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]model.Food, error) {
+	return listFoodsByIDs(ctx, r.pool, userID, ids)
+}
+
+// listFoodsByIDs resolves catalog foods and the athlete's own foods, archived
+// ones included, in two queries. Ids that are unknown or belong to another
+// athlete are simply absent from the result.
+func listFoodsByIDs(ctx context.Context, q querier, userID uuid.UUID, ids []uuid.UUID) (map[uuid.UUID]model.Food, error) {
 	out := make(map[uuid.UUID]model.Food, len(ids))
 	if len(ids) == 0 {
 		return out, nil
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+catalogColumns+` FROM food_catalog WHERE id = ANY($1)`, ids)
+	rows, err := q.Query(ctx, `SELECT `+catalogColumns+` FROM food_catalog WHERE id = ANY($1)`, ids)
 	if err != nil {
 		return nil, fmt.Errorf("listing catalog foods: %w", err)
 	}
@@ -214,7 +221,7 @@ func (r *foodDAO) ListFoodsByIDs(ctx context.Context, userID uuid.UUID, ids []uu
 	for _, food := range catalog {
 		out[food.ID] = food
 	}
-	rows, err = r.pool.Query(ctx, `SELECT `+userFoodColumns+` FROM user_foods WHERE user_id=$1 AND id = ANY($2)`, userID, ids)
+	rows, err = q.Query(ctx, `SELECT `+userFoodColumns+` FROM user_foods WHERE user_id=$1 AND id = ANY($2)`, userID, ids)
 	if err != nil {
 		return nil, fmt.Errorf("listing user foods: %w", err)
 	}

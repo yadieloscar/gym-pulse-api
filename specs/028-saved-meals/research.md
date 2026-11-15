@@ -30,8 +30,8 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
 
 - **Decision**: `LogMeal` runs in one transaction: `lockUserDomain(nutrition:)` → idempotency replay
   → lock the meal row → resolve items → load all foods in one query → compute snapshots →
-  `lockNutritionDay` → convert typed totals (spec 014 rule) → one multi-row insert →
-  `recomputeNutritionDay` once → set `saved_meals.last_logged_at` → ledger → commit.
+  `lockNutritionDay` → convert typed totals (spec 014 rule) → one insert per item through the
+  existing `insertFoodEntry` → `recomputeNutritionDay` once → set `saved_meals.last_logged_at` → ledger → commit.
 - **Rationale**: FR-007 and FR-008. The same advisory lock already serialises entry writes and day
   saves, so two devices logging at once cannot interleave and the day is summed once per log.
 - **Alternatives considered**: calling `CreateEntry` once per item from the service (N
@@ -54,7 +54,9 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
 - **Decision**: the service validates everything knowable from the request (date against the
   athlete's local today, operation key, name length, item count, amount bounds, duplicate
   food-and-serving pairs, override list shape) and hashes the payload. The DAO transaction resolves
-  foods and calls the pure model functions `model.ResolveServing` and `model.EntryValues`.
+  foods and calls the pure model functions `model.ResolveServing`, `model.NewSavedMealItem` (which
+  uses `model.EntryValues`), and `model.SumMealItems`, and stores the assembled response in the
+  idempotency ledger.
 - **Rationale**: a meal's saved items are only stable under the lock, so the snapshot must be
   computed inside the transaction. `CreateEntry`'s DAO already re-reads the food and applies the
   archived rule in-transaction; this follows the same split. The maths stays in `internal/model`,
@@ -117,8 +119,8 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
   false` and no values, and the meal's `totals` is `null`. Such a meal cannot be logged as saved
   (`422`, index of the item).
 - **Rationale**: spec edge case; never show wrong numbers. With today's constraints (catalog rows
-  are checked and never deleted; foreign keys are `RESTRICT`) this is defensive only, so it is
-  covered by a service test with a stub DAO rather than a database fixture.
+  are checked and never deleted; an item's food cannot be removed while the item exists) this is defensive only, so it is
+  covered by model unit tests (`NewSavedMealItem`, `SumMealItems`) rather than a database fixture.
 
 ### Undo
 
@@ -136,11 +138,24 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
 - **Rationale**: mirrors `foods` and `days/{date}/entries`: the date is in the path, the referenced
   resource is in the body (`{"meal": {"id": …}}` like `{"food": {"id": …}}`).
 
+### The own-food key on an item is deferred
+
+- **Decision**: `saved_meal_items.user_food_id` is `ON DELETE NO ACTION DEFERRABLE INITIALLY
+  DEFERRED`; `catalog_food_id` stays `RESTRICT`.
+- **Rationale**: found by the integration suite. Deleting `auth.users` cascades to `user_foods` and
+  to `saved_meals` as separate statements in no guaranteed order. `RESTRICT`, and a non-deferred
+  `NO ACTION`, are checked inside the cascaded `user_foods` delete, before the meal and its items
+  are gone, and fail the identity removal. A deferred check runs at commit, when both cascades have
+  finished. Deleting an own food a meal still holds is still refused, at commit.
+- **Alternatives considered**: `ON DELETE CASCADE` (a deleted food would silently shrink or empty a
+  meal); relying on `DeleteUserData`'s statement order alone (does not cover the provider removing
+  the identity row).
+
 ### Export and account deletion
 
 - **Decision**: the JSON export gains `nutrition.saved_meals` (name, items with food name, serving,
   amount), additive with `schema_version` unchanged, as `knee_kit_days` did. Account deletion
-  deletes `saved_meals` before `user_foods` because items reference private foods with `RESTRICT`.
+  deletes `saved_meals` before `user_foods` because items reference private foods (see the deferred key above).
 - **Rationale**: FR-014, FR-015.
 
 ## Resolved Technical Questions

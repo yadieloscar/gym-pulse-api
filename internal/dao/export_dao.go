@@ -52,6 +52,7 @@ func (r *exportDAO) Export(ctx context.Context, userID uuid.UUID, exportedAt tim
 		readExportNutritionTargets,
 		readExportFoodEntries,
 		readExportOwnFoods,
+		readExportSavedMeals,
 		readExportKneeKitDays,
 	}
 	for _, read := range readers {
@@ -421,6 +422,46 @@ func readExportOwnFoods(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *m
 		return fmt.Errorf("scanning export own foods: %w", err)
 	}
 	out.Nutrition.OwnFoods = append(out.Nutrition.OwnFoods, foods...)
+	return nil
+}
+
+func readExportSavedMeals(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
+	rows, err := tx.Query(ctx, `
+		SELECT sm.id, sm.name, COALESCE(uf.name, fc.name), i.serving_label, i.serving_g, i.amount
+		FROM saved_meals sm
+		JOIN saved_meal_items i ON i.meal_id = sm.id
+		LEFT JOIN user_foods uf ON uf.id = i.user_food_id AND uf.user_id = sm.user_id
+		LEFT JOIN food_catalog fc ON fc.id = i.catalog_food_id
+		WHERE sm.user_id=$1
+		ORDER BY sm.created_at, sm.id, i.position`, userID)
+	if err != nil {
+		return fmt.Errorf("querying export saved meals: %w", err)
+	}
+	defer rows.Close()
+	var current uuid.UUID
+	for rows.Next() {
+		var mealID uuid.UUID
+		var mealName string
+		var foodName *string
+		var item model.ExportSavedMealItem
+		if err := rows.Scan(&mealID, &mealName, &foodName, &item.ServingLabel, &item.ServingG, &item.Amount); err != nil {
+			return fmt.Errorf("scanning export saved meals: %w", err)
+		}
+		if foodName != nil {
+			item.FoodName = *foodName
+		}
+		meals := out.Nutrition.SavedMeals
+		if len(meals) == 0 || mealID != current {
+			meals = append(meals, model.ExportSavedMeal{Name: mealName, Items: []model.ExportSavedMealItem{}})
+			current = mealID
+		}
+		last := &meals[len(meals)-1]
+		last.Items = append(last.Items, item)
+		out.Nutrition.SavedMeals = meals
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reading export saved meals: %w", err)
+	}
 	return nil
 }
 

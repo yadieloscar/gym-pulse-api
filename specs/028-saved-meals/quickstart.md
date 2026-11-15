@@ -11,8 +11,9 @@ and transactions are in [data-model.md](./data-model.md).
    `supabase_security_migration_test.go` expectations.
 2. Model: `SavedMeal`, `SavedMealItem`, `SaveMealRequest`, `LogMealRequest`, `MealLogged`, outcomes,
    `SavedMealLimitError`; item-value and totals maths reusing `EntryValues`; unit tests.
-3. Extract the typed-totals conversion from `CreateEntry` into a shared DAO helper; existing entry
-   tests stay green unchanged.
+3. Make `ListFoodsByIDs` delegate to a `querier`-based helper so it runs in a transaction; leave
+   `CreateEntry` untouched (a static test pins its conversion block) and mirror the conversion in
+   the meal DAO.
 4. DAO: list, create, update, delete, log, each with ledger replay; integration tests.
 5. Service: validation, hashing, local-date rule, item values, totals, `available`.
 6. Handler, routes, `response.go` mapping, wiring in `main.go`, router test.
@@ -41,7 +42,7 @@ and transactions are in [data-model.md](./data-model.md).
 | FR-014, SC-005 | Handler and integration: another athlete's meal id on update, delete, and log → shared `404`; another athlete's private food as an item → the same `422` as an unknown id; account deletion leaves zero rows in both tables and succeeds with a private food referenced by a meal |
 | FR-015 | Export test: `nutrition.saved_meals` lists name and items; `[]` when none |
 | FR-016, FR-017 | `./scripts/smoke-toggle.sh` including new step 13k; contract section reviewed against the handler tests |
-| Unavailable item (edge case) | Service test with a stub DAO returning an implausible food: item `available: false`, values omitted, `totals: null`; logging it as saved → `422` with the index |
+| Unavailable item (edge case) | Model tests: an implausible food yields `available: false`, no values, and `totals: null`; static DAO test: the log refuses an unavailable item before the day is locked |
 
 ## Manual acceptance
 

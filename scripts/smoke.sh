@@ -1072,6 +1072,88 @@ else
   bad "import acceptance failed (week=$week_status preview=$preview_status commit=$commit_status replay=$replay_status day=$day_status again=$again_status two-files=$bad_status delete=$delete_status/$redelete_status gone=$gone_status)" "$(echo "$day_body" | head -c 280)"
 fi
 
+# ---------- 13k. saved meals (contract 1.8.0) ----------
+step "13k. Saved meals: own food → meal 201 → duplicate name 422 → list → log 201 (replay) → override log → bad item 422 → edit 200 → stale 409 → delete 204 → day keeps its entries"
+sm_put() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X "$1" "$API$2" "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $3" -d "$4"; }
+sm_get() { curl -s -o /tmp/smoke.body -w "%{http_code}" "$API$1" "${auth[@]}"; }
+sm_del() { curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API$1" "${auth[@]}" -H "Idempotency-Key: $2"; }
+sm_today=$(python3 -c "from datetime import datetime,timezone; print(datetime.now(timezone.utc).date().isoformat())")
+sm_food_status=$(sm_put POST "/api/v1/nutrition/foods" "smoke-sm-food" '{"name":"Smoke oats","serving":{"label":"1 cup","grams":80},"energy_kcal":300,"protein_g":10,"carbs_g":54,"fat_g":5,"operation_key":"smoke-sm-food"}')
+sm_food_id=$(python3 -c "import json; print(json.load(open('/tmp/smoke.body'))['id'])" 2>/dev/null || echo none)
+sm_item_cup="{\"food\":{\"id\":\"$sm_food_id\"},\"serving\":{\"label\":\"1 cup\",\"grams\":80},\"amount\":1}"
+sm_item_100="{\"food\":{\"id\":\"$sm_food_id\"},\"serving\":{\"label\":\"100 g\",\"grams\":100},\"amount\":0.5}"
+sm_create_body_in="{\"name\":\"Smoke breakfast\",\"items\":[$sm_item_cup,$sm_item_100],\"operation_key\":\"smoke-sm-a\"}"
+sm_create_status=$(sm_put POST "/api/v1/nutrition/meals" "smoke-sm-a" "$sm_create_body_in")
+sm_create_body=$(cat /tmp/smoke.body)
+sm_meal_id=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['id'])" "$sm_create_body" 2>/dev/null || echo none)
+sm_create_replay_status=$(sm_put POST "/api/v1/nutrition/meals" "smoke-sm-a" "$sm_create_body_in")
+sm_create_replay_body=$(cat /tmp/smoke.body)
+sm_dup_status=$(sm_put POST "/api/v1/nutrition/meals" "smoke-sm-dup" "{\"name\":\"SMOKE BREAKFAST\",\"items\":[$sm_item_cup],\"operation_key\":\"smoke-sm-dup\"}")
+sm_dup_body=$(cat /tmp/smoke.body)
+sm_empty_status=$(sm_put POST "/api/v1/nutrition/meals" "smoke-sm-empty" '{"name":"Empty","items":[],"operation_key":"smoke-sm-empty"}')
+sm_list_status=$(sm_get "/api/v1/nutrition/meals")
+sm_list_body=$(cat /tmp/smoke.body)
+sm_log_in="{\"meal\":{\"id\":\"$sm_meal_id\"},\"operation_key\":\"smoke-sm-log\"}"
+sm_log_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log" "$sm_log_in")
+sm_log_body=$(cat /tmp/smoke.body)
+sm_log_replay_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log" "$sm_log_in")
+sm_log_replay_body=$(cat /tmp/smoke.body)
+sm_override_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log2" "{\"meal\":{\"id\":\"$sm_meal_id\"},\"items\":[{\"food\":{\"id\":\"$sm_food_id\"},\"serving\":{\"label\":\"1 cup\",\"grams\":80},\"amount\":2}],\"operation_key\":\"smoke-sm-log2\"}")
+sm_override_body=$(cat /tmp/smoke.body)
+sm_bad_item_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log3" "{\"meal\":{\"id\":\"$sm_meal_id\"},\"items\":[$sm_item_cup,{\"food\":{\"id\":\"00000000-0000-0000-0000-000000000000\"},\"serving\":{\"label\":\"1 cup\",\"grams\":80},\"amount\":1},{\"food\":{\"id\":\"11111111-1111-4111-8111-111111111111\"},\"serving\":{\"label\":\"1 cup\",\"grams\":80},\"amount\":1}],\"operation_key\":\"smoke-sm-log3\"}")
+sm_bad_item_body=$(cat /tmp/smoke.body)
+sm_unknown_item_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log4" "{\"meal\":{\"id\":\"$sm_meal_id\"},\"items\":[$sm_item_cup,{\"food\":{\"id\":\"11111111-1111-4111-8111-111111111111\"},\"serving\":{\"label\":\"1 cup\",\"grams\":80},\"amount\":1}],\"operation_key\":\"smoke-sm-log4\"}")
+sm_unknown_item_body=$(cat /tmp/smoke.body)
+sm_future_status=$(sm_put POST "/api/v1/nutrition/days/2999-01-01/meal-logs" "smoke-sm-log5" "{\"meal\":{\"id\":\"$sm_meal_id\"},\"operation_key\":\"smoke-sm-log5\"}")
+sm_day_status=$(sm_get "/api/v1/nutrition/days/$sm_today/entries")
+sm_day_body=$(cat /tmp/smoke.body)
+sm_update_status=$(sm_put PUT "/api/v1/nutrition/meals/$sm_meal_id" "smoke-sm-u" "{\"name\":\"Smoke brunch\",\"items\":[$sm_item_100],\"expected_revision\":1,\"operation_key\":\"smoke-sm-u\"}")
+sm_update_body=$(cat /tmp/smoke.body)
+sm_stale_status=$(sm_put PUT "/api/v1/nutrition/meals/$sm_meal_id" "smoke-sm-s" "{\"name\":\"Smoke stale\",\"items\":[$sm_item_100],\"expected_revision\":1,\"operation_key\":\"smoke-sm-s\"}")
+sm_stale_body=$(cat /tmp/smoke.body)
+sm_delete_status=$(sm_del "/api/v1/nutrition/meals/$sm_meal_id?expected_revision=2" "smoke-sm-d")
+sm_gone_status=$(sm_put POST "/api/v1/nutrition/days/$sm_today/meal-logs" "smoke-sm-log6" "{\"meal\":{\"id\":\"$sm_meal_id\"},\"operation_key\":\"smoke-sm-log6\"}")
+sm_after_status=$(sm_get "/api/v1/nutrition/days/$sm_today/entries")
+sm_after_body=$(cat /tmp/smoke.body)
+sm_after_list_status=$(sm_get "/api/v1/nutrition/meals")
+sm_after_list_body=$(cat /tmp/smoke.body)
+sm_export_status=$(sm_get "/api/v1/export")
+sm_export_body=$(cat /tmp/smoke.body)
+if [ "$sm_food_status" = "201" ] && [ "$sm_create_status" = "201" ] && [ "$sm_create_replay_status" = "201" ] && [ "$sm_dup_status" = "422" ] && [ "$sm_empty_status" = "422" ] && \
+   [ "$sm_list_status" = "200" ] && [ "$sm_log_status" = "201" ] && [ "$sm_log_replay_status" = "201" ] && [ "$sm_override_status" = "201" ] && \
+   [ "$sm_bad_item_status" = "422" ] && [ "$sm_unknown_item_status" = "422" ] && [ "$sm_future_status" = "422" ] && [ "$sm_day_status" = "200" ] && \
+   [ "$sm_update_status" = "200" ] && [ "$sm_stale_status" = "409" ] && [ "$sm_delete_status" = "204" ] && [ "$sm_gone_status" = "404" ] && \
+   [ "$sm_after_status" = "200" ] && [ "$sm_after_list_status" = "200" ] && [ "$sm_export_status" = "200" ] && \
+   python3 -c "
+import json,sys
+cr,crr,dup,ls,lg,lgr,ov,bi,ui,day,up,st,af,al,ex=[json.loads(x) for x in sys.argv[1:]]
+assert cr['name']=='Smoke breakfast' and cr['revision']==1 and cr['last_logged_at'] is None and len(cr['items'])==2
+assert [i['serving']['grams'] for i in cr['items']]==[80,100] and all(i['available'] for i in cr['items'])
+assert cr['items'][0]['energy_kcal']==300 and cr['items'][0]['protein_g']==10 and cr['items'][1]['energy_kcal']==188 and cr['items'][1]['protein_g']==6.3
+assert cr['totals']=={'energy_kcal':488,'protein_g':16.3,'carbs_g':87.8,'fat_g':8.2}, cr['totals']
+assert cr['items'][0]['food']['source']=='own' and 'per_100g' in cr['items'][0]['food']
+assert crr['id']==cr['id'], 'verbatim create replay returns the same meal'
+assert dup['code']=='VALIDATION_ERROR' and dup['details']=={'field':'name'}
+assert [m['id'] for m in ls['meals']]==[cr['id']]
+assert len(lg['entries'])==2 and lg['converted']==[] and [e['serving']['grams'] for e in lg['entries']]==[80,100]
+assert all(e['kind']=='food' and e['revision']==1 and 'meal' not in e for e in lg['entries'])
+assert lg['day']['source']=='foods' and lg['day']['energy_kcal']==488 and lg['day']['protein_g']==16.3
+assert [e['id'] for e in lgr['entries']]==[e['id'] for e in lg['entries']] and lgr['day']['revision']==lg['day']['revision'], 'verbatim log replay'
+assert len(ov['entries'])==1 and ov['entries'][0]['amount']==2 and ov['day']['energy_kcal']==1088
+assert bi['code']=='VALIDATION_ERROR' and bi['details']=={'field':'items','index':1}, bi
+assert ui['details']=={'field':'items','index':1}
+assert len(day['entries'])==3 and day['day']['energy_kcal']==1088, 'failed logs added nothing'
+assert up['name']=='Smoke brunch' and up['revision']==2 and len(up['items'])==1 and up['last_logged_at'] is not None
+assert st['code']=='REVISION_CONFLICT' and st['details']=={'expected_revision':1,'actual_revision':2} and st['resource']['name']=='Smoke brunch'
+assert len(af['entries'])==3 and af['day']['energy_kcal']==1088, 'deleting the meal leaves the logged day alone'
+assert al['meals']==[]
+assert ex['nutrition']['saved_meals']==[]
+" "$sm_create_body" "$sm_create_replay_body" "$sm_dup_body" "$sm_list_body" "$sm_log_body" "$sm_log_replay_body" "$sm_override_body" "$sm_bad_item_body" "$sm_unknown_item_body" "$sm_day_body" "$sm_update_body" "$sm_stale_body" "$sm_after_body" "$sm_after_list_body" "$sm_export_body"; then
+  ok "saved meals: meal saved with values computed from its foods and replayed; duplicate name and empty items rejected; listed; logged as ordinary entries with the day as their sum and replayed without logging twice; override list logged without changing the meal; a bad item named its index and logged nothing; future date rejected; edit advanced the revision; stale revision conflicted with the meal; delete left the logged day alone; a deleted meal is the shared 404"
+else
+  bad "saved meals acceptance failed (food=$sm_food_status create=$sm_create_status replay=$sm_create_replay_status dup=$sm_dup_status empty=$sm_empty_status list=$sm_list_status log=$sm_log_status log_replay=$sm_log_replay_status override=$sm_override_status bad_item=$sm_bad_item_status unknown_item=$sm_unknown_item_status future=$sm_future_status day=$sm_day_status update=$sm_update_status stale=$sm_stale_status delete=$sm_delete_status gone=$sm_gone_status after=$sm_after_status)" "$(echo "$sm_create_body $sm_log_body $sm_bad_item_body" | head -c 600)"
+fi
+
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")
 if [ "$resp" = "204" ]; then
