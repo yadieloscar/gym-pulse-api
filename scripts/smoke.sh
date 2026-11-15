@@ -211,6 +211,29 @@ else
     bad "profile exact replay failed (advance=$profile_advance_status replay=$profile_replay_status conflict=$profile_conflict_status current=$profile_current_status)" "$(echo "$profile_current_body" | head -c 280)"
   fi
 
+  # The runtime image must carry the IANA timezone database: without it every
+  # zone except UTC fails validation in the container while passing on a
+  # developer machine. Later steps derive their dates in UTC, so the profile
+  # goes back to UTC whether or not the non-UTC save succeeded.
+  tz_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$profile_current_body" 2>/dev/null || echo 0)
+  tz_set_op="smoke-profile-tz-set"
+  tz_set_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $tz_set_op" \
+    -d "{\"timezone\":\"America/New_York\",\"expected_revision\":$tz_revision,\"operation_key\":\"$tz_set_op\"}")
+  tz_set_body=$(cat /tmp/smoke.body)
+  tz_revision=$(python3 -c "import json,sys; print(json.loads(sys.argv[1])['revision'])" "$tz_set_body" 2>/dev/null || echo "$tz_revision")
+  tz_reset_op="smoke-profile-tz-reset"
+  tz_reset_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/training-profile" \
+    "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: $tz_reset_op" \
+    -d "{\"timezone\":\"UTC\",\"expected_revision\":$tz_revision,\"operation_key\":\"$tz_reset_op\"}")
+  tz_reset_body=$(cat /tmp/smoke.body)
+  if [ "$tz_set_status" = "200" ] && [ "$tz_reset_status" = "200" ] && \
+    python3 -c "import json,sys; s,r=map(json.loads,sys.argv[1:]); assert s['timezone']=='America/New_York' and r['timezone']=='UTC' and r['revision']>s['revision']" "$tz_set_body" "$tz_reset_body" 2>/dev/null; then
+    ok "training profile accepted a non-UTC IANA timezone, then returned to UTC"
+  else
+    bad "non-UTC timezone save failed (set=$tz_set_status reset=$tz_reset_status); is the timezone database in the image?" "$(echo "$tz_set_body" | head -c 240)"
+  fi
+
   adopt_op="smoke-adopt-legacy-v1"
   adopt_payload="{\"operation_key\":\"$adopt_op\",\"expected_revision\":0}"
   curl -s -w $'\n%{http_code}' -X POST "$API/api/v1/programs/adopt-legacy" \

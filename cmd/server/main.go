@@ -21,6 +21,10 @@ import (
 	"syscall"
 	"time"
 
+	// Embeds the IANA timezone database so time.LoadLocation resolves saved
+	// training-profile zones in the runtime image, which ships no zoneinfo.
+	_ "time/tzdata"
+
 	"github.com/go-playground/validator/v10"
 	"github.com/golang-migrate/migrate/v4"
 	"github.com/golang-migrate/migrate/v4/database/postgres"
