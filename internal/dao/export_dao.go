@@ -52,6 +52,7 @@ func (r *exportDAO) Export(ctx context.Context, userID uuid.UUID, exportedAt tim
 		readExportNutritionTargets,
 		readExportFoodEntries,
 		readExportOwnFoods,
+		readExportKneeKitDays,
 	}
 	for _, read := range readers {
 		if err := read(ctx, tx, userID, out); err != nil {
@@ -420,5 +421,27 @@ func readExportOwnFoods(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *m
 		return fmt.Errorf("scanning export own foods: %w", err)
 	}
 	out.Nutrition.OwnFoods = append(out.Nutrition.OwnFoods, foods...)
+	return nil
+}
+
+func readExportKneeKitDays(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
+	rows, err := tx.Query(ctx, `
+		SELECT date::text, completed_items, morning_pain, activity_pain, sharp_pain, limping
+		FROM knee_kit_days WHERE user_id=$1 ORDER BY date`, userID)
+	if err != nil {
+		return fmt.Errorf("querying export knee kit days: %w", err)
+	}
+	days, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.ExportKneeKitDay, error) {
+		var d model.ExportKneeKitDay
+		err := row.Scan(&d.Date, &d.CompletedItems, &d.MorningPain, &d.ActivityPain, &d.SharpPain, &d.Limping)
+		if d.CompletedItems == nil {
+			d.CompletedItems = []string{}
+		}
+		return d, err
+	})
+	if err != nil {
+		return fmt.Errorf("scanning export knee kit days: %w", err)
+	}
+	out.KneeKitDays = append(out.KneeKitDays, days...)
 	return nil
 }

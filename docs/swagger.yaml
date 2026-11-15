@@ -298,6 +298,10 @@ definitions:
         type: array
       exported_at:
         type: string
+      knee_kit_days:
+        items:
+          $ref: '#/definitions/model.ExportKneeKitDay'
+        type: array
       nutrition:
         $ref: '#/definitions/model.ExportNutrition'
       profile:
@@ -566,6 +570,23 @@ definitions:
         type: number
       serving_label:
         type: string
+    type: object
+  model.ExportKneeKitDay:
+    properties:
+      activity_pain:
+        type: integer
+      completed_items:
+        items:
+          type: string
+        type: array
+      date:
+        type: string
+      limping:
+        type: boolean
+      morning_pain:
+        type: integer
+      sharp_pain:
+        type: boolean
     type: object
   model.ExportNutrition:
     properties:
@@ -1025,6 +1046,38 @@ definitions:
       resets_at:
         type: string
     type: object
+  model.KneeKitDay:
+    properties:
+      activity_pain:
+        type: integer
+      completed_items:
+        items:
+          type: string
+        type: array
+      created_at:
+        type: string
+      date:
+        type: string
+      id:
+        type: string
+      limping:
+        type: boolean
+      morning_pain:
+        type: integer
+      revision:
+        type: integer
+      sharp_pain:
+        type: boolean
+      updated_at:
+        type: string
+    type: object
+  model.KneeKitRange:
+    properties:
+      days:
+        items:
+          $ref: '#/definitions/model.KneeKitDay'
+        type: array
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -1455,6 +1508,25 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.SaveKneeKitDayRequest:
+    properties:
+      activity_pain:
+        type: integer
+      completed_items:
+        items:
+          type: string
+        type: array
+      expected_revision:
+        type: integer
+      limping:
+        type: boolean
+      morning_pain:
+        type: integer
+      operation_key:
+        type: string
+      sharp_pain:
+        type: boolean
     type: object
   model.SaveNutritionDayRequest:
     properties:
@@ -2347,6 +2419,89 @@ paths:
       summary: Export workout sets as CSV
       tags:
       - export
+  /api/v1/knee-kit/days:
+    get:
+      parameters:
+      - description: YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: YYYY-MM-DD (at most 366 days after from)
+        in: query
+        name: to
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.KneeKitRange'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List knee checklist and pain-log days in a range
+      tags:
+      - knee-kit
+  /api/v1/knee-kit/days/{date}:
+    put:
+      description: |-
+        Full replacement of the date's record; expected_revision is 0 when none exists.
+        See docs/CONTRACTS.md "Knee Kit days".
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Checklist items and pain values
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveKneeKitDayRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.KneeKitDay'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.KneeKitDay'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create or replace one day's knee checklist and pain log
+      tags:
+      - knee-kit
   /api/v1/logs:
     get:
       description: Returns all day logs in the week containing the given Monday date.

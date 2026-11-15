@@ -41,6 +41,7 @@ func New(
 	programGenerationHandler *handler.ProgramGenerationHandler,
 	exportHandler *handler.ExportHandler,
 	mobilitySessionHandler *handler.MobilitySessionHandler,
+	kneeKitHandler *handler.KneeKitHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -132,6 +133,10 @@ func New(
 					r.Post("/", mobilitySessionHandler.Create)
 					r.Get("/{id}", mobilitySessionHandler.Get)
 					r.Delete("/{id}", mobilitySessionHandler.Delete)
+				})
+				r.Route("/knee-kit", func(r chi.Router) {
+					r.Get("/days", kneeKitHandler.ListDays)
+					r.Put("/days/{date}", kneeKitHandler.SaveDay)
 				})
 				r.Route("/health-exports", func(r chi.Router) {
 					r.Get("/", healthExportHandler.List)
