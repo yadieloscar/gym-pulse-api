@@ -2254,6 +2254,7 @@ definitions:
         - voltLime
         - oliveCitrine
         - slateMint
+        - irisViolet
         type: string
       weekly_goal:
         maximum: 7
@@ -2288,6 +2289,7 @@ definitions:
         - voltLime
         - oliveCitrine
         - slateMint
+        - irisViolet
         type: string
       weekly_goal:
         maximum: 7
