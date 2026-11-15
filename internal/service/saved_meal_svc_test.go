@@ -23,6 +23,7 @@ type fakeSavedMealDAO struct {
 	loggedMeal       uuid.UUID
 	loggedDate       string
 	loggedItems      []model.MealItemInput
+	loggedSection    *model.MealSection
 	loggedAt         time.Time
 	key, hash        string
 	calls            int
@@ -46,9 +47,9 @@ func (d *fakeSavedMealDAO) DeleteMeal(_ context.Context, _, id uuid.UUID, revisi
 	d.deletedID, d.deletedRevision, d.key, d.hash = id, revision, key, hash
 	return model.SavedMealRemoved, d.err
 }
-func (d *fakeSavedMealDAO) LogMeal(_ context.Context, _, mealID uuid.UUID, date string, items []model.MealItemInput, loggedAt time.Time, key, hash string) (*model.MealLogged, model.SavedMealOutcome, error) {
+func (d *fakeSavedMealDAO) LogMeal(_ context.Context, _, mealID uuid.UUID, date string, items []model.MealItemInput, section *model.MealSection, loggedAt time.Time, key, hash string) (*model.MealLogged, model.SavedMealOutcome, error) {
 	d.calls++
-	d.loggedMeal, d.loggedDate, d.loggedItems, d.loggedAt, d.key, d.hash = mealID, date, items, loggedAt, key, hash
+	d.loggedMeal, d.loggedDate, d.loggedItems, d.loggedSection, d.loggedAt, d.key, d.hash = mealID, date, items, section, loggedAt, key, hash
 	return &model.MealLogged{Entries: []model.FoodEntry{}, Converted: []model.FoodEntry{}}, model.SavedMealLogged, d.err
 }
 
@@ -118,6 +119,7 @@ func TestCreateMealValidation(t *testing.T) {
 		{"amount with three decimals", func(r *model.SaveMealRequest) { r.Items[1].Amount = 1.234 }, "items", 1},
 		{"same food and serving twice", func(r *model.SaveMealRequest) { r.Items = []model.MealItemInput{duplicate, mealItem(30, 1), duplicate} }, "items", 2},
 		{"blank operation key", func(r *model.SaveMealRequest) { r.OperationKey = " " }, "operation_key", -1},
+		{"unknown heading", func(r *model.SaveMealRequest) { brunch := model.MealSection("brunch"); r.Section = &brunch }, "section", -1},
 		{"revision on create", func(r *model.SaveMealRequest) { r.ExpectedRevision = &revision }, "expected_revision", -1},
 	} {
 		repo := &fakeSavedMealDAO{}
@@ -203,6 +205,7 @@ func TestLogMealValidation(t *testing.T) {
 		{"missing meal", "2026-11-15", func(r *model.LogMealRequest) { r.Meal = nil }, "meal", -1},
 		{"nil meal id", "2026-11-15", func(r *model.LogMealRequest) { r.Meal = &model.MealRef{} }, "meal", -1},
 		{"blank key", "2026-11-15", func(r *model.LogMealRequest) { r.OperationKey = "" }, "operation_key", -1},
+		{"unknown heading", "2026-11-15", func(r *model.LogMealRequest) { other := model.MealSection("Breakfast"); r.Section = &other }, "section", -1},
 		{"empty override list", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{} }, "items", -1},
 		{"bad override amount", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{mealItem(81, 1), mealItem(30, 51)} }, "items", 1},
 		{"override grams that store as zero", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{mealItem(0.04, 1)} }, "items", 0},
@@ -253,6 +256,30 @@ func TestMealItemsKeepFractionalCatalogWeights(t *testing.T) {
 	}
 	if repo.created.Items[0].Serving.Grams != 28.35 {
 		t.Fatalf("the weight reaches the DAO exact: %v", repo.created.Items[0].Serving.Grams)
+	}
+}
+
+func TestMealHeadingsPassThrough(t *testing.T) {
+	repo := &fakeSavedMealDAO{}
+	svc := newSavedMealServiceForTest(repo)
+	breakfast, dinner := model.MealSectionBreakfast, model.MealSectionDinner
+	req := validMealRequest()
+	req.Section = &breakfast
+	if _, _, err := svc.CreateMeal(context.Background(), uuid.New(), req); err != nil || repo.created.Section == nil || *repo.created.Section != model.MealSectionBreakfast {
+		t.Fatalf("a saved meal may remember a heading: %v %+v", err, repo.created)
+	}
+	withHeading := repo.hash
+	req.Section = nil
+	if _, _, err := svc.CreateMeal(context.Background(), uuid.New(), req); err != nil || repo.created.Section != nil || repo.hash == withHeading {
+		t.Fatalf("no heading is valid and hashes differently: %v", err)
+	}
+	log := model.LogMealRequest{Meal: &model.MealRef{ID: uuid.New()}, OperationKey: "log:1"}
+	if _, _, err := svc.LogMeal(context.Background(), uuid.New(), "2026-11-15", log); err != nil || repo.loggedSection != nil {
+		t.Fatalf("a log that names no heading leaves the choice to the meal: %v", err)
+	}
+	log.Section = &dinner
+	if _, _, err := svc.LogMeal(context.Background(), uuid.New(), "2026-11-15", log); err != nil || repo.loggedSection == nil || *repo.loggedSection != model.MealSectionDinner {
+		t.Fatalf("a log may name its own heading: %v", err)
 	}
 }
 

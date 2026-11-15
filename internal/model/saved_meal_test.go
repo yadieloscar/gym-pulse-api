@@ -140,3 +140,65 @@ func TestMatchSavedServingFollowsTheFoodByLabel(t *testing.T) {
 		}
 	}
 }
+
+func TestMealSectionValuesAndJSON(t *testing.T) {
+	for _, value := range []MealSection{MealSectionBreakfast, MealSectionLunch, MealSectionDinner, MealSectionSnacks} {
+		if !ValidMealSection(&value) {
+			t.Errorf("%q is one of the four headings", value)
+		}
+	}
+	if !ValidMealSection(nil) {
+		t.Error("no heading is valid")
+	}
+	for _, value := range []MealSection{"", "Breakfast", "snack", "brunch", "other"} {
+		if ValidMealSection(&value) {
+			t.Errorf("%q is not a heading", value)
+		}
+	}
+
+	// Readers always get the key; a request from a client that knows no
+	// headings marshals exactly as before, so its idempotency hash is unchanged.
+	entry, err := json.Marshal(FoodEntry{Kind: FoodEntryKindQuickAdd})
+	if err != nil || !strings.Contains(string(entry), `"section":null`) {
+		t.Fatalf("an entry with no heading carries section null: %s %v", entry, err)
+	}
+	amount := 1.0
+	request, err := json.Marshal(CreateFoodEntryRequest{Food: &FoodRef{}, Serving: &HundredGramServing, Amount: &amount, OperationKey: "k"})
+	if err != nil || strings.Contains(string(request), "section") {
+		t.Fatalf("a request without a heading must not mention it: %s %v", request, err)
+	}
+	meal, err := json.Marshal(SavedMeal{Items: []SavedMealItem{}})
+	if err != nil || !strings.Contains(string(meal), `"section":null`) {
+		t.Fatalf("a saved meal with no heading carries section null: %s %v", meal, err)
+	}
+	breakfast := MealSectionBreakfast
+	meal, _ = json.Marshal(SavedMeal{Section: &breakfast, Items: []SavedMealItem{}})
+	if !strings.Contains(string(meal), `"section":"breakfast"`) {
+		t.Fatalf("a remembered heading is returned: %s", meal)
+	}
+}
+
+func TestMealSectionsMigrationContract(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/040_add_meal_sections.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	migration := string(body)
+	check := "ADD COLUMN section TEXT CHECK (section IN ('breakfast', 'lunch', 'dinner', 'snacks'))"
+	if strings.Count(migration, check) != 2 || !strings.Contains(migration, "ALTER TABLE food_entries") || !strings.Contains(migration, "ALTER TABLE saved_meals") {
+		t.Fatal("migration 040 adds one nullable, checked section column to food_entries and to saved_meals")
+	}
+	// Nullable with no default: no row is rewritten and nothing is back-filled.
+	for _, forbidden := range []string{"NOT NULL", "DEFAULT", "UPDATE ", "CREATE INDEX"} {
+		if strings.Contains(migration, forbidden) {
+			t.Errorf("migration 040 must not contain %q", forbidden)
+		}
+	}
+	down, err := os.ReadFile("../../migrations/040_add_meal_sections.down.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Count(string(down), "DROP COLUMN IF EXISTS section") != 2 {
+		t.Fatal("the down migration drops both columns")
+	}
+}

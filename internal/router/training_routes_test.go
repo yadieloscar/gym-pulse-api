@@ -39,7 +39,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 		"GET /api/v1/nutrition/foods/search", "GET /api/v1/nutrition/foods/barcode/{code}", "GET /api/v1/nutrition/foods/recent",
 		"POST /api/v1/nutrition/foods", "PUT /api/v1/nutrition/foods/{id}", "DELETE /api/v1/nutrition/foods/{id}",
 		"GET /api/v1/nutrition/days/{date}/entries", "POST /api/v1/nutrition/days/{date}/entries",
-		"PUT /api/v1/nutrition/entries/{id}", "DELETE /api/v1/nutrition/entries/{id}",
+		"PUT /api/v1/nutrition/entries/{id}", "DELETE /api/v1/nutrition/entries/{id}", "PUT /api/v1/nutrition/entries/{id}/section",
 		"GET /api/v1/nutrition/meals", "POST /api/v1/nutrition/meals", "PUT /api/v1/nutrition/meals/{id}", "DELETE /api/v1/nutrition/meals/{id}",
 		"POST /api/v1/nutrition/days/{date}/meal-logs",
 		"GET /api/v1/training-blocks/", "POST /api/v1/training-blocks/", "GET /api/v1/training-blocks/{block_id}/",

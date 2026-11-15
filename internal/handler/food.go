@@ -229,6 +229,32 @@ func (h *FoodHandler) DeleteEntry(w http.ResponseWriter, r *http.Request) {
 	respond(w, deleted, err, http.StatusOK)
 }
 
+// MoveEntry godoc
+// @Summary     Move an entry to another day heading, or to none
+// @Description Changes only the heading: the entry's serving, amount, and values, and the day's totals, stay as they were.
+// @Tags        nutrition
+// @Param       id path string true "Entry id"
+// @Param       Idempotency-Key header string true "Equal to operation_key"
+// @Param       body body model.MoveFoodEntryRequest true "section (breakfast, lunch, dinner, snacks, or null) with expected_revision"
+// @Success     200 {object} model.FoodEntryUpdated
+// @Failure     404 {object} map[string]string
+// @Failure     409 {object} map[string]string
+// @Failure     422 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/nutrition/entries/{id}/section [put]
+func (h *FoodHandler) MoveEntry(w http.ResponseWriter, r *http.Request) {
+	id, ok := foodIDParam(w, r, "food entry not found")
+	if !ok {
+		return
+	}
+	var req model.MoveFoodEntryRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	moved, _, err := h.svc.MoveEntry(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
+	respond(w, moved, err, http.StatusOK)
+}
+
 // foodIDParam parses a UUID path parameter; a malformed id is the shared
 // not-found so ownership and existence stay indistinguishable.
 func foodIDParam(w http.ResponseWriter, r *http.Request, message string) (uuid.UUID, bool) {

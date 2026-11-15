@@ -1527,6 +1527,80 @@
                 }
             }
         },
+        "/api/v1/nutrition/entries/{id}/section": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Changes only the heading: the entry's serving, amount, and values, and the day's totals, stay as they were.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Move an entry to another day heading, or to none",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Entry id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "section (breakfast, lunch, dinner, snacks, or null) with expected_revision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.MoveFoodEntryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.FoodEntryUpdated"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nutrition/foods": {
             "post": {
                 "security": [
@@ -4549,6 +4623,14 @@
                 "quick_add": {
                     "$ref": "#/definitions/model.QuickAdd"
                 },
+                "section": {
+                    "description": "Section is optional; omitted from the hashed payload when absent so a\nrequest from a client that knows no headings hashes as it always did.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MealSection"
+                        }
+                    ]
+                },
                 "serving": {
                     "$ref": "#/definitions/model.Serving"
                 }
@@ -5129,6 +5211,9 @@
                 "protein_g": {
                     "type": "number"
                 },
+                "section": {
+                    "type": "string"
+                },
                 "serving_g": {
                     "type": "number"
                 },
@@ -5294,6 +5379,9 @@
                     }
                 },
                 "name": {
+                    "type": "string"
+                },
+                "section": {
                     "type": "string"
                 }
             }
@@ -5677,6 +5765,9 @@
                 "revision": {
                     "type": "integer"
                 },
+                "section": {
+                    "$ref": "#/definitions/model.MealSection"
+                },
                 "serving": {
                     "$ref": "#/definitions/model.Serving"
                 },
@@ -6036,6 +6127,14 @@
                 },
                 "operation_key": {
                     "type": "string"
+                },
+                "section": {
+                    "description": "Section is the heading for every entry of this log; nil uses the\nmeal's own.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.MealSection"
+                        }
+                    ]
                 }
             }
         },
@@ -6109,6 +6208,21 @@
                 }
             }
         },
+        "model.MealSection": {
+            "type": "string",
+            "enum": [
+                "breakfast",
+                "lunch",
+                "dinner",
+                "snacks"
+            ],
+            "x-enum-varnames": [
+                "MealSectionBreakfast",
+                "MealSectionLunch",
+                "MealSectionDinner",
+                "MealSectionSnacks"
+            ]
+        },
         "model.MealTotals": {
             "type": "object",
             "properties": {
@@ -6123,6 +6237,20 @@
                 },
                 "protein_g": {
                     "type": "number"
+                }
+            }
+        },
+        "model.MoveFoodEntryRequest": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "section": {
+                    "$ref": "#/definitions/model.MealSection"
                 }
             }
         },
@@ -6790,6 +6918,9 @@
                 },
                 "operation_key": {
                     "type": "string"
+                },
+                "section": {
+                    "$ref": "#/definitions/model.MealSection"
                 }
             }
         },
@@ -6903,6 +7034,9 @@
                 },
                 "revision": {
                     "type": "integer"
+                },
+                "section": {
+                    "$ref": "#/definitions/model.MealSection"
                 },
                 "totals": {
                     "$ref": "#/definitions/model.MealTotals"

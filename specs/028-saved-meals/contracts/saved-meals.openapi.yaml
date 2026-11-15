@@ -34,6 +34,19 @@ paths:
         '204': {description: 'Deleted, or verbatim replay'}
         '404': {description: Not owned or unknown}
         '409': {description: 'REVISION_CONFLICT or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /api/v1/nutrition/entries/{id}/section:
+    put:
+      summary: "A1: move a food entry to another heading or to none; nothing else about the entry or the day changes"
+      description: Requires Idempotency-Key equal to operation_key; a verbatim retry replays 200.
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {type: object, required: [section, expected_revision, operation_key], properties: {section: {$ref: '#/components/schemas/Section'}, expected_revision: {type: integer, minimum: 1}, operation_key: {type: string, minLength: 1, maxLength: 128}}}}}
+      responses:
+        '200': {description: 'entry with the new section and revision; day unchanged', content: {application/json: {schema: {type: object, required: [entry, day], properties: {entry: {$ref: '#/components/schemas/FoodEntry'}, day: {$ref: '#/components/schemas/NutritionDay'}}}}}}
+        '404': {description: Not owned or unknown (shared NOT_FOUND)}
+        '409': {description: 'REVISION_CONFLICT with the entry under resource, or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
   /api/v1/nutrition/days/{date}/meal-logs:
     post:
       summary: Log a saved meal to a day as one food entry per item, all or nothing
@@ -57,6 +70,11 @@ components:
       type: object
       required: [error, code]
       properties: {error: {type: string}, code: {type: string}, details: {type: object}, resource: {type: object}}
+    Section:
+      type: string
+      nullable: true
+      enum: [breakfast, lunch, dinner, snacks, null]
+      description: "A1: one of four fixed day headings, or null for none. A label only: it changes no value or total. Also an optional field on POST /days/{date}/entries, on SaveMealRequest and LogMealRequest, and always present on FoodEntry and SavedMeal."
     MealItemInput:
       type: object
       required: [food, serving, amount]
@@ -70,6 +88,7 @@ components:
       properties:
         name: {type: string, minLength: 1, maxLength: 60, description: 'trimmed; unique per athlete ignoring case'}
         items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/MealItemInput'}, description: 'order is kept; the same food and serving may appear once'}
+        section: {$ref: '#/components/schemas/Section'}
         expected_revision: {type: integer, minimum: 1, description: required on PUT; absent on POST}
         operation_key: {type: string, minLength: 1, maxLength: 128}
     LogMealRequest:
@@ -78,6 +97,7 @@ components:
       properties:
         meal: {type: object, required: [id], properties: {id: {type: string, format: uuid}}}
         items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/MealItemInput'}, description: 'optional; replaces the saved items for this log only and never changes the saved meal'}
+        section: {allOf: [{$ref: '#/components/schemas/Section'}], description: "heading for every entry of this log; absent or null uses the meal's"}
         logged_at: {type: string, format: date-time, description: defaults to now}
         operation_key: {type: string, minLength: 1, maxLength: 128}
     SavedMealItem:
@@ -94,10 +114,11 @@ components:
         fat_g: {type: number}
     SavedMeal:
       type: object
-      required: [id, name, items, totals, revision, last_logged_at, created_at, updated_at]
+      required: [id, name, section, items, totals, revision, last_logged_at, created_at, updated_at]
       properties:
         id: {type: string, format: uuid}
         name: {type: string}
+        section: {$ref: '#/components/schemas/Section'}
         items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/SavedMealItem'}}
         totals: {type: object, nullable: true, required: [energy_kcal, protein_g, carbs_g, fat_g], properties: {energy_kcal: {type: integer}, protein_g: {type: number}, carbs_g: {type: number}, fat_g: {type: number}}, description: 'sum of the items at current food facts; null when any item is unavailable'}
         revision: {type: integer, minimum: 1, description: advances when name or items change; logging does not advance it}

@@ -80,7 +80,7 @@ func (f *savedMealFixture) createMeal(t *testing.T, userID uuid.UUID, name strin
 func (f *savedMealFixture) logMeal(t *testing.T, userID, mealID uuid.UUID, date string, items []model.MealItemInput) *model.MealLogged {
 	t.Helper()
 	k, h := f.key("log")
-	logged, outcome, err := f.meals.LogMeal(f.ctx, userID, mealID, date, items, time.Now(), k, h)
+	logged, outcome, err := f.meals.LogMeal(f.ctx, userID, mealID, date, items, nil, time.Now(), k, h)
 	if err != nil || outcome != model.SavedMealLogged {
 		t.Fatalf("log: outcome=%v err=%v", outcome, err)
 	}
@@ -327,7 +327,7 @@ func TestSavedMealLogWritesOrdinaryEntriesAtomically(t *testing.T) {
 
 	at := time.Date(2026, 11, 12, 8, 0, 0, 0, time.UTC)
 	k, h := f.key("log")
-	logged, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, at, k, h)
+	logged, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, nil, at, k, h)
 	if err != nil || outcome != model.SavedMealLogged {
 		t.Fatalf("log: %v %v", outcome, err)
 	}
@@ -356,7 +356,7 @@ func TestSavedMealLogWritesOrdinaryEntriesAtomically(t *testing.T) {
 	}
 
 	// A verbatim retry replays the same entries and logs nothing twice.
-	replay, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, at, k, h)
+	replay, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, nil, at, k, h)
 	if err != nil || outcome != model.SavedMealLogged || len(replay.Entries) != 3 || replay.Entries[0].ID != logged.Entries[0].ID {
 		t.Fatalf("replay: %+v %v", replay, err)
 	}
@@ -364,7 +364,7 @@ func TestSavedMealLogWritesOrdinaryEntriesAtomically(t *testing.T) {
 		t.Fatalf("a retry logs nothing twice: %d entries", got)
 	}
 	var conflict *model.ConflictError
-	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, at, k, "another-hash"); !errors.As(err, &conflict) || !strings.Contains(conflict.Message, "idempotency") {
+	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, nil, at, k, "another-hash"); !errors.As(err, &conflict) || !strings.Contains(conflict.Message, "idempotency") {
 		t.Fatalf("same key, different payload → idempotency conflict: %v", err)
 	}
 
@@ -385,11 +385,11 @@ func TestSavedMealLogWritesOrdinaryEntriesAtomically(t *testing.T) {
 	stampBefore := *list[0].LastLoggedAt
 	bad := []model.MealItemInput{itemFor(oats, cup, 1), itemFor(banana, medium, 1), {Food: model.FoodRef{ID: uuid.New()}, Serving: cup, Amount: 1}}
 	fk, fh := f.key("log")
-	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, bad, time.Now(), fk, fh)
+	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, bad, nil, time.Now(), fk, fh)
 	wantItemFault(t, "unknown food in an override", err, 2)
 	wrongServing := []model.MealItemInput{itemFor(oats, medium, 1)}
 	fk, fh = f.key("log")
-	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, wrongServing, time.Now(), fk, fh)
+	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, wrongServing, nil, time.Now(), fk, fh)
 	wantItemFault(t, "a serving the food does not have", err, 0)
 	after := f.day(t, f.userID, date)
 	if len(after.Entries) != len(before.Entries) || after.Day.Revision != before.Day.Revision {
@@ -422,7 +422,7 @@ func TestSavedMealLogWritesOrdinaryEntriesAtomically(t *testing.T) {
 	// Unknown meal.
 	var notFound *model.NotFoundError
 	fk, fh = f.key("log")
-	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, uuid.New(), date, nil, time.Now(), fk, fh); !errors.As(err, &notFound) {
+	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, uuid.New(), date, nil, nil, time.Now(), fk, fh); !errors.As(err, &notFound) {
 		t.Fatalf("an unknown meal is not found: %v", err)
 	}
 }
@@ -460,7 +460,7 @@ func TestSavedMealLogConvertsTypedTotalsAndSerialisesConcurrentLogs(t *testing.T
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, errs[i] = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, time.Now(), k, h)
+			_, _, errs[i] = f.meals.LogMeal(f.ctx, f.userID, meal.ID, date, nil, nil, time.Now(), k, h)
 		}()
 	}
 	wg.Wait()
@@ -511,7 +511,7 @@ func TestSavedMealArchivedFoodRule(t *testing.T) {
 	_, _, err = f.meals.UpdateMeal(f.ctx, f.userID, meal.ID, model.SaveMealRequest{Name: "Shake", Items: []model.MealItemInput{itemFor(other, scoop, 1)}, ExpectedRevision: ptrInt64(2)}, uk, uh)
 	wantItemFault(t, "archived food added by an edit", err, 0)
 	lk, lh := f.key("log")
-	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-11", []model.MealItemInput{itemFor(other, scoop, 1)}, time.Now(), lk, lh)
+	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-11", []model.MealItemInput{itemFor(other, scoop, 1)}, nil, time.Now(), lk, lh)
 	wantItemFault(t, "archived food introduced by an override", err, 0)
 }
 
@@ -532,7 +532,7 @@ func TestSavedMealOwnership(t *testing.T) {
 		t.Fatalf("another athlete's meal is not found on delete: %v", err)
 	}
 	k, h = f.key("x")
-	if _, _, err := f.meals.LogMeal(f.ctx, intruder, meal.ID, "2026-11-10", nil, time.Now(), k, h); !errors.As(err, &notFound) {
+	if _, _, err := f.meals.LogMeal(f.ctx, intruder, meal.ID, "2026-11-10", nil, nil, time.Now(), k, h); !errors.As(err, &notFound) {
 		t.Fatalf("another athlete's meal is not found on log: %v", err)
 	}
 	if list, err := f.meals.ListMeals(f.ctx, intruder); err != nil || len(list) != 0 {
@@ -755,7 +755,7 @@ func TestSavedMealLogsAsSavedAfterWeightRoundingAndServingChanges(t *testing.T) 
 
 	// An override list is new input and stays strict.
 	lk, lh := f.key("log")
-	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-04", []model.MealItemInput{itemFor(whey, scoop, 1)}, time.Now(), lk, lh)
+	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-04", []model.MealItemInput{itemFor(whey, scoop, 1)}, nil, time.Now(), lk, lh)
 	wantItemFault(t, "an override naming a serving the food no longer has", err, 0)
 }
 
@@ -779,7 +779,7 @@ func TestSavedMealDuplicateAfterRoundingAndReplayAfterDelete(t *testing.T) {
 	meal := f.createMeal(t, f.userID, "Short lived", itemFor(oats, cup, 1))
 	lk, lh := f.key("log")
 	at := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
-	first, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, lk, lh)
+	first, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, nil, at, lk, lh)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -787,7 +787,7 @@ func TestSavedMealDuplicateAfterRoundingAndReplayAfterDelete(t *testing.T) {
 	if _, err := f.meals.DeleteMeal(f.ctx, f.userID, meal.ID, 1, dk, dh); err != nil {
 		t.Fatal(err)
 	}
-	replay, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, lk, lh)
+	replay, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, nil, at, lk, lh)
 	if err != nil || outcome != model.SavedMealLogged || len(replay.Entries) != 1 || replay.Entries[0].ID != first.Entries[0].ID {
 		t.Fatalf("a retry after the meal is gone replays the original log: %+v %v", replay, err)
 	}
@@ -796,7 +796,196 @@ func TestSavedMealDuplicateAfterRoundingAndReplayAfterDelete(t *testing.T) {
 	}
 	var notFound *model.NotFoundError
 	nk, nh := f.key("log")
-	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, nk, nh); !errors.As(err, &notFound) {
+	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, nil, at, nk, nh); !errors.As(err, &notFound) {
 		t.Fatalf("a new log of the deleted meal is not found: %v", err)
+	}
+}
+
+// Headings (amendment A1) are labels: they are stored and returned, a move
+// changes nothing else, and no total depends on them.
+func TestDayHeadingsAreLabelsOnly(t *testing.T) {
+	f := newSavedMealFixture(t)
+	oats := f.catalogFood(t, "Oats", oatsPer, cup)
+	banana := f.catalogFood(t, "Banana", bananaPer, medium)
+	breakfast, lunch, dinner, snacks := model.MealSectionBreakfast, model.MealSectionLunch, model.MealSectionDinner, model.MealSectionSnacks
+	const date = "2026-11-01"
+
+	create := func(food model.Food, serving model.Serving, section *model.MealSection) model.FoodEntry {
+		t.Helper()
+		energy, protein, carbs, fat := model.EntryValues(food.Per100g, serving.Grams, 1)
+		amount := 1.0
+		k, h := f.key("entry")
+		created, _, err := f.entries.CreateEntry(f.ctx, f.userID, &model.FoodEntry{
+			Date: date, Kind: model.FoodEntryKindFood, CatalogFoodID: &food.ID, Serving: &serving, Amount: &amount,
+			EnergyKcal: &energy, ProteinG: &protein, CarbsG: &carbs, FatG: &fat, Section: section, LoggedAt: time.Now(),
+		}, k, h)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return created.Entry
+	}
+	underBreakfast := create(oats, cup, &breakfast)
+	unsorted := create(banana, medium, nil)
+	if underBreakfast.Section == nil || *underBreakfast.Section != breakfast || unsorted.Section != nil {
+		t.Fatalf("an entry keeps the heading it was logged with, or none: %v %v", underBreakfast.Section, unsorted.Section)
+	}
+	day := f.day(t, f.userID, date)
+	if len(day.Entries) != 2 || *day.Entries[0].Section != breakfast || day.Entries[1].Section != nil {
+		t.Fatalf("the day list returns each entry's heading, oldest first as before: %+v", day.Entries)
+	}
+	assertDayIsSumOfEntries(t, day)
+
+	// The food's facts move on; a later move must not pick them up.
+	refreshed := banana
+	refreshed.Per100g = model.Per100g{EnergyKcal: 500, ProteinG: 20, CarbsG: 50, FatG: 20}
+	refreshed.FetchedAt = time.Now()
+	if _, err := f.foods.UpsertCatalogFoods(f.ctx, []model.Food{refreshed}); err != nil {
+		t.Fatal(err)
+	}
+	fingerprint := func(e model.FoodEntry) string {
+		return fmt.Sprintf("%s %s %.2f %s %.1f %d %.1f %.1f %.1f %s", e.ID, e.Food.ID, *e.Amount, e.Serving.Label, e.Serving.Grams, *e.EnergyKcal, *e.ProteinG, *e.CarbsG, *e.FatG, e.LoggedAt.UTC().Format(time.RFC3339Nano))
+	}
+	before := f.day(t, f.userID, date)
+	mk, mh := f.key("move")
+	moved, outcome, err := f.entries.MoveEntry(f.ctx, f.userID, unsorted.ID, model.MoveFoodEntryRequest{Section: &lunch, ExpectedRevision: 1}, mk, mh)
+	if err != nil || outcome != model.FoodEntryMovedOutcome {
+		t.Fatalf("move: %v %v", outcome, err)
+	}
+	if moved.Entry.Section == nil || *moved.Entry.Section != lunch || moved.Entry.Revision != 2 || fingerprint(moved.Entry) != fingerprint(before.Entries[1]) {
+		t.Fatalf("a move changes the heading and revision and nothing else:\nbefore %s\nafter  %s", fingerprint(before.Entries[1]), fingerprint(moved.Entry))
+	}
+	after := f.day(t, f.userID, date)
+	if moved.Day == nil || after.Day.Revision != before.Day.Revision || *after.Day.EnergyKcal != *before.Day.EnergyKcal || *after.Day.ProteinG != *before.Day.ProteinG ||
+		!after.Day.UpdatedAt.Equal(before.Day.UpdatedAt) || moved.Day.Revision != before.Day.Revision {
+		t.Fatalf("a move leaves the day's totals and revision alone: before %+v after %+v", before.Day, after.Day)
+	}
+
+	// Replay, stale revision, payload mismatch, foreign entry.
+	replay, _, err := f.entries.MoveEntry(f.ctx, f.userID, unsorted.ID, model.MoveFoodEntryRequest{Section: &lunch, ExpectedRevision: 1}, mk, mh)
+	if err != nil || replay.Entry.Revision != 2 {
+		t.Fatalf("a verbatim retry replays: %+v %v", replay, err)
+	}
+	var conflict *model.ConflictError
+	sk, sh := f.key("move")
+	_, _, err = f.entries.MoveEntry(f.ctx, f.userID, unsorted.ID, model.MoveFoodEntryRequest{Section: &dinner, ExpectedRevision: 1}, sk, sh)
+	if !errors.As(err, &conflict) || conflict.Message != "resource revision conflict" || conflict.Actual != 2 {
+		t.Fatalf("a stale move conflicts: %v", err)
+	}
+	if stored, ok := conflict.Authoritative.(*model.FoodEntry); !ok || stored.ID != unsorted.ID || *stored.Section != lunch {
+		t.Fatalf("the conflict carries the stored entry: %#v", conflict.Authoritative)
+	}
+	if _, _, err = f.entries.MoveEntry(f.ctx, f.userID, unsorted.ID, model.MoveFoodEntryRequest{Section: &dinner, ExpectedRevision: 1}, mk, "another-hash"); !errors.As(err, &conflict) || !strings.Contains(conflict.Message, "idempotency") {
+		t.Fatalf("same key, different payload → idempotency conflict: %v", err)
+	}
+	var notFound *model.NotFoundError
+	ik, ih := f.key("move")
+	if _, _, err = f.entries.MoveEntry(f.ctx, f.newUser(t), unsorted.ID, model.MoveFoodEntryRequest{Section: &dinner, ExpectedRevision: 2}, ik, ih); !errors.As(err, &notFound) {
+		t.Fatalf("another athlete's entry is not found: %v", err)
+	}
+
+	// The existing change route keeps the heading (and, as before, takes current facts).
+	two := 2.0
+	uk, uh := f.key("update")
+	changed, _, err := f.entries.UpdateEntry(f.ctx, f.userID, unsorted.ID, model.UpdateFoodEntryRequest{Serving: &medium, Amount: &two, ExpectedRevision: 2}, uk, uh)
+	if err != nil || changed.Entry.Section == nil || *changed.Entry.Section != lunch || changed.Entry.Revision != 3 {
+		t.Fatalf("changing serving and amount keeps the heading: %+v %v", changed, err)
+	}
+	// A null heading clears it.
+	ck, ch := f.key("move")
+	cleared, _, err := f.entries.MoveEntry(f.ctx, f.userID, unsorted.ID, model.MoveFoodEntryRequest{Section: nil, ExpectedRevision: 3}, ck, ch)
+	if err != nil || cleared.Entry.Section != nil || cleared.Entry.Revision != 4 {
+		t.Fatalf("a null heading clears it: %+v %v", cleared, err)
+	}
+
+	// Saved meals: the meal's heading, a heading named by the log, and none.
+	k, h := f.key("meal")
+	meal, _, err := f.meals.CreateMeal(f.ctx, f.userID, model.SaveMealRequest{Name: "Breakfast", Section: &breakfast, Items: []model.MealItemInput{itemFor(oats, cup, 1), itemFor(banana, medium, 1)}}, k, h)
+	if err != nil || meal.Section == nil || *meal.Section != breakfast {
+		t.Fatalf("a saved meal remembers its heading: %+v %v", meal, err)
+	}
+	const mealDate = "2026-10-31"
+	lk, lh := f.key("log")
+	logged, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, mealDate, nil, nil, time.Now(), lk, lh)
+	if err != nil || len(logged.Entries) != 2 || *logged.Entries[0].Section != breakfast || *logged.Entries[1].Section != breakfast {
+		t.Fatalf("a meal logs under its own heading: %+v %v", logged, err)
+	}
+	lk, lh = f.key("log")
+	logged, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, mealDate, nil, &snacks, time.Now(), lk, lh)
+	if err != nil || *logged.Entries[0].Section != snacks || *logged.Entries[1].Section != snacks {
+		t.Fatalf("a log may name another heading: %+v %v", logged, err)
+	}
+	list, err := f.meals.ListMeals(f.ctx, f.userID)
+	if err != nil || *list[0].Section != breakfast || list[0].Revision != 1 {
+		t.Fatalf("logging under another heading leaves the saved meal unchanged: %+v %v", list[0], err)
+	}
+	// Replacing the meal without a heading clears it; it then logs with none.
+	uk, uh = f.key("update")
+	plain, _, err := f.meals.UpdateMeal(f.ctx, f.userID, meal.ID, model.SaveMealRequest{Name: "Breakfast", Items: []model.MealItemInput{itemFor(oats, cup, 1)}, ExpectedRevision: ptrInt64(1)}, uk, uh)
+	if err != nil || plain.Section != nil || plain.Revision != 2 {
+		t.Fatalf("a replace without a heading clears it: %+v %v", plain, err)
+	}
+	lk, lh = f.key("log")
+	logged, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, mealDate, nil, nil, time.Now(), lk, lh)
+	if err != nil || len(logged.Entries) != 1 || logged.Entries[0].Section != nil {
+		t.Fatalf("a meal with no heading logs with none: %+v %v", logged, err)
+	}
+	assertDayIsSumOfEntries(t, f.day(t, f.userID, mealDate))
+
+	// The same foods total the same with and without headings.
+	bare := f.createMeal(t, f.userID, "Bare", itemFor(oats, cup, 1), itemFor(banana, medium, 1))
+	withHeadings, withoutHeadings := "2026-10-29", "2026-10-28"
+	lk, lh = f.key("log")
+	a, _, err := f.meals.LogMeal(f.ctx, f.userID, bare.ID, withHeadings, nil, &dinner, time.Now(), lk, lh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := f.logMeal(t, f.userID, bare.ID, withoutHeadings, nil)
+	if *a.Day.EnergyKcal != *b.Day.EnergyKcal || *a.Day.ProteinG != *b.Day.ProteinG || *a.Day.CarbsG != *b.Day.CarbsG || *a.Day.FatG != *b.Day.FatG {
+		t.Fatalf("a heading changes no total: %+v vs %+v", a.Day, b.Day)
+	}
+
+	// Typed totals converted on the first log get no heading.
+	energy := 300
+	typed := "2026-10-27"
+	if _, _, err := NewNutritionDAO(f.pool).SaveDay(f.ctx, f.userID, &model.NutritionDay{Date: typed, EnergyKcal: &energy, Source: model.NutritionSourceAppleHealth, LoggedAt: time.Now()}, nil, false, "typed-"+uuid.NewString(), "typed-hash"); err != nil {
+		t.Fatal(err)
+	}
+	lk, lh = f.key("log")
+	conv, _, err := f.meals.LogMeal(f.ctx, f.userID, bare.ID, typed, nil, &lunch, time.Now(), lk, lh)
+	if err != nil || len(conv.Converted) != 1 || conv.Converted[0].Section != nil || *conv.Entries[0].Section != lunch {
+		t.Fatalf("a converted quick add has no heading; the meal's entries have theirs: %+v %v", conv, err)
+	}
+
+	// The database refuses anything but the four headings.
+	if _, err := f.pool.Exec(f.ctx, `UPDATE food_entries SET section='brunch' WHERE user_id=$1 AND id=$2`, f.userID, underBreakfast.ID); err == nil {
+		t.Error("an unknown heading must be refused on food_entries")
+	}
+	if _, err := f.pool.Exec(f.ctx, `UPDATE saved_meals SET section='Breakfast' WHERE user_id=$1 AND id=$2`, f.userID, meal.ID); err == nil {
+		t.Error("an unknown heading must be refused on saved_meals")
+	}
+
+	// The export carries headings.
+	export, err := NewExportDAO(f.pool).Export(f.ctx, f.userID, time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sections := map[string]int{}
+	for _, e := range export.Nutrition.FoodEntries {
+		if e.Section == nil {
+			sections["none"]++
+		} else {
+			sections[*e.Section]++
+		}
+	}
+	if sections["breakfast"] != 3 || sections["snacks"] != 2 || sections["dinner"] != 2 || sections["lunch"] != 2 || sections["none"] < 4 {
+		t.Fatalf("exported entries carry their headings: %v", sections)
+	}
+	var exportedBare, exportedBreakfast bool
+	for _, m := range export.Nutrition.SavedMeals {
+		exportedBare = exportedBare || (m.Name == "Bare" && m.Section == nil)
+		exportedBreakfast = exportedBreakfast || (m.Name == "Breakfast" && m.Section == nil) // cleared by the replace above
+	}
+	if !exportedBare || !exportedBreakfast {
+		t.Fatalf("exported saved meals carry their heading: %+v", export.Nutrition.SavedMeals)
 	}
 }

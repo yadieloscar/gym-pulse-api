@@ -62,6 +62,18 @@ Tests are required by the constitution (Principle IV) and by SC-002..SC-006.
 - [X] T025 Independent read-only review of the final diff against the plan's Design Assessment; record findings below
 - [X] T026 Fix review findings 1–3: match a saved serving by label on read and on a log as saved (`internal/model/saved_meal.go`, `internal/dao/saved_meal_dao.go`); bound and de-duplicate weights as stored (`internal/service/saved_meal_svc.go`); map the item unique index to the item error; tests; FR-018 in `spec.md` and `docs/CONTRACTS.md`
 
+## Phase 9: Amendment A1 - day headings (FR-019..FR-024)
+
+- [X] T027 Create `migrations/040_add_meal_sections.up.sql` and `.down.sql`; document the two columns, counts, and migration 040 in `docs/DATABASE_DESIGN.md`; migration-contract test in `internal/model/saved_meal_test.go`
+- [X] T028 [P] Add `MealSection` and the `section` fields on `FoodEntry`, `CreateFoodEntryRequest`, `MoveFoodEntryRequest`, `SavedMeal`, `SaveMealRequest`, `LogMealRequest` in `internal/model/food.go` and `internal/model/saved_meal.go` with tests
+- [X] T029 [US5] Store and read the heading on entries and add `MoveEntry` in `internal/dao/food_entry_dao.go`; static test that a move writes only heading, revision, and timestamp
+- [X] T030 [US5] Validate `section` on create and add `MoveEntry` in `internal/service/food_svc.go`; handler `MoveEntry` in `internal/handler/food.go`; route `PUT /nutrition/entries/{id}/section`; service, handler, and router tests
+- [X] T031 [US5] Saved meals remember a heading and the log applies it (`internal/dao/saved_meal_dao.go`, `internal/service/saved_meal_svc.go`); tests
+- [X] T032 Add `section` to exported entries and saved meals (`internal/model/export.go`, `internal/dao/export_dao.go`)
+- [X] T033 PostgreSQL integration tests for headings in `internal/dao/saved_meal_integration_test.go`
+- [X] T034 Document headings in `docs/CONTRACTS.md`; regenerate Swagger; extend smoke step 13k
+- [X] T035 Rerun every gate from Phase 8 and record the results below
+
 ## Dependencies
 
 T001 → T002..T006 → US2 (create) → US3 (list) → US1 (log) → US4 → cross-cutting → verification.
@@ -90,6 +102,12 @@ different files from their neighbours.
 | FR-016 | T022, T024 | smoke including unchanged step 13g |
 | FR-017 | T021 | CONTRACTS.md reviewed against handler tests |
 | FR-018 | T026 | model test, integration (rounded weight, re-weighed and relabelled serving), smoke |
+| FR-019 | T027–T030, T033 | service tests, database check, integration, smoke |
+| FR-020 | T029, T030, T033 | static DAO test, integration (values and day byte-identical), smoke |
+| FR-021 | T029, T033 | integration |
+| FR-022 | T031, T033 | integration, smoke |
+| FR-023 | T033 | integration; unchanged nutrition and recents tests |
+| FR-024 | T032, T033 | export integration |
 
 ## Verification (2026-11-15)
 
@@ -136,6 +154,22 @@ No authorization, ownership, transaction, idempotency, or lock-order defect foun
 
 The same one-decimal bound hole exists on the shipped `POST /days/{date}/entries` (a grams-only
 serving of 0.04 g); it is outside this feature and is not changed here.
+
+### Amendment A1 rerun (2026-11-15, after day headings)
+
+| Check | Result |
+|---|---|
+| `gofmt`, `go vet ./...`, `go test ./...`, `golangci-lint run` | clean; 8 packages passed; 0 issues |
+| `./scripts/validate-database-design.sh` | passed: 43 tables, 447 columns, 49 named indexes |
+| Service and middleware coverage | 91.1% and 91.4% |
+| Whole integration suite with `-race` | passed, including `TestDayHeadingsAreLabelsOnly` |
+| `scripts/smoke.sh` against the branch image | 35 passed, 0 failed; step 13k now covers headings; step 13g (no headings) unchanged |
+| `scripts/validate-supabase-security.sh` | passed |
+| Migration 040 down, then up | both clean |
+| Swagger | regenerated |
+
+The amendment was not given a second independent review; the first review covered commits up to
+the saved-meal log, not headings.
 
 ### Not verified
 

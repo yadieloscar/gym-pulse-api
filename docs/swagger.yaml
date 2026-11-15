@@ -184,6 +184,12 @@ definitions:
         type: string
       quick_add:
         $ref: '#/definitions/model.QuickAdd'
+      section:
+        allOf:
+        - $ref: '#/definitions/model.MealSection'
+        description: |-
+          Section is optional; omitted from the hashed payload when absent so a
+          request from a client that knows no headings hashes as it always did.
       serving:
         $ref: '#/definitions/model.Serving'
     type: object
@@ -573,6 +579,8 @@ definitions:
         type: string
       protein_g:
         type: number
+      section:
+        type: string
       serving_g:
         type: number
       serving_label:
@@ -681,6 +689,8 @@ definitions:
           $ref: '#/definitions/model.ExportSavedMealItem'
         type: array
       name:
+        type: string
+      section:
         type: string
     type: object
   model.ExportSavedMealItem:
@@ -938,6 +948,8 @@ definitions:
         type: number
       revision:
         type: integer
+      section:
+        $ref: '#/definitions/model.MealSection'
       serving:
         $ref: '#/definitions/model.Serving'
       updated_at:
@@ -1185,6 +1197,12 @@ definitions:
         $ref: '#/definitions/model.MealRef'
       operation_key:
         type: string
+      section:
+        allOf:
+        - $ref: '#/definitions/model.MealSection'
+        description: |-
+          Section is the heading for every entry of this log; nil uses the
+          meal's own.
     type: object
   model.MaterializeScheduleRequest:
     properties:
@@ -1233,6 +1251,18 @@ definitions:
       id:
         type: string
     type: object
+  model.MealSection:
+    enum:
+    - breakfast
+    - lunch
+    - dinner
+    - snacks
+    type: string
+    x-enum-varnames:
+    - MealSectionBreakfast
+    - MealSectionLunch
+    - MealSectionDinner
+    - MealSectionSnacks
   model.MealTotals:
     properties:
       carbs_g:
@@ -1243,6 +1273,15 @@ definitions:
         type: number
       protein_g:
         type: number
+    type: object
+  model.MoveFoodEntryRequest:
+    properties:
+      expected_revision:
+        type: integer
+      operation_key:
+        type: string
+      section:
+        $ref: '#/definitions/model.MealSection'
     type: object
   model.NutritionDay:
     properties:
@@ -1686,6 +1725,8 @@ definitions:
         type: string
       operation_key:
         type: string
+      section:
+        $ref: '#/definitions/model.MealSection'
     type: object
   model.SaveNutritionDayRequest:
     properties:
@@ -1760,6 +1801,8 @@ definitions:
         type: string
       revision:
         type: integer
+      section:
+        $ref: '#/definitions/model.MealSection'
       totals:
         $ref: '#/definitions/model.MealTotals'
       updated_at:
@@ -3366,6 +3409,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Change an entry's serving and amount, or its quick-add values
+      tags:
+      - nutrition
+  /api/v1/nutrition/entries/{id}/section:
+    put:
+      description: 'Changes only the heading: the entry''s serving, amount, and values,
+        and the day''s totals, stay as they were.'
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: section (breakfast, lunch, dinner, snacks, or null) with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.MoveFoodEntryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryUpdated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Move an entry to another day heading, or to none
       tags:
       - nutrition
   /api/v1/nutrition/foods:

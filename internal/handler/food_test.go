@@ -20,6 +20,7 @@ type foodHandlerService struct {
 	deletedRev int64
 	deletedKey string
 	id         uuid.UUID
+	moved      *model.MoveFoodEntryRequest
 }
 
 func (s *foodHandlerService) Search(_ context.Context, _ uuid.UUID, query string, limit int) (*model.FoodSearchResult, error) {
@@ -68,6 +69,14 @@ func (s *foodHandlerService) DeleteEntry(_ context.Context, _, id uuid.UUID, rev
 		return nil, model.FoodEntryRemovedOutcome, s.err
 	}
 	return &model.FoodEntryDeleted{}, model.FoodEntryRemovedOutcome, nil
+}
+
+func (s *foodHandlerService) MoveEntry(_ context.Context, _, id uuid.UUID, req model.MoveFoodEntryRequest) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error) {
+	s.id, s.moved = id, &req
+	if s.err != nil {
+		return nil, model.FoodEntryMovedOutcome, s.err
+	}
+	return &model.FoodEntryUpdated{Entry: model.FoodEntry{ID: id, Section: req.Section}}, model.FoodEntryMovedOutcome, nil
 }
 
 func TestFoodHandlerSearchParsesLimit(t *testing.T) {
@@ -191,5 +200,47 @@ func TestFoodHandlerMutationsAndDeleteParams(t *testing.T) {
 	h.LookupBarcode(rec, guidedHandlerRequest(t, http.MethodGet, "/", nil, uuid.New(), "", map[string]string{"code": "096619123452"}))
 	if rec.Code != http.StatusNotFound || svc.code != "096619123452" {
 		t.Fatalf("barcode passes through and maps 404: %d", rec.Code)
+	}
+}
+
+func TestFoodHandlerMoveEntry(t *testing.T) {
+	svc := &foodHandlerService{}
+	h := NewFoodHandler(svc)
+	id := uuid.New()
+	rec := httptest.NewRecorder()
+	h.MoveEntry(rec, guidedHandlerRequest(t, http.MethodPut, "/", map[string]any{"section": "lunch", "expected_revision": 1, "operation_key": "mv-1"}, uuid.New(), "mv-1", map[string]string{"id": id.String()}))
+	if rec.Code != http.StatusOK || svc.id != id || svc.moved.Section == nil || *svc.moved.Section != model.MealSectionLunch || svc.moved.ExpectedRevision != 1 {
+		t.Fatalf("move → 200 with the heading and revision: %d %s", rec.Code, rec.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if entry, _ := body["entry"].(map[string]any); entry["section"] != "lunch" {
+		t.Fatalf("the entry carries its heading: %s", rec.Body.String())
+	}
+	if _, present := body["day"]; !present {
+		t.Fatalf("the envelope keeps day: %s", rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.MoveEntry(rec, guidedHandlerRequest(t, http.MethodPut, "/", map[string]any{"section": nil, "expected_revision": 2, "operation_key": "mv-2"}, uuid.New(), "mv-2", map[string]string{"id": id.String()}))
+	if rec.Code != http.StatusOK || svc.moved.Section != nil {
+		t.Fatalf("a null heading clears it: %d %s", rec.Code, rec.Body.String())
+	}
+	rec = httptest.NewRecorder()
+	h.MoveEntry(rec, guidedHandlerRequest(t, http.MethodPut, "/", map[string]any{"section": "lunch", "expected_revision": 1, "operation_key": "mv-3"}, uuid.New(), "other", map[string]string{"id": id.String()}))
+	if rec.Code != http.StatusUnprocessableEntity || !containsField(rec, "Idempotency-Key") {
+		t.Fatalf("header/body mismatch → 422: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	h.MoveEntry(rec, guidedHandlerRequest(t, http.MethodPut, "/", map[string]any{"section": "lunch", "expected_revision": 1, "operation_key": "mv-4"}, uuid.New(), "mv-4", map[string]string{"id": "nope"}))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("malformed id → shared 404: %d", rec.Code)
+	}
+	svc.err = &model.ValidationError{Message: "section must be breakfast, lunch, dinner, or snacks", Field: "section"}
+	rec = httptest.NewRecorder()
+	h.MoveEntry(rec, guidedHandlerRequest(t, http.MethodPut, "/", map[string]any{"section": "brunch", "expected_revision": 1, "operation_key": "mv-5"}, uuid.New(), "mv-5", map[string]string{"id": id.String()}))
+	if rec.Code != http.StatusUnprocessableEntity || !containsField(rec, "section") {
+		t.Fatalf("unknown heading → 422 on section: %d %s", rec.Code, rec.Body.String())
 	}
 }

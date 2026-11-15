@@ -23,7 +23,7 @@ type SavedMealDAO interface {
 	CreateMeal(ctx context.Context, userID uuid.UUID, req model.SaveMealRequest, operationKey, requestHash string) (*model.SavedMeal, model.SavedMealOutcome, error)
 	UpdateMeal(ctx context.Context, userID, mealID uuid.UUID, req model.SaveMealRequest, operationKey, requestHash string) (*model.SavedMeal, model.SavedMealOutcome, error)
 	DeleteMeal(ctx context.Context, userID, mealID uuid.UUID, expectedRevision int64, operationKey, requestHash string) (model.SavedMealOutcome, error)
-	LogMeal(ctx context.Context, userID, mealID uuid.UUID, date string, items []model.MealItemInput, loggedAt time.Time, operationKey, requestHash string) (*model.MealLogged, model.SavedMealOutcome, error)
+	LogMeal(ctx context.Context, userID, mealID uuid.UUID, date string, items []model.MealItemInput, section *model.MealSection, loggedAt time.Time, operationKey, requestHash string) (*model.MealLogged, model.SavedMealOutcome, error)
 }
 
 type savedMealDAO struct {
@@ -40,7 +40,7 @@ const (
 	savedMealDeleteScope = "saved-meals/delete"
 	savedMealLogScope    = "saved-meals/log"
 
-	savedMealColumns = `m.id, m.name, m.revision, m.last_logged_at, m.created_at, m.updated_at`
+	savedMealColumns = `m.id, m.name, m.section, m.revision, m.last_logged_at, m.created_at, m.updated_at`
 
 	savedMealNameIndex        = "ux_saved_meals_user_name"
 	savedMealItemServingIndex = "ux_saved_meal_items_food_serving"
@@ -141,9 +141,9 @@ func (r *savedMealDAO) CreateMeal(ctx context.Context, userID uuid.UUID, req mod
 	}
 	var meal model.SavedMeal
 	err = scanSavedMeal(tx.QueryRow(ctx, `
-		INSERT INTO saved_meals AS m (id, user_id, name)
-		VALUES ($1,$2,$3)
-		RETURNING `+savedMealColumns, uuid.New(), userID, req.Name), &meal)
+		INSERT INTO saved_meals AS m (id, user_id, name, section)
+		VALUES ($1,$2,$3,$4)
+		RETURNING `+savedMealColumns, uuid.New(), userID, req.Name, req.Section), &meal)
 	if err != nil {
 		return nil, model.SavedMealCreated, savedMealWriteError("inserting saved meal", err)
 	}
@@ -194,9 +194,9 @@ func (r *savedMealDAO) UpdateMeal(ctx context.Context, userID, mealID uuid.UUID,
 	var meal model.SavedMeal
 	err = scanSavedMeal(tx.QueryRow(ctx, `
 		UPDATE saved_meals AS m
-		SET name=$3, revision=revision+1, updated_at=now()
+		SET name=$3, section=$4, revision=revision+1, updated_at=now()
 		WHERE m.user_id=$1 AND m.id=$2
-		RETURNING `+savedMealColumns, userID, mealID, req.Name), &meal)
+		RETURNING `+savedMealColumns, userID, mealID, req.Name, req.Section), &meal)
 	if err != nil {
 		return nil, model.SavedMealReplaced, savedMealWriteError("updating saved meal", err)
 	}
@@ -257,8 +257,9 @@ func (r *savedMealDAO) DeleteMeal(ctx context.Context, userID, mealID uuid.UUID,
 // LogMeal inserts one ordinary food entry per item and rewrites the day as
 // the sum of its entries, all in one transaction: every entry lands or none
 // does. A nil items logs the meal as saved; otherwise items replaces the
-// saved list for this log only.
-func (r *savedMealDAO) LogMeal(ctx context.Context, userID, mealID uuid.UUID, date string, items []model.MealItemInput, loggedAt time.Time, operationKey, requestHash string) (*model.MealLogged, model.SavedMealOutcome, error) {
+// saved list for this log only. Every entry goes under section, or under the
+// meal's own heading when section is nil.
+func (r *savedMealDAO) LogMeal(ctx context.Context, userID, mealID uuid.UUID, date string, items []model.MealItemInput, section *model.MealSection, loggedAt time.Time, operationKey, requestHash string) (*model.MealLogged, model.SavedMealOutcome, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, model.SavedMealLogged, fmt.Errorf("beginning saved meal log: %w", err)
@@ -294,6 +295,9 @@ func (r *savedMealDAO) LogMeal(ctx context.Context, userID, mealID uuid.UUID, da
 			return nil, model.SavedMealLogged, mealItemError(i, "food facts are not available")
 		}
 	}
+	if section == nil {
+		section = meal.Section
+	}
 	existing, err := lockNutritionDay(ctx, tx, userID, date)
 	if err != nil {
 		return nil, model.SavedMealLogged, err
@@ -314,6 +318,7 @@ func (r *savedMealDAO) LogMeal(ctx context.Context, userID, mealID uuid.UUID, da
 			ProteinG:   item.ProteinG,
 			CarbsG:     item.CarbsG,
 			FatG:       item.FatG,
+			Section:    section,
 			// Entries inserted in one transaction share created_at, so a
 			// microsecond step keeps the meal's order in the day list.
 			LoggedAt: loggedAt.Add(time.Duration(i) * time.Microsecond),
@@ -569,5 +574,5 @@ func savedMealRecord(scope, operationKey, requestHash string, status int, meal *
 }
 
 func scanSavedMeal(row rowScanner, meal *model.SavedMeal) error {
-	return row.Scan(&meal.ID, &meal.Name, &meal.Revision, &meal.LastLoggedAt, &meal.CreatedAt, &meal.UpdatedAt)
+	return row.Scan(&meal.ID, &meal.Name, &meal.Section, &meal.Revision, &meal.LastLoggedAt, &meal.CreatedAt, &meal.UpdatedAt)
 }

@@ -46,6 +46,18 @@ and transactions are in [data-model.md](./data-model.md).
 | Weight bounds (edge case) | Service tests: 0.04 g and negative weights → `422` with the index; 100 g and 100.04 g of one food → duplicate; integration: the unique index backstop answers with the item, not a server error |
 | Unavailable item (edge case) | Model tests: an implausible food yields `available: false`, no values, and `totals: null`; static DAO test: the log refuses an unavailable item before the day is locked |
 
+### Amendment A1: headings
+
+| Requirement | Evidence |
+|---|---|
+| FR-019 | Service tests: create with each of the four headings and with none; any other value → `422` on `section`. Integration: stored and read back; database check refuses an unknown value |
+| FR-020, SC-007 | Integration: change the food's facts, move the entry, and compare serving, amount, four values, `logged_at`, day totals and day revision before and after; stale revision → `409` with the entry; verbatim replay; foreign entry → shared `404`. Static DAO test: the move statement sets only `section`, `revision`, `updated_at` and never calls the rollup |
+| FR-021 | Integration: the existing entry change keeps the heading; every read returns `section` |
+| FR-022 | Integration: meal with a heading logs under it; a log naming another uses that one and leaves the meal unchanged; a meal with none logs with none; converted quick add has none |
+| FR-023 | Integration: day totals identical for the same foods with and without headings; existing nutrition and recents tests unchanged |
+| FR-024 | Export integration: `section` on entries and saved meals |
+| Compatibility | Smoke step 13g (no headings) passes unchanged; model test: a request without `section` hashes as before |
+
 ## Manual acceptance
 
 Create a private food and find one catalog food. `POST /meals` with both → `201`, `totals` equal

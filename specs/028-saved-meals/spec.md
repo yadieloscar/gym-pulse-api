@@ -30,6 +30,18 @@ Governing product rules: workspace `docs/PRODUCT.md`, section "Nutrition" (amend
 - Q: A food's serving changes after the meal is saved (the athlete re-weighs "1 scoop", or the source updates it). Does the meal still log? → A: Yes. A saved item remembers its serving by label; the list and a log as saved both use the food's current weight for that label, so they always agree. If the food no longer has that label, the saved label and weight are used. *(Added 2026-11-15 from the independent review; a meal must never be shown as loggable and then refused.)*
 - Q: Limits? → A: Up to 50 saved meals per athlete, 1 to 20 items per meal, names of 1 to 60 characters that are unique for that athlete ignoring case.
 
+### Session 2026-11-15, amendment A1: day headings
+
+Owner request while the API was being built: "I also want this to be more intuitive. Like I want to log breakfast, snacks, things like that easy", then "Yes, add headings". This replaces the earlier answers "the day keeps no meal grouping" and "there are still no meal slots", and spec 014's "Meals (breakfast, lunch, dinner)? → Not in this release". Workspace `docs/PRODUCT.md` gains "Headings are labels, not a plan" the same day.
+
+- Q: Which headings? → A: Four fixed ones: Breakfast, Lunch, Dinner, Snacks. Not renamable, no custom headings.
+- Q: What is a heading in the data? → A: An optional label (`section`) on a food entry. It changes no value and no total. The service never infers it from the clock; the app sends it.
+- Q: Entries logged before this, or by an older app? → A: They have no heading and stay valid. Nothing is back-filled or guessed.
+- Q: Can an entry move to another heading? → A: Yes, as its own change that touches nothing else. It must not go through the existing entry change, because that recomputes the entry from the food's current facts and a move is not a new logging decision.
+- Q: Saved meals? → A: A saved meal may remember one heading. Logging it puts every food under that heading unless the log names another.
+- Q: Per-heading targets, times, reminders, "you skipped breakfast"? → A: None. A heading is a label on what was eaten.
+- Q: Does an entry point back to the saved meal that logged it? → A: Still no. A heading is not a link to a meal.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Log a saved meal in one request (Priority: P1)
@@ -97,7 +109,31 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 2. **Given** a stale revision, **When** a change or delete arrives, **Then** it is rejected with the documented revision conflict and nothing changes.
 3. **Given** a saved meal, **When** it is deleted, **Then** it no longer appears in the list and every entry it ever logged stays on its day.
 
+---
+
+### User Story 5 - Put foods under a heading (Priority: P1, amendment A1)
+
+The athlete logs oats under Breakfast and an apple under Snacks, then moves the apple to Lunch. Reading the day returns each entry with its heading; the day's totals are unchanged by any of it.
+
+**Why this priority**: It is how the owner thinks about a day of eating ("log breakfast, snacks"), and the app cannot group a day without it.
+
+**Independent Test**: Log one food with heading breakfast and one with none, read the day and see `breakfast` and no heading; move the second to lunch and see only its heading and revision change, with every value and the day's totals identical.
+
+**Acceptance Scenarios**:
+
+1. **Given** a log of a food or a quick add, **When** it names one of the four headings, **Then** the entry is stored with that heading; **When** it names none, **Then** the entry has no heading.
+2. **Given** an entry, **When** the athlete moves it to another heading or to none with the current revision, **Then** only its heading and revision change: its serving, amount, values, logged time, and the day's totals and revision stay exactly as they were, even if the food's facts changed since.
+3. **Given** a stale revision, **When** a move arrives, **Then** it is rejected with the documented revision conflict.
+4. **Given** a saved meal that remembers a heading, **When** it is logged with no heading named, **Then** every entry carries the meal's heading; **When** the log names a heading, **Then** that one is used and the saved meal is unchanged.
+5. **Given** a heading that is not one of the four, **When** it is sent anywhere, **Then** it is rejected with a field-level validation error.
+6. **Given** the existing entry change (serving and amount, or quick-add values), **When** it is applied, **Then** the entry keeps its heading.
+
 ### Edge Cases
+
+- Typed totals converted into a quick add when the first food is logged (spec 014) get no heading.
+- An app built before headings never sends or reads one; its entries have none and its requests behave exactly as before.
+- Replacing a saved meal without naming a heading clears the meal's heading, like every other field of the replace.
+- The export carries each entry's and each saved meal's heading.
 
 - A meal with no items, more than 20 items, or the same food and serving listed twice is rejected with a field-level validation error. The same food with two different servings is allowed.
 - An item that names an unknown food, another athlete's private food, or an archived private food is rejected when a meal is created or changed, with the same answer for all three so nothing is revealed about foods the athlete cannot use.
@@ -115,8 +151,9 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 
 - No meals supplied, suggested, ranked, or shared by GymPulse; no meal library, templates, or copying another athlete's meal.
 - No recipes: no instructions, yields, portions of a cooked dish, photos, or ingredients other than foods.
-- No meal plans or schedules: a saved meal has no day, time, or meal slot (breakfast, lunch, dinner), and the service never logs one on its own.
-- No "meal" grouping stored on a day, and no link from an entry back to the meal that logged it.
+- No meal plans or schedules: a saved meal has no day or time, and the service never logs one on its own. *(A1: it may remember one of the four headings.)*
+- No link from an entry back to the meal that logged it, and no grouping of a day's entries by saved meal. *(A1: an entry may carry one of the four headings.)*
+- No custom or renamable headings, no per-heading targets, subtotals stored by the service, times, reminders, or missed-meal signals; the service never infers a heading from the time of day.
 - No quick-add items inside a meal, and no stored energy or macro values on a meal.
 - No change to targets, the weekly view, Health import, food search, barcode lookup, or recents.
 
@@ -143,6 +180,13 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 - **FR-016**: The change MUST be additive: no existing request, response, or error changes, and an app without saved meals keeps working.
 - **FR-017**: The public contract for every behaviour above MUST be documented in `docs/CONTRACTS.md` in the same change as the implementation.
 
+- **FR-019** *(A1)*: A food entry MAY carry one heading from the fixed set breakfast, lunch, dinner, snacks, or none. Creating an entry (food or quick add) MUST accept an optional heading; any other value MUST be rejected with a field-level validation error.
+- **FR-020** *(A1)*: The service MUST let the athlete change or clear an entry's heading under the entry's revision and the documented idempotency rules, and that change MUST NOT alter the entry's serving, amount, values, or logged time, or the day's totals or revision.
+- **FR-021** *(A1)*: The existing entry change MUST leave the heading as it is, and every entry read MUST return the heading (null when none).
+- **FR-022** *(A1)*: A saved meal MAY remember one heading. Logging it MUST give every created entry the heading named in the log request, or else the meal's heading, or else none.
+- **FR-023** *(A1)*: A heading MUST NOT affect any total, target, weekly view, recents ranking, or Health behaviour, and the service MUST NOT derive a heading from a time.
+- **FR-024** *(A1)*: The export MUST include each entry's and each saved meal's heading, additively.
+
 ### Key Entities *(include if feature involves data)*
 
 - **Saved meal**: a named, ordered list of items owned by one athlete. Name, revision, when it was saved, when it was last logged.
@@ -159,6 +203,7 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 - **SC-003**: In 100% of automated scenarios, a failed or repeated meal log leaves the day with either all of the meal's entries once or none of them.
 - **SC-004**: In 100% of automated scenarios, changing or deleting a saved meal leaves every previously logged day unchanged.
 - **SC-005**: No athlete can read, change, log, or infer another athlete's saved meals or private foods, in automated ownership tests.
+- **SC-007** *(A1)*: In 100% of automated scenarios, moving an entry between headings leaves its values and the day's totals byte-identical, including after the food's facts changed.
 - **SC-006**: An app built before this feature passes its existing nutrition and food logging scenarios against the new service without change.
 
 ## Assumptions

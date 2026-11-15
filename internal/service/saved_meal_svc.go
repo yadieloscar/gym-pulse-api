@@ -115,6 +115,9 @@ func (s *savedMealService) LogMeal(ctx context.Context, userID uuid.UUID, date s
 	if req.Meal == nil || req.Meal.ID == uuid.Nil {
 		return nil, model.SavedMealLogged, &model.ValidationError{Message: "meal is required", Field: "meal"}
 	}
+	if err := validateMealSection(req.Section); err != nil {
+		return nil, model.SavedMealLogged, err
+	}
 	// A present items list replaces the saved items for this log; an absent
 	// one logs the meal as saved. An empty list is neither.
 	if req.Items != nil {
@@ -133,7 +136,7 @@ func (s *savedMealService) LogMeal(ctx context.Context, userID uuid.UUID, date s
 	if req.LoggedAt != nil {
 		loggedAt = *req.LoggedAt
 	}
-	return s.meals.LogMeal(ctx, userID, req.Meal.ID, date, req.Items, loggedAt, req.OperationKey, hash)
+	return s.meals.LogMeal(ctx, userID, req.Meal.ID, date, req.Items, req.Section, loggedAt, req.OperationKey, hash)
 }
 
 // normalizeSaveMealRequest trims and validates what the request alone can
@@ -146,6 +149,9 @@ func normalizeSaveMealRequest(req *model.SaveMealRequest) error {
 	req.Name = strings.TrimSpace(req.Name)
 	if length := utf8.RuneCountInString(req.Name); length < 1 || length > model.MaxSavedMealNameLength {
 		return &model.ValidationError{Message: "name must be between 1 and 60 characters", Field: "name"}
+	}
+	if err := validateMealSection(req.Section); err != nil {
+		return err
 	}
 	return normalizeMealItems(req.Items)
 }

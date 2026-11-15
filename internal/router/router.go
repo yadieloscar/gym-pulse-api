@@ -159,6 +159,7 @@ func New(
 					r.Get("/days/{date}/entries", foodHandler.ListDayEntries)
 					r.Post("/days/{date}/entries", foodHandler.CreateEntry)
 					r.Put("/entries/{id}", foodHandler.UpdateEntry)
+					r.Put("/entries/{id}/section", foodHandler.MoveEntry)
 					r.Delete("/entries/{id}", foodHandler.DeleteEntry)
 					r.Get("/meals", savedMealHandler.List)
 					r.Post("/meals", savedMealHandler.Create)

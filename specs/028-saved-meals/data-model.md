@@ -41,6 +41,23 @@ the own-food key).
 Both tables: RLS enabled, Data API roles revoked, `gym_pulse_api_access` policy and DML grants for
 the runtime role, as migration 030 does for the food tables.
 
+## Amendment A1: headings (migration `040_add_meal_sections`)
+
+| Table | Field | Type | Rules |
+|---|---|---|---|
+| `food_entries` | `section` | TEXT | Nullable; `CHECK (section IN ('breakfast', 'lunch', 'dinner', 'snacks'))` |
+| `saved_meals` | `section` | TEXT | Nullable; same check |
+
+No default and no backfill: existing entries and meals have no heading. No index.
+
+**Move transaction** (`food-entries/section`): `nutrition:` lock → ledger replay → lock the entry
+`FOR UPDATE` (shared `404`) → revision check (stale → `REVISION_CONFLICT` with the entry) → `UPDATE
+food_entries SET section, revision + 1, updated_at` and nothing else → read the day row unchanged →
+ledger `200` → commit. `nutrition_days` is not written.
+
+**Meal log**: each inserted entry carries the request's section, else the meal's, else `NULL`. A
+quick add converted from typed totals carries `NULL`.
+
 ## Ownership
 
 A private food on an item must belong to the meal's owner. The create and update transactions read

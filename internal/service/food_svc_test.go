@@ -91,6 +91,13 @@ type fakeEntryDAO struct {
 	entry  *model.FoodEntry
 	hashes []string
 	change model.UpdateFoodEntryRequest
+	move   model.MoveFoodEntryRequest
+	moved  uuid.UUID
+}
+
+func (f *fakeEntryDAO) MoveEntry(_ context.Context, _, id uuid.UUID, move model.MoveFoodEntryRequest, _, hash string) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error) {
+	f.move, f.moved, f.hashes = move, id, append(f.hashes, hash)
+	return &model.FoodEntryUpdated{Entry: model.FoodEntry{ID: id, Section: move.Section}}, model.FoodEntryMovedOutcome, nil
 }
 
 func (f *fakeEntryDAO) ListDayEntries(context.Context, uuid.UUID, string) (*model.DayEntries, error) {
@@ -461,3 +468,59 @@ func TestUserFoodValidation(t *testing.T) {
 }
 
 func ptrString(v string) *string { return &v }
+
+func TestFoodEntryHeadings(t *testing.T) {
+	food := catalogFood(model.FoodSourceUSDA, "1", "Oats")
+	foods := &fakeFoodDAO{catalog: []model.Food{food}, foods: map[uuid.UUID]*model.Food{food.ID: &food}}
+	entries := &fakeEntryDAO{}
+	svc, _ := newFoodServiceForTest(foods, entries, &fakeSource{name: "usda"}, &fakeSource{name: "off"})
+	amount := 1.0
+	base := func() model.CreateFoodEntryRequest {
+		return model.CreateFoodEntryRequest{Food: &model.FoodRef{ID: food.ID}, Serving: &model.HundredGramServing, Amount: &amount, OperationKey: "e:1"}
+	}
+
+	req := base()
+	if _, _, err := svc.CreateEntry(context.Background(), uuid.New(), "2026-10-27", req); err != nil || entries.entry.Section != nil {
+		t.Fatalf("an entry logged without a heading has none: %v", err)
+	}
+	withoutHeading := entries.hashes[len(entries.hashes)-1]
+
+	snacks := model.MealSectionSnacks
+	req.Section = &snacks
+	if _, _, err := svc.CreateEntry(context.Background(), uuid.New(), "2026-10-27", req); err != nil || entries.entry.Section == nil || *entries.entry.Section != model.MealSectionSnacks {
+		t.Fatalf("an entry is stored under the heading it names: %v", err)
+	}
+	if entries.hashes[len(entries.hashes)-1] == withoutHeading {
+		t.Fatal("the heading is part of the idempotent payload")
+	}
+	quick := model.CreateFoodEntryRequest{QuickAdd: &model.QuickAdd{ProteinG: &amount}, Section: &snacks, OperationKey: "e:2"}
+	if _, _, err := svc.CreateEntry(context.Background(), uuid.New(), "2026-10-27", quick); err != nil || entries.entry.Section == nil {
+		t.Fatalf("a quick add may sit under a heading too: %v", err)
+	}
+
+	brunch := model.MealSection("brunch")
+	req.Section = &brunch
+	var validation *model.ValidationError
+	if _, _, err := svc.CreateEntry(context.Background(), uuid.New(), "2026-10-27", req); !errors.As(err, &validation) || validation.Field != "section" {
+		t.Fatalf("an unknown heading is refused on section: %v", err)
+	}
+
+	id := uuid.New()
+	for label, bad := range map[string]model.MoveFoodEntryRequest{
+		"expected_revision": {Section: &snacks, ExpectedRevision: 0, OperationKey: "m:1"},
+		"operation_key":     {Section: &snacks, ExpectedRevision: 1, OperationKey: " "},
+		"section":           {Section: &brunch, ExpectedRevision: 1, OperationKey: "m:1"},
+	} {
+		if _, _, err := svc.MoveEntry(context.Background(), uuid.New(), id, bad); !errors.As(err, &validation) || validation.Field != label {
+			t.Fatalf("move: want a validation error on %s, got %v", label, err)
+		}
+	}
+	moved, outcome, err := svc.MoveEntry(context.Background(), uuid.New(), id, model.MoveFoodEntryRequest{Section: &snacks, ExpectedRevision: 2, OperationKey: " m:1 "})
+	if err != nil || outcome != model.FoodEntryMovedOutcome || entries.moved != id || entries.move.ExpectedRevision != 2 || entries.move.OperationKey != "m:1" || *moved.Entry.Section != model.MealSectionSnacks {
+		t.Fatalf("a move passes the id, revision, heading, and trimmed key: %v %+v", err, entries.move)
+	}
+	toSnacks := entries.hashes[len(entries.hashes)-1]
+	if _, _, err := svc.MoveEntry(context.Background(), uuid.New(), id, model.MoveFoodEntryRequest{Section: nil, ExpectedRevision: 2, OperationKey: "m:1"}); err != nil || entries.move.Section != nil || entries.hashes[len(entries.hashes)-1] == toSnacks {
+		t.Fatalf("a null heading clears it and hashes differently: %v", err)
+	}
+}

@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **43 tables and 445 supported columns**. For the Supabase-managed
+The current inventory contains **43 tables and 447 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -1246,6 +1246,7 @@ policies and existing Data API roles have table privileges revoked.
 | `protein_g` | `numeric(6,1)` | nullable | Snapshot protein | Health |
 | `carbs_g` | `numeric(6,1)` | nullable | Snapshot carbohydrate | Health |
 | `fat_g` | `numeric(6,1)` | nullable | Snapshot fat | Health |
+| `section` | `text` | nullable | Day heading the athlete put it under: `breakfast`, `lunch`, `dinner`, `snacks`, or none | Health |
 | `revision` | `bigint` | not null; `1` | Optimistic revision | Operational |
 | `logged_at` | `timestamptz` | not null | When the athlete logged it | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
@@ -1254,13 +1255,13 @@ policies and existing Data API roles have table privileges revoked.
 **Current constraints and indexes**
 
 - PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`; FK `catalog_food_id → food_catalog(id) ON DELETE RESTRICT`; FK `user_food_id → user_foods(id) ON DELETE RESTRICT`.
-- Checks: `kind IN ('food', 'quick_add')`; `ck_food_entries_kind` requires a `food` entry to reference exactly one food with serving, amount, and all four values, and a `quick_add` entry to reference none with at least one value; value bounds as on `nutrition_days`; `amount` 0.1–50; `revision > 0`.
+- Checks: `kind IN ('food', 'quick_add')`; `ck_food_entries_kind` requires a `food` entry to reference exactly one food with serving, amount, and all four values, and a `quick_add` entry to reference none with at least one value; value bounds as on `nutrition_days`; `amount` 0.1–50; `revision > 0`; `section` is one of the four headings or null (040). A heading is a label only: no total, target, or other table reads it, and moving an entry between headings writes only `section`, `revision`, and `updated_at`.
 - `ix_food_entries_user_date(user_id, date, logged_at)` serves the day list oldest first and the rollup sum.
 - `ix_food_entries_user_logged(user_id, logged_at DESC)` serves the 30-day recents query.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows first among the food tables. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
 
-**Migration source**: 030.
+**Migration source**: 030; `section` added by 040.
 
 ### Table: `public.food_barcode_misses`
 
@@ -1288,6 +1289,7 @@ policies and existing Data API roles have table privileges revoked.
 | `id` | `uuid` | not null | Meal identity | Operational |
 | `user_id` | `uuid` | not null | Authenticated owner | Account |
 | `name` | `text` | not null | Athlete's name for the meal, 1–60 chars | Health |
+| `section` | `text` | nullable | Day heading its entries are logged under unless the log names another; same four values as `food_entries.section` | Health |
 | `revision` | `bigint` | not null; `1` | Optimistic revision; advances on name or item change only | Operational |
 | `last_logged_at` | `timestamptz` | nullable | Last time the meal was logged; list order | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
@@ -1296,12 +1298,12 @@ policies and existing Data API roles have table privileges revoked.
 **Current constraints and indexes**
 
 - PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`.
-- Checks: `char_length(name)` 1–60; `revision > 0`.
+- Checks: `char_length(name)` 1–60; `revision > 0`; `section` is one of the four headings or null (040).
 - Unique `ux_saved_meals_user_name(user_id, lower(name))` enforces one name per athlete ignoring case and serves the owner list and count.
 
 **Ownership/lifecycle**: Private to the authenticated owner; at most 50 per athlete, counted in the create transaction under the `nutrition:` lock. Hard-deleted by the athlete (no entry references a meal). Account deletion removes the rows before `user_foods`. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
 
-**Migration source**: 039.
+**Migration source**: 039; `section` added by 040.
 
 ### Table: `public.saved_meal_items`
 
@@ -1469,11 +1471,11 @@ columns:
 | Mobility sessions | 1 | 13 |
 | Knee Kit days | 1 | 11 |
 | Workout imports | 1 | 15 (plus `day_logs.import_id`) |
-| Nutrition, food logging, and saved meals | 8 | 87 |
+| Nutrition, food logging, and saved meals | 8 | 89 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **43** | **445** |
+| **Total** | **43** | **447** |
 
-The count is derived from the final state after migration 039, not the sum of every historical
+The count is derived from the final state after migration 040, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -2309,6 +2311,7 @@ Report one of:
 | 037 | `knee_kit_days` daily knee checklist and pain log (one revisioned row per athlete and date), RLS and role revocation, runtime-role grant and policy. 035 and 036 are reserved by other open branches |
 | 038 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
 | 039 | `saved_meals` and `saved_meal_items` (athlete-saved lists of foods; no stored values), unique name and item indexes, RLS and role revocation, runtime-role grants and policies |
+| 040 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 
 ## 19. Decision summary
 

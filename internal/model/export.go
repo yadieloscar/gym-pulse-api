@@ -188,6 +188,7 @@ type ExportFoodEntry struct {
 	ProteinG     *float64  `json:"protein_g"`
 	CarbsG       *float64  `json:"carbs_g"`
 	FatG         *float64  `json:"fat_g"`
+	Section      *string   `json:"section"`
 	LoggedAt     time.Time `json:"logged_at"`
 }
 
@@ -207,8 +208,9 @@ type ExportOwnFood struct {
 // ExportSavedMeal is a meal the athlete saved: a name and the foods to log.
 // It carries no values; a meal's values come from its foods when logged.
 type ExportSavedMeal struct {
-	Name  string                `json:"name"`
-	Items []ExportSavedMealItem `json:"items"`
+	Name    string                `json:"name"`
+	Section *string               `json:"section"`
+	Items   []ExportSavedMealItem `json:"items"`
 }
 
 // ExportSavedMealItem is one food in a saved meal with its serving and amount.

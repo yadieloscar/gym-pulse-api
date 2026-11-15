@@ -44,6 +44,7 @@ type SavedMealItem struct {
 type SavedMeal struct {
 	ID           uuid.UUID       `json:"id"`
 	Name         string          `json:"name"`
+	Section      *MealSection    `json:"section"`
 	Items        []SavedMealItem `json:"items"`
 	Totals       *MealTotals     `json:"totals"`
 	Revision     int64           `json:"revision"`
@@ -68,6 +69,7 @@ type MealItemInput struct {
 // required on replace and absent on create.
 type SaveMealRequest struct {
 	Name             string          `json:"name"`
+	Section          *MealSection    `json:"section,omitempty"`
 	Items            []MealItemInput `json:"items"`
 	ExpectedRevision *int64          `json:"expected_revision,omitempty"`
 	OperationKey     string          `json:"operation_key"`
@@ -81,10 +83,13 @@ type MealRef struct {
 // LogMealRequest logs a saved meal to a day. Items, when present, replaces
 // the saved items for this log only and never changes the saved meal.
 type LogMealRequest struct {
-	Meal         *MealRef        `json:"meal"`
-	Items        []MealItemInput `json:"items,omitempty"`
-	LoggedAt     *time.Time      `json:"logged_at,omitempty"`
-	OperationKey string          `json:"operation_key"`
+	Meal  *MealRef        `json:"meal"`
+	Items []MealItemInput `json:"items,omitempty"`
+	// Section is the heading for every entry of this log; nil uses the
+	// meal's own.
+	Section      *MealSection `json:"section,omitempty"`
+	LoggedAt     *time.Time   `json:"logged_at,omitempty"`
+	OperationKey string       `json:"operation_key"`
 }
 
 // MealLogged is the result of logging a meal: one ordinary food entry per

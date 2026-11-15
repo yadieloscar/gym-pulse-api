@@ -64,7 +64,7 @@ func TestSavedMealDAOMutationsLockReplayAndCheckRevision(t *testing.T) {
 		"count >= model.MaxSavedMeals",
 		"checkSavedMealName(ctx, tx, userID, uuid.Nil, req.Name)",
 		"resolveMealItems(ctx, tx, userID, req.Items, nil)",
-		"INSERT INTO saved_meals AS m (id, user_id, name)",
+		"INSERT INTO saved_meals AS m (id, user_id, name, section)",
 		"insertSavedItems(ctx, tx, userID, meal.ID, items)",
 		"insertIdempotency(ctx, tx, userID, savedMealRecord(savedMealCreateScope",
 		"tx.Commit(ctx)",
@@ -78,7 +78,7 @@ func TestSavedMealDAOMutationsLockReplayAndCheckRevision(t *testing.T) {
 		"revisionConflict(req.ExpectedRevision, existing.Revision, existing)",
 		"checkSavedMealName(ctx, tx, userID, mealID, req.Name)",
 		"resolveMealItems(ctx, tx, userID, req.Items, heldFoodIDs(stored))",
-		"SET name=$3, revision=revision+1, updated_at=now()",
+		"SET name=$3, section=$4, revision=revision+1, updated_at=now()",
 		"DELETE FROM saved_meal_items",
 		"insertSavedItems(ctx, tx, userID, mealID, items)",
 		"insertIdempotency(ctx, tx, userID, savedMealRecord(savedMealUpdateScope",
@@ -117,5 +117,42 @@ func TestAccountCleanupRemovesSavedMealsBeforeOwnFoods(t *testing.T) {
 	foods := strings.Index(source, "DELETE FROM user_foods WHERE user_id = $1")
 	if meals < 0 || foods < 0 || meals > foods {
 		t.Fatal("account deletion must remove saved_meals before user_foods: meal items reference own foods with RESTRICT")
+	}
+}
+
+// Moving an entry between day headings is not a new logging decision: it
+// must write the heading, the revision, and the change time, and nothing
+// that could alter the entry's values or the day's totals.
+func TestFoodEntryMoveChangesOnlyTheHeading(t *testing.T) {
+	source := daoSource(t, "food_entry_dao.go")
+	start := strings.Index(source, "func (r *foodEntryDAO) MoveEntry(")
+	end := strings.Index(source, "// lockNutritionDay returns the locked day row")
+	if start < 0 || end < start {
+		t.Fatal("MoveEntry not found")
+	}
+	body := source[start:end]
+	assertMarkersInOrder(t, body,
+		"lockUserDomain(ctx, tx, nutritionLockNamespace",
+		"findIdempotency(ctx, tx, userID, foodEntryMoveScope",
+		"lockFoodEntry(ctx, tx, userID, entryID)",
+		"move.ExpectedRevision != existing.Revision",
+		"Authoritative: existing",
+		"SET section=$3, revision=revision+1, updated_at=now()",
+		"WHERE user_id=$1 AND id=$2",
+		"insertIdempotency(ctx, tx, userID, foodEntryRecord(foodEntryMoveScope",
+		"tx.Commit(ctx)",
+	)
+	for _, forbidden := range []string{"recomputeNutritionDay(", "applyEntryChange(", "updateFoodEntry(", "getFood(", "EntryValues(", "nutrition_days", "energy_kcal", "serving_g", "amount=", "logged_at="} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("MoveEntry must not contain %q", forbidden)
+		}
+	}
+	if strings.Count(body, "defer tx.Rollback(ctx)") != 1 {
+		t.Fatal("early returns rely on one deferred rollback")
+	}
+	// The existing change route keeps the heading: its UPDATE does not name it.
+	update := source[strings.Index(source, "func updateFoodEntry("):strings.Index(source, "func readFoodEntry(")]
+	if strings.Contains(update, "section") {
+		t.Error("the existing entry change must leave the heading as it is")
 	}
 }
