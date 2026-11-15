@@ -14,6 +14,11 @@ import (
 // a TLS-terminating proxy, so RemoteAddr is shared by every user and an IP
 // bucket would let one abusive client exhaust everyone else's quota.
 const (
+	// DefaultUserLimit bounds every authenticated request per minute. It sits
+	// well above what the app sends, including an offline outbox replay, and
+	// keeps one signed-in client from flooding routes that have no tighter
+	// limit of their own.
+	DefaultUserLimit = 600
 	// StorageBoundLimit bounds avatar uploads and account deletion per minute.
 	StorageBoundLimit = 10
 	// ScheduleRewriteLimit bounds schedule materialization, regeneration,
