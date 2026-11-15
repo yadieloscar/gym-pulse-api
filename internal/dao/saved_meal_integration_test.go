@@ -679,3 +679,124 @@ func TestSavedMealDatabaseConstraints(t *testing.T) {
 		t.Error("a catalog food a meal holds cannot be deleted")
 	}
 }
+
+// A saved serving's weight is stored to one decimal, and a food's servings
+// can change after a meal is saved. Neither may leave a meal that the list
+// shows as loggable but the log refuses.
+func TestSavedMealLogsAsSavedAfterWeightRoundingAndServingChanges(t *testing.T) {
+	f := newSavedMealFixture(t)
+	ounce := model.Serving{Label: "1 oz (28.35 g)", Grams: 28.35}
+	nutsPer := model.Per100g{EnergyKcal: 607, ProteinG: 20, CarbsG: 21, FatG: 54}
+	nuts := f.catalogFood(t, "Mixed nuts", nutsPer, ounce)
+	whey := f.ownFood(t, f.userID, "Whey")
+	meal := f.createMeal(t, f.userID, "Snack", itemFor(nuts, ounce, 2), itemFor(whey, scoop, 1))
+
+	var storedGrams float64
+	if err := f.pool.QueryRow(f.ctx, `
+		SELECT i.serving_g FROM saved_meal_items i JOIN saved_meals m ON m.id=i.meal_id
+		WHERE m.user_id=$1 AND i.position=0`, f.userID).Scan(&storedGrams); err != nil {
+		t.Fatal(err)
+	}
+	if storedGrams != 28.4 {
+		t.Fatalf("precondition: the database rounds the stored weight to one decimal, got %v", storedGrams)
+	}
+
+	// Rounded in storage, exact when read and logged.
+	wantEnergy, wantProtein, _, _ := model.EntryValues(nutsPer, 28.35, 2)
+	list, err := f.meals.ListMeals(f.ctx, f.userID)
+	if err != nil || list[0].Items[0].Serving != ounce || *list[0].Items[0].EnergyKcal != wantEnergy || *meal.Items[0].EnergyKcal != wantEnergy {
+		t.Fatalf("the list shows the food's own weight and the values the create returned: %v %+v", err, list[0].Items[0])
+	}
+	logged := f.logMeal(t, f.userID, meal.ID, "2026-11-05", nil)
+	// The entry's own serving column is also one decimal (spec 014), so the
+	// entry echoes 28.4 g; its values are computed from the exact 28.35 g.
+	if len(logged.Entries) != 2 || logged.Entries[0].Serving.Label != ounce.Label || *logged.Entries[0].EnergyKcal != wantEnergy || *logged.Entries[0].ProteinG != wantProtein {
+		t.Fatalf("a meal with a two-decimal source weight logs as saved with exact values: %+v (%d kcal, want %d)", *logged.Entries[0].Serving, *logged.Entries[0].EnergyKcal, wantEnergy)
+	}
+	if *logged.Day.EnergyKcal != list[0].Totals.EnergyKcal {
+		t.Fatalf("the day rises by what the list showed: day %d, list %d", *logged.Day.EnergyKcal, list[0].Totals.EnergyKcal)
+	}
+
+	// The athlete re-weighs the scoop: same label, new weight and facts.
+	k, h := f.key("food")
+	if _, _, err := f.foods.UpdateUserFood(f.ctx, f.userID, whey.ID, model.SaveUserFoodRequest{
+		Name: "Whey", Serving: model.Serving{Label: "1 scoop", Grams: 32}, EnergyKcal: 128, ProteinG: 25.6, CarbsG: 3.2, FatG: 1.6, ExpectedRevision: whey.Revision,
+	}, nil, k, h); err != nil {
+		t.Fatal(err)
+	}
+	list, err = f.meals.ListMeals(f.ctx, f.userID)
+	if err != nil || !list[0].Items[1].Available || list[0].Items[1].Serving.Grams != 32 || *list[0].Items[1].EnergyKcal != 128 {
+		t.Fatalf("the list follows the re-weighed serving: %v %+v", err, list[0].Items[1])
+	}
+	logged = f.logMeal(t, f.userID, meal.ID, "2026-11-06", nil)
+	if len(logged.Entries) != 2 || logged.Entries[1].Serving.Grams != 32 || *logged.Entries[1].EnergyKcal != 128 || *logged.Day.EnergyKcal != list[0].Totals.EnergyKcal {
+		t.Fatalf("the meal still logs as saved, with what the list showed: %+v day %d list %d", logged.Entries[1], *logged.Day.EnergyKcal, list[0].Totals.EnergyKcal)
+	}
+
+	// The label itself changes: the saved label and weight are used as they are.
+	k, h = f.key("food")
+	if _, _, err := f.foods.UpdateUserFood(f.ctx, f.userID, whey.ID, model.SaveUserFoodRequest{
+		Name: "Whey", Serving: model.Serving{Label: "1 heaped scoop", Grams: 40}, EnergyKcal: 160, ProteinG: 32, CarbsG: 4, FatG: 2, ExpectedRevision: ptrInt64(*whey.Revision + 1),
+	}, nil, k, h); err != nil {
+		t.Fatal(err)
+	}
+	list, err = f.meals.ListMeals(f.ctx, f.userID)
+	if err != nil || !list[0].Items[1].Available || list[0].Items[1].Serving != scoop {
+		t.Fatalf("a label the food no longer has keeps the saved serving: %v %+v", err, list[0].Items[1])
+	}
+	logged = f.logMeal(t, f.userID, meal.ID, "2026-11-04", nil)
+	keptEnergy, _, _, _ := model.EntryValues(model.Per100g{EnergyKcal: 400, ProteinG: 80, CarbsG: 10, FatG: 5}, 30, 1)
+	if len(logged.Entries) != 2 || *logged.Entries[1].Serving != scoop || *logged.Entries[1].EnergyKcal != keptEnergy || *logged.Day.EnergyKcal != list[0].Totals.EnergyKcal {
+		t.Fatalf("the meal logs the saved weight at the food's current facts: %+v", logged.Entries[1])
+	}
+	for _, date := range []string{"2026-11-04", "2026-11-05", "2026-11-06"} {
+		assertDayIsSumOfEntries(t, f.day(t, f.userID, date))
+	}
+
+	// An override list is new input and stays strict.
+	lk, lh := f.key("log")
+	_, _, err = f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-04", []model.MealItemInput{itemFor(whey, scoop, 1)}, time.Now(), lk, lh)
+	wantItemFault(t, "an override naming a serving the food no longer has", err, 0)
+}
+
+func TestSavedMealDuplicateAfterRoundingAndReplayAfterDelete(t *testing.T) {
+	f := newSavedMealFixture(t)
+	oats := f.catalogFood(t, "Oats", oatsPer, cup)
+
+	// The service refuses this first; called directly, the unique index is
+	// the backstop and still answers with the item, never a server error.
+	k, h := f.key("meal")
+	_, _, err := f.meals.CreateMeal(f.ctx, f.userID, model.SaveMealRequest{Name: "Twice", Items: []model.MealItemInput{
+		itemFor(oats, model.HundredGramServing, 1),
+		itemFor(oats, model.Serving{Label: "100 g", Grams: 100.04}, 2),
+	}}, k, h)
+	wantItemFault(t, "two weights that store as the same serving", err, 1)
+	if meals, items := f.mealCount(t, f.userID); meals != 0 || items != 0 {
+		t.Fatalf("a refused create leaves nothing behind: %d meals, %d items", meals, items)
+	}
+
+	// A log retried after the meal was deleted still replays the original.
+	meal := f.createMeal(t, f.userID, "Short lived", itemFor(oats, cup, 1))
+	lk, lh := f.key("log")
+	at := time.Date(2026, 11, 3, 8, 0, 0, 0, time.UTC)
+	first, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, lk, lh)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dk, dh := f.key("delete")
+	if _, err := f.meals.DeleteMeal(f.ctx, f.userID, meal.ID, 1, dk, dh); err != nil {
+		t.Fatal(err)
+	}
+	replay, outcome, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, lk, lh)
+	if err != nil || outcome != model.SavedMealLogged || len(replay.Entries) != 1 || replay.Entries[0].ID != first.Entries[0].ID {
+		t.Fatalf("a retry after the meal is gone replays the original log: %+v %v", replay, err)
+	}
+	if got := len(f.day(t, f.userID, "2026-11-03").Entries); got != 1 {
+		t.Fatalf("the replay logs nothing more: %d entries", got)
+	}
+	var notFound *model.NotFoundError
+	nk, nh := f.key("log")
+	if _, _, err := f.meals.LogMeal(f.ctx, f.userID, meal.ID, "2026-11-03", nil, at, nk, nh); !errors.As(err, &notFound) {
+		t.Fatalf("a new log of the deleted meal is not found: %v", err)
+	}
+}

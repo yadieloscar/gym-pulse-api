@@ -122,3 +122,21 @@ func TestSavedMealsMigrationContract(t *testing.T) {
 		t.Fatal("the down migration drops items before meals")
 	}
 }
+
+func TestMatchSavedServingFollowsTheFoodByLabel(t *testing.T) {
+	food := &Food{Servings: []Serving{{Label: "1 oz (28.35 g)", Grams: 28.35}, {Label: "1 scoop", Grams: 32}, HundredGramServing}}
+	for _, test := range []struct {
+		label string
+		saved Serving
+		want  Serving
+	}{
+		{"a weight the database rounded comes back exact", Serving{Label: "1 oz (28.35 g)", Grams: 28.4}, Serving{Label: "1 oz (28.35 g)", Grams: 28.35}},
+		{"a serving the athlete re-weighed uses the new weight", Serving{Label: "1 scoop", Grams: 30}, Serving{Label: "1 scoop", Grams: 32}},
+		{"a grams-only serving is kept as saved", Serving{Label: "45 g", Grams: 45}, Serving{Label: "45 g", Grams: 45}},
+		{"a label the food no longer has keeps the saved weight", Serving{Label: "1 bar", Grams: 60}, Serving{Label: "1 bar", Grams: 60}},
+	} {
+		if got := MatchSavedServing(food, test.saved); got != test.want {
+			t.Errorf("%s: got %+v, want %+v", test.label, got, test.want)
+		}
+	}
+}

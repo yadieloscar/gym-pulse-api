@@ -105,6 +105,13 @@ func TestCreateMealValidation(t *testing.T) {
 		{"missing food", func(r *model.SaveMealRequest) { r.Items[1].Food.ID = uuid.Nil }, "items", 1},
 		{"blank serving label", func(r *model.SaveMealRequest) { r.Items[0].Serving.Label = " " }, "items", 0},
 		{"zero grams", func(r *model.SaveMealRequest) { r.Items[1].Serving.Grams = 0 }, "items", 1},
+		{"grams that store as zero", func(r *model.SaveMealRequest) { r.Items[1].Serving.Grams = 0.04 }, "items", 1},
+		{"negative grams", func(r *model.SaveMealRequest) { r.Items[0].Serving.Grams = -5 }, "items", 0},
+		{"same food and serving once stored to one decimal", func(r *model.SaveMealRequest) {
+			a, b := duplicate, duplicate
+			a.Serving, b.Serving = model.Serving{Label: "100 g", Grams: 100}, model.Serving{Label: "100 g", Grams: 100.04}
+			r.Items = []model.MealItemInput{a, b}
+		}, "items", 1},
 		{"grams above 5000", func(r *model.SaveMealRequest) { r.Items[1].Serving.Grams = 5000.1 }, "items", 1},
 		{"amount below 0.1", func(r *model.SaveMealRequest) { r.Items[0].Amount = 0.05 }, "items", 0},
 		{"amount above 50", func(r *model.SaveMealRequest) { r.Items[1].Amount = 50.01 }, "items", 1},
@@ -198,6 +205,7 @@ func TestLogMealValidation(t *testing.T) {
 		{"blank key", "2026-11-15", func(r *model.LogMealRequest) { r.OperationKey = "" }, "operation_key", -1},
 		{"empty override list", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{} }, "items", -1},
 		{"bad override amount", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{mealItem(81, 1), mealItem(30, 51)} }, "items", 1},
+		{"override grams that store as zero", "2026-11-15", func(r *model.LogMealRequest) { r.Items = []model.MealItemInput{mealItem(0.04, 1)} }, "items", 0},
 	} {
 		repo := &fakeSavedMealDAO{}
 		req := valid()
@@ -231,6 +239,20 @@ func TestLogMealPassesSavedOrOverrideItems(t *testing.T) {
 	}
 	if len(repo.loggedItems) != 1 || repo.loggedItems[0].Amount != 2 || !repo.loggedAt.Equal(at) || repo.hash == asSaved {
 		t.Fatalf("override items and logged_at pass through and change the hash: %+v", repo)
+	}
+}
+
+func TestMealItemsKeepFractionalCatalogWeights(t *testing.T) {
+	// Source servings are not rounded (a USDA ounce is 28.35 g), so a
+	// two-decimal weight must pass through to the DAO untouched.
+	repo := &fakeSavedMealDAO{}
+	req := validMealRequest()
+	req.Items[0].Serving = model.Serving{Label: "1 oz (28.35 g)", Grams: 28.35}
+	if _, _, err := newSavedMealServiceForTest(repo).CreateMeal(context.Background(), uuid.New(), req); err != nil {
+		t.Fatalf("a fractional source weight is valid: %v", err)
+	}
+	if repo.created.Items[0].Serving.Grams != 28.35 {
+		t.Fatalf("the weight reaches the DAO exact: %v", repo.created.Items[0].Serving.Grams)
 	}
 }
 

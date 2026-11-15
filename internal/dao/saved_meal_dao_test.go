@@ -31,6 +31,7 @@ func TestSavedMealDAOLogKeepsAtomicOrder(t *testing.T) {
 		"lockUserDomain(ctx, tx, nutritionLockNamespace",
 		"findIdempotency(ctx, tx, userID, savedMealLogScope",
 		"lockSavedMeal(ctx, tx, userID, mealID)",
+		"resolved := meal.Items",
 		"resolveMealItems(ctx, tx, userID, items, heldFoodIDs(stored))",
 		"if !item.Available {",
 		"lockNutritionDay(ctx, tx, userID, date)",

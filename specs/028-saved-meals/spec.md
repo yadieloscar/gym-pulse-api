@@ -27,6 +27,7 @@ Governing product rules: workspace `docs/PRODUCT.md`, section "Nutrition" (amend
 - Q: Is logging a meal all or nothing? → A: Yes. Every item is logged in one transaction, or none is, and a retry of the same operation never logs it twice.
 - Q: Can the athlete change the amounts for one log without changing the saved meal? → A: Yes. The log request may carry its own item list (changed amounts, items left out). The saved meal stays as it was.
 - Q: What if a food in a meal was archived? → A: A private food the athlete archived still logs from a meal that already contains it, as it does from recents. It cannot be added to a meal afterwards.
+- Q: A food's serving changes after the meal is saved (the athlete re-weighs "1 scoop", or the source updates it). Does the meal still log? → A: Yes. A saved item remembers its serving by label; the list and a log as saved both use the food's current weight for that label, so they always agree. If the food no longer has that label, the saved label and weight are used. *(Added 2026-11-15 from the independent review; a meal must never be shown as loggable and then refused.)*
 - Q: Limits? → A: Up to 50 saved meals per athlete, 1 to 20 items per meal, names of 1 to 60 characters that are unique for that athlete ignoring case.
 
 ## User Scenarios & Testing *(mandatory)*
@@ -101,6 +102,8 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 - A meal with no items, more than 20 items, or the same food and serving listed twice is rejected with a field-level validation error. The same food with two different servings is allowed.
 - An item that names an unknown food, another athlete's private food, or an archived private food is rejected when a meal is created or changed, with the same answer for all three so nothing is revealed about foods the athlete cannot use.
 - A serving that is neither one of the food's servings nor a grams-only serving is rejected, as for a single entry in spec 014.
+- A serving weight below 0.1 g or above 5,000 g is rejected with a field-level validation error naming the item. Weights are kept to one decimal, and two items that are the same food and serving after that rounding count as a duplicate.
+- A meal saved with a serving whose weight has more than one decimal (for example a 28.35 g ounce) logs as saved with the food's exact weight.
 - A log to a future date is rejected, following spec 012's date rules.
 - Logging the same meal twice on one day on purpose (two operation identities) logs it twice; that is the athlete's choice.
 - A saved meal's totals are never stored. A food whose current facts fail spec 014's plausibility checks is not returned with wrong numbers; the meal is returned with that item marked unavailable and without totals.
@@ -133,6 +136,7 @@ The athlete renames a meal, changes an amount, adds or removes a food, or delete
 - **FR-010**: Entries a meal logged MUST be indistinguishable from other food entries, so every existing entry read, change, and delete behaviour applies to them unchanged.
 - **FR-011**: Changing or deleting a saved meal, or a food inside it, MUST NOT change any entry already logged.
 - **FR-012**: An archived private food MUST still log from a saved meal that already contains it and MUST be refused as a new item.
+- **FR-018**: A saved item MUST be matched to its food's current servings by label whenever the meal is read or logged as saved, using the food's current weight for that label and the saved label and weight when the label no longer exists, so that every meal the list shows as available logs as saved. *(Added 2026-11-15.)*
 - **FR-013**: The service MUST NOT store energy or macro values on a saved meal; values shown for a meal MUST be computed from its foods' current facts.
 - **FR-014**: Every saved meal MUST be scoped to the authenticated athlete with the shared not-found behaviour for unknown and foreign meals, and account deletion MUST remove them.
 - **FR-015**: The account data export MUST include the athlete's saved meals.

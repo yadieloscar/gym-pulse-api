@@ -74,6 +74,30 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
 - **Alternatives considered**: refusing the whole log (breaks one-tap logging for a meal the
   athlete has not touched); silently dropping the item (totals would be wrong without notice).
 
+### A saved serving is matched by label
+
+- **Decision**: an item stores its serving label and weight. `model.MatchSavedServing` is applied
+  whenever a stored item is read (list, conflict body, log as saved): the food's current serving
+  with that label is used, else the saved label and weight. A log as saved uses exactly the items
+  the locked meal resolved to; only an override list goes through the strict `ResolveServing`.
+- **Rationale**: found by the independent review (FR-018). `serving_g` is `NUMERIC(7,1)` while
+  source servings are not rounded (a USDA ounce is 28.35 g), so re-validating the stored 28.4 g
+  against the food's 28.35 g refused every log as saved; and an own food whose "1 scoop" was
+  re-weighed did the same while the list still showed the meal as available. Matching by label
+  fixes both and makes the list and the log agree by construction.
+- **Alternatives considered**: widening the column (still lossy for longer source weights, and does
+  not help when a serving changes); marking such items unavailable (turns an ordinary label edit
+  into a broken meal).
+
+### Serving weights are bounded as stored
+
+- **Decision**: the service rounds a weight to one decimal for the bounds check (0.1 to 5,000 g)
+  and for the duplicate food-and-serving check; the DAO maps a violation of
+  `ux_saved_meal_items_food_serving` to the same item error as a backstop.
+- **Rationale**: review finding. 0.04 g passed validation and failed the `serving_g > 0` check, and
+  100 g with 100.04 g passed the duplicate check and collided on the unique index; both surfaced as
+  server errors instead of `422`.
+
 ### Item errors name the item
 
 - **Decision**: an item that cannot be saved or logged returns `422 VALIDATION_ERROR` with

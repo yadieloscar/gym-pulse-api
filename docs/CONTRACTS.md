@@ -1887,6 +1887,13 @@ item has `available: false` and omits its four values, and `totals` is `null`.
 `revision` advances when the name or items change; logging the meal sets
 `last_logged_at` and does not advance it.
 
+A saved item keeps its serving's label and weight. On every read and on a log
+as saved, the label is matched to the food's current servings and the food's
+own weight is used, so the list and the log always agree and a serving the
+athlete re-weighed ("1 scoop" from 30 g to 32 g) follows the food. When the
+food no longer has a serving with that label, the saved label and weight are
+used as they are. `items[].serving` is the serving that will be logged.
+
 ### `GET /api/v1/nutrition/meals`
 
 Response `200`: `{ "meals": [SavedMeal] }`, most recently logged first, then
@@ -1907,9 +1914,11 @@ most recently saved; `[]` when none. At most 50.
 `name` is trimmed, 1–60 characters, and unique among the athlete's saved meals
 ignoring case (`422` on `name`). `items` holds 1–20 foods. Each item needs a
 `food.id` from search, barcode, recent, or create; a `serving` that is one of
-the food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`;
-and an `amount` of 0.1–50 with at most two decimals. The same food and serving
-may appear once; the same food with two different servings is allowed.
+the food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`
+with `grams` 0.1–5,000; and an `amount` of 0.1–50 with at most two decimals.
+Serving weights are stored to one decimal. The same food and serving may
+appear once (compared after that rounding); the same food with two different
+servings is allowed.
 `expected_revision` must be absent. A fault in one item is `422` with
 `details.field: "items"` and `details.index` set to the item's zero-based
 position; a food that is unknown, another athlete's, or archived gets one
@@ -1942,7 +1951,8 @@ moment. All entries and the day's totals change in one transaction, or nothing
 changes. Optional `items` (same shape and rules as on save) replaces the saved
 items for this log only, for a different amount or a food left out, and never
 changes the saved meal; an archived own food is accepted only when the saved
-meal holds it. `logged_at` is optional (default now).
+meal holds it. Override servings are new input and must match the food's
+current servings exactly, as on save. `logged_at` is optional (default now).
 
 Response: `{ "entries": [FoodEntry], "day": NutritionDay, "converted": [FoodEntry] }`.
 `converted` follows `POST /days/{date}/entries`: typed totals already on the

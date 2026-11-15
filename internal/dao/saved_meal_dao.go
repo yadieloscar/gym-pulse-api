@@ -42,7 +42,8 @@ const (
 
 	savedMealColumns = `m.id, m.name, m.revision, m.last_logged_at, m.created_at, m.updated_at`
 
-	savedMealNameIndex = "ux_saved_meals_user_name"
+	savedMealNameIndex        = "ux_saved_meals_user_name"
+	savedMealItemServingIndex = "ux_saved_meal_items_food_serving"
 )
 
 // savedMealLedger stores the outcome and the full body so a verbatim retry
@@ -276,17 +277,17 @@ func (r *savedMealDAO) LogMeal(ctx context.Context, userID, mealID uuid.UUID, da
 	if err != nil {
 		return nil, model.SavedMealLogged, err
 	}
-	if items == nil {
-		items = make([]model.MealItemInput, 0, len(stored))
-		for _, row := range stored {
-			items = append(items, row.input)
+	// Logged as saved, the items are the ones lockSavedMeal just resolved:
+	// each saved serving matched by label to its food's current servings.
+	// An override list is new input and is resolved strictly. An archived
+	// own food still logs from a meal that already holds it; an override
+	// list cannot introduce one.
+	resolved := meal.Items
+	if items != nil {
+		resolved, err = resolveMealItems(ctx, tx, userID, items, heldFoodIDs(stored))
+		if err != nil {
+			return nil, model.SavedMealLogged, err
 		}
-	}
-	// An archived own food still logs from a meal that already holds it; an
-	// override list cannot introduce one.
-	resolved, err := resolveMealItems(ctx, tx, userID, items, heldFoodIDs(stored))
-	if err != nil {
-		return nil, model.SavedMealLogged, err
 	}
 	for i, item := range resolved {
 		if !item.Available {
@@ -457,14 +458,15 @@ func resolveMealItems(ctx context.Context, q querier, userID uuid.UUID, inputs [
 	return items, nil
 }
 
-// storedMealItem builds an item from a stored row. The serving is kept as it
-// was saved; a food that no longer resolves yields an unavailable item.
+// storedMealItem builds an item from a stored row, matching the saved serving
+// to the food's current servings by label (see model.MatchSavedServing). A
+// food that no longer resolves yields an unavailable item.
 func storedMealItem(foods map[uuid.UUID]model.Food, input model.MealItemInput) model.SavedMealItem {
 	food, ok := foods[input.Food.ID]
 	if !ok {
 		return model.SavedMealItem{Food: model.Food{ID: input.Food.ID, Servings: []model.Serving{}}, Serving: input.Serving, Amount: input.Amount}
 	}
-	return model.NewSavedMealItem(food, input.Serving, input.Amount)
+	return model.NewSavedMealItem(food, model.MatchSavedServing(&food, input.Serving), input.Amount)
 }
 
 func insertSavedItems(ctx context.Context, tx pgx.Tx, userID, mealID uuid.UUID, items []model.SavedMealItem) error {
@@ -484,6 +486,11 @@ func insertSavedItems(ctx context.Context, tx pgx.Tx, userID, mealID uuid.UUID, 
 			WHERE m.user_id=$2 AND m.id=$3`,
 			uuid.New(), userID, mealID, position, catalogID, userFoodID, item.Serving.Label, item.Serving.Grams, item.Amount)
 		if err != nil {
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" && pgErr.ConstraintName == savedMealItemServingIndex {
+				// The service refuses this first; the index is the backstop.
+				return mealItemError(position, "the same food and serving is already in this meal")
+			}
 			return fmt.Errorf("inserting saved meal item: %w", err)
 		}
 		if tag.RowsAffected() != 1 {

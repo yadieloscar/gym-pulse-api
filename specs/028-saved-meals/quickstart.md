@@ -42,6 +42,8 @@ and transactions are in [data-model.md](./data-model.md).
 | FR-014, SC-005 | Handler and integration: another athlete's meal id on update, delete, and log → shared `404`; another athlete's private food as an item → the same `422` as an unknown id; account deletion leaves zero rows in both tables and succeeds with a private food referenced by a meal |
 | FR-015 | Export test: `nutrition.saved_meals` lists name and items; `[]` when none |
 | FR-016, FR-017 | `./scripts/smoke-toggle.sh` including new step 13k; contract section reviewed against the handler tests |
+| FR-018 | Model test for `MatchSavedServing`; integration: a 28.35 g source serving stored as 28.4 logs as saved with exact values; a re-weighed and a relabelled own-food serving both still log, with the day rising by what the list showed; an override naming a removed serving → `422` |
+| Weight bounds (edge case) | Service tests: 0.04 g and negative weights → `422` with the index; 100 g and 100.04 g of one food → duplicate; integration: the unique index backstop answers with the item, not a server error |
 | Unavailable item (edge case) | Model tests: an implausible food yields `available: false`, no values, and `totals: null`; static DAO test: the log refuses an unavailable item before the day is locked |
 
 ## Manual acceptance

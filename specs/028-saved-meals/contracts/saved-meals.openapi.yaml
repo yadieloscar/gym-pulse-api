@@ -62,7 +62,7 @@ components:
       required: [food, serving, amount]
       properties:
         food: {type: object, required: [id], properties: {id: {type: string, format: uuid}}}
-        serving: {type: object, required: [label, grams], properties: {label: {type: string, minLength: 1, maxLength: 60}, grams: {type: number, exclusiveMinimum: true, minimum: 0, maximum: 5000}}, description: "one of the food's servings or a grams-only serving"}
+        serving: {type: object, required: [label, grams], properties: {label: {type: string, minLength: 1, maxLength: 60}, grams: {type: number, minimum: 0.1, maximum: 5000}}, description: "one of the food's servings or a grams-only serving; stored to one decimal"}
         amount: {type: number, minimum: 0.1, maximum: 50, multipleOf: 0.01}
     SaveMealRequest:
       type: object

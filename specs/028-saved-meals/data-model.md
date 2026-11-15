@@ -67,11 +67,14 @@ ledger `204` → commit.
 
 1. Replay from the ledger.
 2. Lock the meal `FOR UPDATE`; missing or foreign → shared `404`.
-3. Items are the request's override list when present, otherwise the saved items in position order.
-4. Load every item's food in one query. A food that does not resolve → `422` with the item index.
-   An archived private food is accepted only when the saved meal contains that food.
-5. Per item: `ResolveServing`, then `EntryValues(per_100g, grams, amount)`; an implausible food →
-   `422` with the item index.
+3. Logged as saved, the items are the ones the locked meal resolved to: each stored serving
+   matched by label to its food's current servings (`MatchSavedServing`), archived own foods
+   included. Nothing is re-validated, so a meal the list shows as available always logs.
+4. With an override list, load every item's food in one query and resolve strictly
+   (`ResolveServing`). A food that does not resolve → `422` with the item index. An archived
+   private food is accepted only when the saved meal contains that food.
+5. Per item: `EntryValues(per_100g, grams, amount)`; an implausible food → `422` with the item
+   index.
 6. `lockNutritionDay`; a `manual` or `apple_health` day with no entries becomes one `quick_add`
    entry, returned under `converted` (spec 014 rule, same code path).
 7. One insert per item into `food_entries` through `insertFoodEntry`, item `i` with

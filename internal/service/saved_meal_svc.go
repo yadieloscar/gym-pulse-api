@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"math"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -30,6 +31,10 @@ type savedMealService struct {
 	profiles dao.TrainingProfileDAO
 	now      func() time.Time
 }
+
+// minServingGrams is the smallest serving weight that survives storage to one
+// decimal as more than zero.
+const minServingGrams = 0.1
 
 func NewSavedMealService(meals dao.SavedMealDAO, profiles dao.TrainingProfileDAO) SavedMealService {
 	return &savedMealService{meals: meals, profiles: profiles, now: time.Now}
@@ -170,13 +175,16 @@ func normalizeMealItems(items []model.MealItemInput) error {
 		if length := utf8.RuneCountInString(item.Serving.Label); length < 1 || length > 60 {
 			return itemError("serving label must be between 1 and 60 characters")
 		}
-		if !(item.Serving.Grams > 0 && item.Serving.Grams <= maxServingGrams) {
-			return itemError("serving grams must be greater than 0 and at most 5000")
+		// Weights are stored to one decimal, so the bounds and the duplicate
+		// check below use the weight as it will be stored.
+		storedGrams := math.Round(item.Serving.Grams*10) / 10
+		if math.IsNaN(item.Serving.Grams) || storedGrams < minServingGrams || item.Serving.Grams > maxServingGrams {
+			return itemError("serving grams must be between 0.1 and 5000")
 		}
 		if err := validateEntryAmount(&item.Amount); err != nil {
 			return itemError(err.Error())
 		}
-		key := foodServing{food: item.Food.ID, label: item.Serving.Label, grams: item.Serving.Grams}
+		key := foodServing{food: item.Food.ID, label: item.Serving.Label, grams: storedGrams}
 		if seen[key] {
 			return itemError("the same food and serving is already in this meal")
 		}

@@ -115,6 +115,22 @@ type SavedMealLimitError struct {
 
 func (e *SavedMealLimitError) Error() string { return "saved meal limit reached" }
 
+// MatchSavedServing returns the serving a saved item logs with. The saved
+// label is matched against the food's current servings and the food's own
+// gram weight is used, so a weight the database rounded when the item was
+// stored, or one the athlete or the source changed since, never leaves the
+// meal unloggable or out of step with the food. When the food no longer has
+// a serving with that label, the saved label and weight are used as they
+// are: a gram weight is enough to compute an entry.
+func MatchSavedServing(food *Food, saved Serving) Serving {
+	for _, s := range food.Servings {
+		if s.Label == saved.Label {
+			return s
+		}
+	}
+	return saved
+}
+
 // NewSavedMealItem builds an item with its values at the food's current
 // facts. A food whose facts are not plausible yields an unavailable item
 // with no values rather than wrong numbers.

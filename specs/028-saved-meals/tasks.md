@@ -59,7 +59,8 @@ Tests are required by the constitution (Principle IV) and by SC-002..SC-006.
 
 - [X] T023 Run static gates (`gofmt`, `go test ./...`, `golangci-lint run`, `./scripts/validate-database-design.sh`) and record results below
 - [X] T024 Run PostgreSQL-backed gates (integration suite, `./scripts/smoke-toggle.sh`, `./scripts/validate-supabase-security.sh`, migration down/up) against a disposable stack and record results below
-- [ ] T025 Independent read-only review of the final diff against the plan's Design Assessment; record findings below
+- [X] T025 Independent read-only review of the final diff against the plan's Design Assessment; record findings below
+- [X] T026 Fix review findings 1–3: match a saved serving by label on read and on a log as saved (`internal/model/saved_meal.go`, `internal/dao/saved_meal_dao.go`); bound and de-duplicate weights as stored (`internal/service/saved_meal_svc.go`); map the item unique index to the item error; tests; FR-018 in `spec.md` and `docs/CONTRACTS.md`
 
 ## Dependencies
 
@@ -88,6 +89,7 @@ different files from their neighbours.
 | FR-015 | T019, T020 | export tests |
 | FR-016 | T022, T024 | smoke including unchanged step 13g |
 | FR-017 | T021 | CONTRACTS.md reviewed against handler tests |
+| FR-018 | T026 | model test, integration (rounded weight, re-weighed and relabelled serving), smoke |
 
 ## Verification (2026-11-15)
 
@@ -102,7 +104,7 @@ Run against a disposable stack built from this branch (`gpmeals`: PostgreSQL 16 
 | `golangci-lint run` | 0 issues |
 | `./scripts/validate-database-design.sh` | passed: 43 tables, 445 columns, 49 named indexes |
 | Service and middleware coverage | 91.0% and 91.4% (floor 90%) |
-| `go test -race -tags=integration ./internal/dao -count=1` (whole suite, no `-run`) | passed, including 9 saved-meal tests |
+| `go test -race -tags=integration ./internal/dao -count=1` (whole suite, no `-run`) | passed, including 11 saved-meal tests |
 | `scripts/smoke.sh` against the branch image | 35 passed, 0 failed (new step 13k; step 13g unchanged) |
 | `scripts/validate-supabase-security.sh` (run inside the db container) | passed |
 | Migration 039 down, then up, on the migrated database | both clean; 2 tables and 2 policies restored |
@@ -118,6 +120,22 @@ Run against a disposable stack built from this branch (`gpmeals`: PostgreSQL 16 
   food logging was probed for the same failure and is not affected.
 - **List read consistency**: `ListMeals` now reads meals, items, and foods in one read-only
   repeatable-read transaction.
+
+### Independent review (fresh-context, read-only, 2026-11-15)
+
+No authorization, ownership, transaction, idempotency, or lock-order defect found. Findings:
+
+| # | Severity | Finding | Outcome |
+|---|---|---|---|
+| 1 | High | A source serving with more than one decimal (28.35 g) is stored as 28.4 g; the log as saved re-validated the stored weight and refused the meal with `422` | Fixed (T026, FR-018) |
+| 2 | Medium/High | Re-weighing or relabelling an own food's serving made every log as saved fail while the list still showed the meal as available | Fixed (T026, FR-018) |
+| 3 | Medium | 0.04 g, and 100 g with 100.04 g of one food, passed validation and failed a database check or unique index as a server error | Fixed (T026): bounds and duplicates use the weight as stored; index backstop mapped to the item error |
+| 4 | Low | The down migration drops both tables without a guard (030 guards; 037 and 038 do not) | Accepted: the data loss is stated in `quickstart.md`; entries and day totals are unaffected |
+| 5 | Low | No index on the referencing side of `catalog_food_id` | Accepted: catalog rows are never deleted, and the index would only add write cost |
+| 6 | Low | Static DAO tests inspect source text; behaviour is proven by the integration suite, which `go test ./...` does not run | Accepted as the repository's convention; the missing behavioural cases (findings 1–3, replay after delete) now have integration tests |
+
+The same one-decimal bound hole exists on the shipped `POST /days/{date}/entries` (a grams-only
+serving of 0.04 g); it is outside this feature and is not changed here.
 
 ### Not verified
 
