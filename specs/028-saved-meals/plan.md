@@ -96,7 +96,7 @@ specs/028-saved-meals/
 cmd/server/main.go                                    # wire DAO, service, handler
 docs/CONTRACTS.md                                     # "Saved meals" section; export line; codes
 docs/DATABASE_DESIGN.md                               # two table sections, index rows, counts, FK matrix
-migrations/039_create_saved_meals.{up,down}.sql
+migrations/040_create_saved_meals.{up,down}.sql
 internal/
 ├── dao/{saved_meal_dao.go,saved_meal_dao_test.go}    # list, create, update, delete, log transactions
 ├── dao/saved_meal_integration_test.go                # //go:build integration
@@ -148,7 +148,7 @@ is not released yet).
 
 | Concern | Decision |
 |---|---|
-| Data | Migration `040_add_meal_sections`: nullable `section TEXT` with a four-value check on `food_entries` and on `saved_meals`. No default, no backfill, no index (never filtered on; the day list already reads the whole day). Existing rows stay `NULL`. Down drops both columns |
+| Data | Migration `041_add_meal_sections`: nullable `section TEXT` with a four-value check on `food_entries` and on `saved_meals`. No default, no backfill, no index (never filtered on; the day list already reads the whole day). Existing rows stay `NULL`. Down drops both columns |
 | Contract | `FoodEntry.section` (always present, `null` when none); optional `section` on `POST /days/{date}/entries`; new `PUT /nutrition/entries/{id}/section`; `SavedMeal.section`; optional `section` on save and on `POST /days/{date}/meal-logs` |
 | Moving an entry | Its own route and DAO method, not the existing `PUT /entries/{id}`: that one recomputes the snapshot from the food's current facts, and a move must change nothing but the heading (FR-020, SC-007). The move advances the entry's revision and leaves `nutrition_days` untouched |
 | Existing change route | Unchanged; it neither accepts nor alters the heading (FR-021) |
@@ -157,7 +157,7 @@ is not released yet).
 | Ownership, idempotency | The move runs under the `nutrition:` lock with ledger scope `food-entries/section`, locks the entry by `(user_id, id)`, and checks `expected_revision` |
 | Not done on purpose | No per-heading totals, no inference from time, no ordering by heading in the service: the day list stays oldest first and the app groups |
 
-Source: `migrations/040_add_meal_sections.{up,down}.sql`; `internal/model/food.go` and
+Source: `migrations/041_add_meal_sections.{up,down}.sql`; `internal/model/food.go` and
 `saved_meal.go` (`MealSection`, request fields); `internal/dao/food_entry_dao.go` (`MoveEntry`,
 column and scan); `internal/dao/saved_meal_dao.go`; `internal/service/food_svc.go` and
 `saved_meal_svc.go` (validation); `internal/handler/food.go` (`MoveEntry`); router; export;

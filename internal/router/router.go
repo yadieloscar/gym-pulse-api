@@ -69,6 +69,11 @@ func New(
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddlewareWithConfig(middleware.AuthConfig{JWTSecret: cfg.SupabaseJWTSecret, JWKSURL: cfg.SupabaseJWKSURL, Issuer: cfg.SupabaseJWTIssuer, Audience: cfg.SupabaseJWTAudience}))
 
+		// Every authenticated route shares a per-user ceiling; costlier routes
+		// add tighter limits below. It runs before the active-user lookup so a
+		// flood does not reach the database.
+		r.Use(middleware.RateLimitPerUser(middleware.DefaultUserLimit))
+
 		// A cryptographically valid JWT may retry deletion cleanup after the
 		// auth identity itself has already been removed. No other route gets
 		// this exception.

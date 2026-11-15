@@ -186,7 +186,7 @@ shipped with spec 014 (`internal/dao/food_entry_dao.go`, `internal/dao/food_dao.
 
 | Question | Answer |
 |---|---|
-| Migration number | `039_create_saved_meals`; re-check `origin/main` before writing it |
+| Migration number | `040_create_saved_meals`; re-check `origin/main` before writing it |
 | Contract version | 1.8.0, additive (1.7.0 is Knee Kit) |
 | New dependency, layer, or concurrency | None |
 | Rate limit | None new; writes are bounded by the 50-meal and 20-item limits and the 1 MiB body cap |

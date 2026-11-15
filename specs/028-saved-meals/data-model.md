@@ -1,6 +1,6 @@
 # Data Model: Saved meals
 
-Migration `039_create_saved_meals` (next free number on `main` as of 2026-11-15; re-check before
+Migration `040_create_saved_meals` (renumbered from 039 after PR #55 took that number on `main`, 2026-11-15; re-check before
 writing it). Two new tables. No existing table changes.
 
 ## `saved_meals` (owner-scoped)
@@ -41,7 +41,7 @@ the own-food key).
 Both tables: RLS enabled, Data API roles revoked, `gym_pulse_api_access` policy and DML grants for
 the runtime role, as migration 030 does for the food tables.
 
-## Amendment A1: headings (migration `040_add_meal_sections`)
+## Amendment A1: headings (migration `041_add_meal_sections`)
 
 | Table | Field | Type | Rules |
 |---|---|---|---|

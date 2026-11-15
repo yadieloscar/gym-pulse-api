@@ -77,7 +77,7 @@ func TestSavedMealJSONShape(t *testing.T) {
 }
 
 func TestSavedMealsMigrationContract(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/039_create_saved_meals.up.sql")
+	body, err := os.ReadFile("../../migrations/040_create_saved_meals.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,16 +103,16 @@ func TestSavedMealsMigrationContract(t *testing.T) {
 		"CREATE POLICY gym_pulse_api_access ON public.saved_meal_items",
 	} {
 		if !strings.Contains(migration, marker) {
-			t.Errorf("migration 039 missing %q", marker)
+			t.Errorf("migration 040 missing %q", marker)
 		}
 	}
 	// A meal stores no values: they come from its foods' current facts.
 	for _, column := range []string{"energy_kcal", "protein_g", "carbs_g", "fat_g"} {
 		if strings.Contains(migration, column) {
-			t.Errorf("migration 039 must not store %s on a meal", column)
+			t.Errorf("migration 040 must not store %s on a meal", column)
 		}
 	}
-	down, err := os.ReadFile("../../migrations/039_create_saved_meals.down.sql")
+	down, err := os.ReadFile("../../migrations/040_create_saved_meals.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -179,22 +179,22 @@ func TestMealSectionValuesAndJSON(t *testing.T) {
 }
 
 func TestMealSectionsMigrationContract(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/040_add_meal_sections.up.sql")
+	body, err := os.ReadFile("../../migrations/041_add_meal_sections.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
 	migration := string(body)
 	check := "ADD COLUMN section TEXT CHECK (section IN ('breakfast', 'lunch', 'dinner', 'snacks'))"
 	if strings.Count(migration, check) != 2 || !strings.Contains(migration, "ALTER TABLE food_entries") || !strings.Contains(migration, "ALTER TABLE saved_meals") {
-		t.Fatal("migration 040 adds one nullable, checked section column to food_entries and to saved_meals")
+		t.Fatal("migration 041 adds one nullable, checked section column to food_entries and to saved_meals")
 	}
 	// Nullable with no default: no row is rewritten and nothing is back-filled.
 	for _, forbidden := range []string{"NOT NULL", "DEFAULT", "UPDATE ", "CREATE INDEX"} {
 		if strings.Contains(migration, forbidden) {
-			t.Errorf("migration 040 must not contain %q", forbidden)
+			t.Errorf("migration 041 must not contain %q", forbidden)
 		}
 	}
-	down, err := os.ReadFile("../../migrations/040_add_meal_sections.down.sql")
+	down, err := os.ReadFile("../../migrations/041_add_meal_sections.down.sql")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,6 +19,8 @@
 #  12. a wrong link is repaired by unlink and link-existing (contract 1.3.0)
 #  13. nutrition target and days: save, replay, conflicts, Health precedence, clear, ranges
 #  14. mobility sessions replay, conflict, delete, and never move stats or participation (contract 1.4.0)
+#  16. a second user gets 404 or a refusal on the first user's resources, which stay
+#      unchanged (needs OTHER_USER_ID seeded in auth.users)
 #  15. knee kit days: create, replay, conflicts, full replacement, range, export, and never move
 #      stats or participation (contract 1.7.0)
 #
@@ -1178,6 +1180,103 @@ assert ex['nutrition']['saved_meals']==[]
 else
   bad "saved meals acceptance failed (food=$sm_food_status create=$sm_create_status replay=$sm_create_replay_status dup=$sm_dup_status empty=$sm_empty_status list=$sm_list_status log=$sm_log_status log_replay=$sm_log_replay_status override=$sm_override_status bad_item=$sm_bad_item_status unknown_item=$sm_unknown_item_status future=$sm_future_status day=$sm_day_status update=$sm_update_status stale=$sm_stale_status delete=$sm_delete_status gone=$sm_gone_status after=$sm_after_status move=$sm_move_status move_stale=$sm_move_stale_status move_bad=$sm_move_bad_status clear=$sm_clear_status entry_section=$sm_entry_section_status entry_bad_section=$sm_entry_bad_section_status)" "$(echo "$sm_create_body $sm_log_body $sm_bad_item_body" | head -c 600)"
 fi
+
+step "13b. A second user cannot read, change, or delete the first user's resources"
+# Requires OTHER_USER_ID in auth.users. CI and smoke-toggle.sh seed it; a bare
+# local run without the row skips this step with a notice, CI never does.
+OTHER_USER_ID="${OTHER_USER_ID:-00000000-0000-0000-0000-000000000002}"
+cross_out=$(python3 - "$API" "$USER_ID" "$OTHER_USER_ID" "$JWT_SECRET" <<'PY'
+import base64, hashlib, hmac, json, sys, time, urllib.error, urllib.request
+from datetime import date
+
+api, owner, other, secret = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4].encode()
+
+def b64(b): return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+def token(sub):
+    head = b64(json.dumps({"alg": "HS256", "typ": "JWT"}).encode())
+    body = b64(json.dumps({"sub": sub, "iat": int(time.time()), "exp": int(time.time()) + 300}).encode())
+    return f"{head}.{body}." + b64(hmac.new(secret, f"{head}.{body}".encode(), hashlib.sha256).digest())
+
+def call(sub, method, path, payload=None, key=None):
+    headers = {"Authorization": "Bearer " + token(sub), "Content-Type": "application/json"}
+    if key: headers["Idempotency-Key"] = key
+    data = json.dumps(payload).encode() if payload is not None else None
+    req = urllib.request.Request(api + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            return resp.status, resp.read().decode()
+    except urllib.error.HTTPError as err:
+        return err.code, err.read().decode()
+
+status, _ = call(other, "GET", "/api/v1/settings")
+if status == 401:
+    print("SKIP second user is not seeded in auth.users"); sys.exit(0)
+
+today, run = date.today().isoformat(), str(int(time.time()))
+failures = []
+def create(path, payload, key=None):
+    status, body = call(owner, "POST", path, payload, key)
+    if status not in (200, 201):
+        failures.append(f"owner POST {path} = {status}"); return None
+    return json.loads(body)["id"]
+
+template = create("/api/v1/templates", {"name": "Smoke Owned", "type_id": "push", "subtype_id": "hypertrophy",
+    "exercises": [{"name": "Smoke Press", "sort_order": 1, "sets": 3, "reps": 8}]})
+program_key = "smoke-owned-program-" + run
+program = create("/api/v1/programs", {"name": "Smoke Owned", "primary_goal": "strength", "roadmap": {}, "operation_key": program_key,
+    "workouts": [{"name": "A", "sequence_position": 1, "exercises": [{"name": "Air Squat", "category": "legs",
+    "modality": "strength", "exercise_order": 1, "target_sets": 2, "target_reps": 10}]}]}, program_key)
+sport_key = "smoke-owned-sport-" + run
+sport = create("/api/v1/sport-activities", {"date": today, "sport_id": "basketball", "sport_name": "Basketball",
+    "duration_minutes": 30, "operation_key": sport_key}, sport_key)
+session_key = "smoke-owned-session-" + run
+session = create("/api/v1/workout-sessions", {"scheduled_workout_id": None, "date": today, "name": "Smoke Owned",
+    "operation_key": session_key, "expected_revision": 0}, session_key)
+if failures or None in (template, program, sport, session):
+    print("FAIL " + "; ".join(failures or ["missing id"])); sys.exit(0)
+
+owned = [f"/api/v1/templates/{template}", f"/api/v1/programs/{program}",
+         f"/api/v1/sport-activities/{sport}", f"/api/v1/workout-sessions/{session}"]
+before = {path: call(owner, "GET", path) for path in owned}
+for path, (status, _) in before.items():
+    if status != 200: failures.append(f"owner GET {path} = {status}")
+
+# Reads and bodyless writes must be indistinguishable from a missing resource.
+for method, path in [("GET", owned[0]), ("DELETE", owned[0]), ("GET", owned[1]), ("GET", owned[2]),
+                     ("GET", owned[3])]:
+    status, _ = call(other, method, path)
+    if status != 404: failures.append(f"other {method} {path} = {status}, want 404")
+# Writes with a body may be refused by validation first; they must never succeed.
+for method, path, payload in [
+    ("PUT", owned[0], {"name": "Taken", "type_id": "push", "subtype_id": "hypertrophy",
+                       "exercises": [{"name": "Taken", "sort_order": 1, "sets": 1, "reps": 1}]}),
+    ("PUT", owned[1], {"name": "Taken", "primary_goal": "strength", "roadmap": {}, "active": True, "expected_revision": 1,
+                       "operation_key": "smoke-taken-" + run, "workouts": [{"name": "T", "sequence_position": 1,
+                       "exercises": [{"name": "Taken", "category": "legs", "modality": "strength", "exercise_order": 1, "target_sets": 1}]}]}),
+    ("PATCH", owned[3], {"name": "Taken", "expected_revision": 1}),
+    ("POST", owned[2] + "/unlink", {"operation_key": "smoke-taken-unlink-" + run, "expected_revision": 1}),
+]:
+    status, _ = call(other, method, path, payload)
+    if status not in (400, 404, 409, 422): failures.append(f"other {method} {path} = {status}, want a refusal")
+
+# The second user's own lists must not contain the first user's rows.
+for path, ident in [("/api/v1/templates", template), ("/api/v1/programs", program)]:
+    status, body = call(other, "GET", path)
+    if status != 200 or ident in body: failures.append(f"other GET {path} = {status} or lists the owner's row")
+
+for path in owned:
+    if call(owner, "GET", path) != before[path]: failures.append(f"{path} changed after the second user's requests")
+
+print("FAIL " + "; ".join(failures) if failures else "OK")
+PY
+)
+case "$cross_out" in
+  OK) ok "second user got 404 or a refusal on every request; the first user's rows are unchanged" ;;
+  SKIP*)
+    if [ -n "${CI:-}" ]; then bad "cross-user step cannot run in CI" "$cross_out"
+    else printf "  \033[33m-\033[0m skipped: %s\n" "${cross_out#SKIP }"; fi ;;
+  *) bad "cross-user isolation failed" "$cross_out" ;;
+esac
 
 step "14. DELETE /api/v1/account returns 204 and clears the user's data"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X DELETE "$API/api/v1/account" "${auth[@]}")

@@ -6,12 +6,12 @@ Tests are required by the constitution (Principle IV) and by SC-002..SC-006.
 
 ## Phase 1: Setup
 
-- [X] T001 Fetch `origin/main`, confirm migration number 039 is free, and record a green baseline for `go test ./...`
+- [X] T001 (renumbered 2026-11-15: PR #55 merged first and took 039, so these migrations are 040 and 041; the file names and references below were updated, the recorded runs were made under the old numbers and repeated after the renumbering, see "Renumbering" at the end) Fetch `origin/main`, confirm migration number 039 is free, and record a green baseline for `go test ./...`
 
 ## Phase 2: Foundational
 
-- [X] T002 Create `migrations/039_create_saved_meals.up.sql` and `.down.sql` (two tables, checks, unique and partial indexes, RLS, Data API revocation, runtime-role policy and grants)
-- [X] T003 Document both tables, indexes, FK matrix rows, counts, and migration 039 in `docs/DATABASE_DESIGN.md`; update expectations in `internal/dao/supabase_security_migration_test.go`; run `./scripts/validate-database-design.sh`
+- [X] T002 Create `migrations/040_create_saved_meals.up.sql` and `.down.sql` (two tables, checks, unique and partial indexes, RLS, Data API revocation, runtime-role policy and grants)
+- [X] T003 Document both tables, indexes, FK matrix rows, counts, and migration 040 in `docs/DATABASE_DESIGN.md`; update expectations in `internal/dao/supabase_security_migration_test.go`; run `./scripts/validate-database-design.sh`
 - [X] T004 [P] Add `SavedMeal`, `SavedMealItem`, `MealTotals`, `MealItemInput`, `SaveMealRequest`, `LogMealRequest`, `MealLogged`, outcomes, `SavedMealLimitError`, and item-value/total maths in `internal/model/saved_meal.go` with tests in `internal/model/saved_meal_test.go`
 - [X] T005 Make `ListFoodsByIDs` delegate to a `querier`-based `listFoodsByIDs` in `internal/dao/food_dao.go` so it runs in a transaction. *Amended*: `CreateEntry` is left untouched because `TestFoodEntryDAOCreateKeepsAtomicOrder` pins its conversion block; the meal DAO mirrors it in `convertTypedTotals`
 - [X] T006 Map `SavedMealLimitError` to `409 SAVED_MEAL_LIMIT_REACHED` (`details.limit`) and carry `details.index` on item validation errors in `internal/handler/response.go` and `internal/model`
@@ -64,7 +64,7 @@ Tests are required by the constitution (Principle IV) and by SC-002..SC-006.
 
 ## Phase 9: Amendment A1 - day headings (FR-019..FR-024)
 
-- [X] T027 Create `migrations/040_add_meal_sections.up.sql` and `.down.sql`; document the two columns, counts, and migration 040 in `docs/DATABASE_DESIGN.md`; migration-contract test in `internal/model/saved_meal_test.go`
+- [X] T027 Create `migrations/041_add_meal_sections.up.sql` and `.down.sql`; document the two columns, counts, and migration 041 in `docs/DATABASE_DESIGN.md`; migration-contract test in `internal/model/saved_meal_test.go`
 - [X] T028 [P] Add `MealSection` and the `section` fields on `FoodEntry`, `CreateFoodEntryRequest`, `MoveFoodEntryRequest`, `SavedMeal`, `SaveMealRequest`, `LogMealRequest` in `internal/model/food.go` and `internal/model/saved_meal.go` with tests
 - [X] T029 [US5] Store and read the heading on entries and add `MoveEntry` in `internal/dao/food_entry_dao.go`; static test that a move writes only heading, revision, and timestamp
 - [X] T030 [US5] Validate `section` on create and add `MoveEntry` in `internal/service/food_svc.go`; handler `MoveEntry` in `internal/handler/food.go`; route `PUT /nutrition/entries/{id}/section`; service, handler, and router tests
@@ -125,7 +125,7 @@ Run against a disposable stack built from this branch (`gpmeals`: PostgreSQL 16 
 | `go test -race -tags=integration ./internal/dao -count=1` (whole suite, no `-run`) | passed, including 11 saved-meal tests |
 | `scripts/smoke.sh` against the branch image | 35 passed, 0 failed (new step 13k; step 13g unchanged) |
 | `scripts/validate-supabase-security.sh` (run inside the db container) | passed |
-| Migration 039 down, then up, on the migrated database | both clean; 2 tables and 2 policies restored |
+| Migration 040 down, then up, on the migrated database | both clean; 2 tables and 2 policies restored |
 | `swag init -g cmd/server/main.go --output docs` | regenerated and committed |
 | `./scripts/smoke-toggle.sh` | not run: it targets the shared `gym-pulse-api-1` dev container, which is not running; `smoke.sh` was run directly against the branch image instead |
 
@@ -165,7 +165,7 @@ serving of 0.04 g); it is outside this feature and is not changed here.
 | Whole integration suite with `-race` | passed, including `TestDayHeadingsAreLabelsOnly` |
 | `scripts/smoke.sh` against the branch image | 35 passed, 0 failed; step 13k now covers headings; step 13g (no headings) unchanged |
 | `scripts/validate-supabase-security.sh` | passed |
-| Migration 040 down, then up | both clean |
+| Migration 041 down, then up | both clean |
 | Swagger | regenerated |
 
 The amendment was not given a second independent review; the first review covered commits up to
@@ -176,3 +176,19 @@ the saved-meal log, not headings.
 - SC-001's one-second figure was not measured; a meal log is one transaction of at most 22
   statements.
 - No run against a production-like Supabase project; nothing is deployed.
+
+## Renumbering (2026-11-15)
+
+PR #55 merged to `main` first and took migration 039 (`039_narrow_runtime_auth_users_grant`). After merging `main` into this branch the two migrations here became `040_create_saved_meals` and `041_add_meal_sections`; no SQL changed. One conflict (`scripts/smoke.sh`, both sides added a step) was resolved by keeping both steps, and a router test added on `main` gained the new handler argument.
+
+| Check after the merge and renumbering | Result |
+|---|---|
+| `gofmt -l .`, `go vet ./...`, `go test ./...`, `golangci-lint run` | clean, 0 issues |
+| `./scripts/validate-database-design.sh` | passed: 43 tables, 447 columns, 49 indexes |
+| `swag init -g cmd/server/main.go --output docs` | no change |
+| Fresh scratch database migrated by the API image | `schema_migrations` at 41, not dirty |
+| `./scripts/smoke.sh` against that image (both test users seeded) | 36 passed, 0 failed, including 13k and the cross-user step from `main` |
+| `go test -race -tags=integration ./internal/dao -count=1` | passed |
+| Security validator SQL on that database | passed |
+
+Not checked: the cross-user smoke step from `main` does not exercise the saved-meal routes; ownership of those routes is covered by the DAO integration tests and handler tests in this branch.

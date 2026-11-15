@@ -44,9 +44,10 @@
   `Cache-Control: no-store`. Staging and production also send
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. The Swagger UI at `/docs/*` is not served in
   production; this document is the contract.
-- The costliest endpoints are rate limited **per authenticated user** and
-  return `429 { "error": "too many requests, retry shortly", "code": "RATE_LIMITED" }`
-  when exceeded: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
+- Every authenticated route is rate limited **per authenticated user** and
+  returns `429 { "error": "too many requests, retry shortly", "code": "RATE_LIMITED" }`
+  when exceeded. All authenticated requests share 600 per minute. The costliest
+  endpoints have tighter limits on top: `PUT /api/v1/profile/avatar` and `DELETE /api/v1/account`
   allow 10 requests per minute; `POST /api/v1/schedule/materialize`,
   `/schedule/regenerate`, `/schedule/recover`, `/plan-transitions/preview`,
   and `/plan-transitions/apply` allow 30 per minute; `GET /api/v1/export`,
@@ -328,6 +329,12 @@ custom name), `target_duration_minutes` is 1–1,440, optional
 2,000 characters. Violations return `422 VALIDATION_ERROR` with
 `details.field = "workouts"`. Starter programs, `from-starter`, and
 `adopt-legacy` produce `exercises` units only.
+
+Program size limits: a program has at most 14 workouts, an `exercises` unit at
+most 50 exercises, and `target_sets` is 1–20. `POST /api/v1/programs` and
+`PUT /api/v1/programs/{id}` reject anything larger with `422 VALIDATION_ERROR`
+and `details.field = "workouts"`. `adopt-legacy` clamps a legacy template's
+set count to 20.
 
 #### `GET /api/v1/programs/{id}`
 
