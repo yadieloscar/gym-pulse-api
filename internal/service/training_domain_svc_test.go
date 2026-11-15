@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -274,6 +275,26 @@ func TestValidateProgramShapeSportUnits(t *testing.T) {
 		return []model.ProgramWorkout{unit}
 	}
 	exercise := model.ProgramExercise{Name: "Back Squat", Category: "legs", Modality: "strength", ExerciseOrder: 1, TargetSets: 3}
+	repeatExercise := func(n int) []model.ProgramExercise {
+		exercises := make([]model.ProgramExercise, n)
+		for i := range exercises {
+			exercises[i] = exercise
+			exercises[i].ExerciseOrder = i + 1
+		}
+		return exercises
+	}
+	exerciseUnit := func(mutate func(*model.ProgramWorkout)) []model.ProgramWorkout {
+		unit := model.ProgramWorkout{Kind: model.UnitKindExercises, Name: "A", SequencePosition: 1, Exercises: repeatExercise(1)}
+		mutate(&unit)
+		return []model.ProgramWorkout{unit}
+	}
+	repeatWorkout := func(n int) []model.ProgramWorkout {
+		workouts := make([]model.ProgramWorkout, n)
+		for i := range workouts {
+			workouts[i] = model.ProgramWorkout{Kind: model.UnitKindExercises, Name: "A", SequencePosition: i + 1, Exercises: repeatExercise(1)}
+		}
+		return workouts
+	}
 	longNotes := strings.Repeat("n", 2001)
 	bad := 0
 	huge := 1000001
@@ -301,6 +322,13 @@ func TestValidateProgramShapeSportUnits(t *testing.T) {
 			w.Sport.SportID, w.Sport.SportName, w.Sport.TargetDistanceMeters = "volleyball", "Volleyball", nil
 		})},
 		{name: "notes too long", workouts: sportUnit(func(w *model.ProgramWorkout) { w.Sport.Notes = &longNotes }), wantErr: true},
+		{name: "target sets at the limit", workouts: exerciseUnit(func(w *model.ProgramWorkout) { w.Exercises[0].TargetSets = model.MaxProgramTargetSets })},
+		{name: "target sets over the limit", workouts: exerciseUnit(func(w *model.ProgramWorkout) { w.Exercises[0].TargetSets = model.MaxProgramTargetSets + 1 }), wantErr: true},
+		{name: "target sets at int32 max", workouts: exerciseUnit(func(w *model.ProgramWorkout) { w.Exercises[0].TargetSets = math.MaxInt32 }), wantErr: true},
+		{name: "exercises at the limit", workouts: exerciseUnit(func(w *model.ProgramWorkout) { w.Exercises = repeatExercise(model.MaxProgramWorkoutExercises) })},
+		{name: "exercises over the limit", workouts: exerciseUnit(func(w *model.ProgramWorkout) { w.Exercises = repeatExercise(model.MaxProgramWorkoutExercises + 1) }), wantErr: true},
+		{name: "workouts at the limit", workouts: repeatWorkout(model.MaxProgramWorkouts)},
+		{name: "workouts over the limit", workouts: repeatWorkout(model.MaxProgramWorkouts + 1), wantErr: true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

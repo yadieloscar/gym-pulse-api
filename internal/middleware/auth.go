@@ -121,7 +121,12 @@ func (c *keyCache) getPublicKey(ctx context.Context, jwksURL string, kid string)
 	}
 	c.lastAttempt = now
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, jwksURL, nil)
+	// The refresh serves every request, not just this caller's: a client that
+	// disconnects must not fail it and start the cooldown for everyone else.
+	// Keep the caller's values, drop its cancellation, and bound the fetch.
+	fetchCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), jwksHTTPTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, jwksURL, nil)
 	if err != nil {
 		return cachedKey{}, fmt.Errorf("building JWKS request: %w", err)
 	}
