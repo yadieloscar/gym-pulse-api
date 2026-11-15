@@ -45,8 +45,8 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 		}
 	}
 
-	if len(publicTables) != 40 {
-		t.Fatalf("found %d public application tables, want 40: %v", len(publicTables), publicTables)
+	if len(publicTables) != 42 {
+		t.Fatalf("found %d public application tables, want 42: %v", len(publicTables), publicTables)
 	}
 	for _, table := range publicTables {
 		statement := "ALTER TABLE " + table + " ENABLE ROW LEVEL SECURITY;"

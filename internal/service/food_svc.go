@@ -27,6 +27,7 @@ type FoodService interface {
 	CreateEntry(ctx context.Context, userID uuid.UUID, date string, req model.CreateFoodEntryRequest) (*model.FoodEntryCreated, model.FoodEntryOutcome, error)
 	UpdateEntry(ctx context.Context, userID, id uuid.UUID, req model.UpdateFoodEntryRequest) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error)
 	DeleteEntry(ctx context.Context, userID, id uuid.UUID, expectedRevision int64, operationKey string) (*model.FoodEntryDeleted, model.FoodEntryOutcome, error)
+	MoveEntry(ctx context.Context, userID, id uuid.UUID, req model.MoveFoodEntryRequest) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error)
 }
 
 type foodService struct {
@@ -283,6 +284,9 @@ func (s *foodService) CreateEntry(ctx context.Context, userID uuid.UUID, date st
 	if (req.Food == nil) == (req.QuickAdd == nil) {
 		return nil, model.FoodEntryCreatedOutcome, &model.ValidationError{Message: "send exactly one of food or quick_add", Field: "food"}
 	}
+	if err := validateMealSection(req.Section); err != nil {
+		return nil, model.FoodEntryCreatedOutcome, err
+	}
 	hash, err := hashPayload(struct {
 		Date    string
 		Request model.CreateFoodEntryRequest
@@ -290,7 +294,7 @@ func (s *foodService) CreateEntry(ctx context.Context, userID uuid.UUID, date st
 	if err != nil {
 		return nil, model.FoodEntryCreatedOutcome, err
 	}
-	entry := &model.FoodEntry{Date: date}
+	entry := &model.FoodEntry{Date: date, Section: req.Section}
 	if req.LoggedAt != nil {
 		entry.LoggedAt = *req.LoggedAt
 	} else {
@@ -385,6 +389,37 @@ func (s *foodService) DeleteEntry(ctx context.Context, userID, id uuid.UUID, exp
 		return nil, model.FoodEntryRemovedOutcome, err
 	}
 	return s.entries.DeleteEntry(ctx, userID, id, expectedRevision, operationKey, hash)
+}
+
+// MoveEntry puts an entry under another day heading, or under none. Only the
+// heading changes: the entry's values are not recomputed.
+func (s *foodService) MoveEntry(ctx context.Context, userID, id uuid.UUID, req model.MoveFoodEntryRequest) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error) {
+	req.OperationKey = strings.TrimSpace(req.OperationKey)
+	if err := validateNutritionOperationKey(req.OperationKey); err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	if req.ExpectedRevision < 1 {
+		return nil, model.FoodEntryMovedOutcome, &model.ValidationError{Message: "expected_revision must be 1 or greater", Field: "expected_revision"}
+	}
+	if err := validateMealSection(req.Section); err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	hash, err := hashPayload(struct {
+		ID      uuid.UUID
+		Request model.MoveFoodEntryRequest
+	}{id, req})
+	if err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	return s.entries.MoveEntry(ctx, userID, id, req, req.OperationKey, hash)
+}
+
+// validateMealSection accepts no heading or one of the four fixed ones.
+func validateMealSection(section *model.MealSection) error {
+	if !model.ValidMealSection(section) {
+		return &model.ValidationError{Message: "section must be breakfast, lunch, dinner, or snacks", Field: "section"}
+	}
+	return nil
 }
 
 // normalizeUserFoodRequest trims and validates a label as typed, returning the

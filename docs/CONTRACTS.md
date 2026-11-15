@@ -1796,9 +1796,17 @@ entries oldest first, `[]` when none.
   "food": { "id": "<uuid>", "source": "usda", "name": "Greek yogurt, plain, nonfat", "brand": "Kirkland Signature" },
   "serving": { "label": "1 container (170 g)", "grams": 170 }, "amount": 1.5,
   "energy_kcal": 150, "protein_g": 26, "carbs_g": 9.2, "fat_g": 1,
+  "section": "breakfast",
   "revision": 1, "logged_at": "<RFC3339>", "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
 }
 ```
+
+`section` (contract 1.8.0, additive) is the day heading the athlete put the
+entry under: `breakfast`, `lunch`, `dinner`, `snacks`, or `null` for none. It
+is always present. A heading is a label only: it changes no value and no total,
+carries no time or target, and the API never infers one. Entries logged before
+1.8.0 or by an older client have `null`. Entries are still listed oldest first;
+grouping is the client's.
 
 A `quick_add` entry has `food`, `serving`, and `amount` null and omits absent
 values. Entry values are `per_100g × grams × amount / 100`, energy rounded to a
@@ -1815,7 +1823,9 @@ Exactly one of `food` or `quick_add`. With `food`, `serving` must be one of the
 food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`, and
 `amount` is 0.1–50 with at most two decimals. `quick_add` needs at least one
 value and follows the day-total bounds. `logged_at` is optional (default now).
-An unknown, foreign, or archived food is the shared `404`.
+Optional `section` (contract 1.8.0) puts the entry, food or quick add, under
+one of the four headings; absent or `null` means none, and any other value is
+`422` on `section`. An unknown, foreign, or archived food is the shared `404`.
 
 Response: `{ "entry": FoodEntry, "day": NutritionDay, "converted": [FoodEntry] }`.
 When the date already held typed totals (`manual` or `apple_health`) and no
@@ -1831,6 +1841,19 @@ for a food entry (values are recomputed from the food's current facts), or
 quick add. Mixing the shapes is `422`. Stale → `409 REVISION_CONFLICT` with the
 entry under `resource`. Response `{ "entry": FoodEntry, "day": NutritionDay }`.
 
+The entry keeps its `section`; this route neither reads nor changes it.
+
+### `PUT /api/v1/nutrition/entries/{id}/section` → `200` (contract 1.8.0)
+
+`{ "section": "lunch", "expected_revision": 2, "operation_key": "..." }` moves
+the entry under another heading; `"section": null` removes the heading. Only
+`section`, `revision`, and `updated_at` change: unlike the route above, the
+entry's serving, amount, and values are not recomputed, and the day's totals
+and revision are untouched. Stale → `409 REVISION_CONFLICT` with the entry
+under `resource`; an unknown heading is `422` on `section`; unknown, foreign,
+and malformed ids are the shared `404`. Response
+`{ "entry": FoodEntry, "day": NutritionDay }` with the day as it stands.
+
 ### `DELETE /api/v1/nutrition/entries/{id}?expected_revision=<n>` → `200`
 
 `Idempotency-Key` header is the operation key. Response `{ "day": NutritionDay | null }`;
@@ -1840,9 +1863,9 @@ entry under `resource`. Response `{ "entry": FoodEntry, "day": NutritionDay }`.
 
 `VALIDATION_ERROR` (`details.field` ∈ `q`, `limit`, `code`, `date`, `name`,
 `brand`, `barcode`, `serving`, `amount`, `food`, `quick_add`, `energy_kcal`,
-`protein_g`, `carbs_g`, `fat_g`, `expected_revision`, `operation_key`,
-`Idempotency-Key`), `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`, `REVISION_CONFLICT`,
-`DAY_HAS_FOOD_ENTRIES` (on `PUT /days/{date}` only), `RATE_LIMITED`.
+`protein_g`, `carbs_g`, `fat_g`, `section`, `expected_revision`,
+`operation_key`, `Idempotency-Key`), `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`,
+`REVISION_CONFLICT`, `DAY_HAS_FOOD_ENTRIES` (on `PUT /days/{date}` only), `RATE_LIMITED`.
 
 ### Configuration
 
@@ -1851,6 +1874,135 @@ catalog-only search and a startup warning in staging and production),
 `FOOD_SOURCE_USER_AGENT` (identifying agent Open Food Facts requires; defaults
 to `GymPulse/1.0 (...)`), `USDA_FDC_BASE_URL` and `OPEN_FOOD_FACTS_BASE_URL`
 (test and staging overrides). Keys never appear in logs or responses.
+
+## Saved meals
+
+Saved meals (contract 1.8.0, additive) let an athlete save foods they log
+together as a named meal and log it again in one request. A meal is only a
+name and an ordered list of foods, each with a serving and an amount. It stores
+no energy or macro values: `items[].energy_kcal` and the other three, and
+`totals`, are computed on every read from each food's current facts. GymPulse
+supplies, suggests, and shares no meals. Logging a meal creates one ordinary
+`FoodEntry` per item; the entries carry no link to the meal, so the entry
+routes under "Food logging" apply to them unchanged and changing or deleting a
+meal never changes a day already logged. Older clients never call these routes.
+Mutations require `Idempotency-Key` equal to `operation_key` (the header alone
+on the body-less delete); a verbatim retry replays the original status and body.
+
+### `SavedMeal`
+
+```json
+{
+  "id": "<uuid>", "name": "Usual breakfast", "section": "breakfast",
+  "items": [
+    {
+      "food": { "...": "Food" },
+      "serving": { "label": "1 cup (81 g)", "grams": 81 }, "amount": 1,
+      "available": true,
+      "energy_kcal": 307, "protein_g": 10.7, "carbs_g": 54.8, "fat_g": 5.3
+    }
+  ],
+  "totals": { "energy_kcal": 307, "protein_g": 10.7, "carbs_g": 54.8, "fat_g": 5.3 },
+  "revision": 1, "last_logged_at": null,
+  "created_at": "<RFC3339>", "updated_at": "<RFC3339>"
+}
+```
+
+`items` has 1–20 entries in the saved order and each carries the full `Food`
+(including `attribution` for Open Food Facts, and `archived: true` for an own
+food archived after it was added). Item values are `per_100g × grams × amount /
+100`, energy to a whole kcal and macros to one decimal, the same rule as an
+entry; `totals` is their sum. When a food's current facts cannot be shown the
+item has `available: false` and omits its four values, and `totals` is `null`.
+`section` is the day heading the meal remembers (`breakfast`, `lunch`,
+`dinner`, `snacks`, or `null`); its entries are logged under it unless the log
+names another. `revision` advances when the name, heading, or items change;
+logging the meal sets `last_logged_at` and does not advance it.
+
+A saved item keeps its serving's label and weight. On every read and on a log
+as saved, the label is matched to the food's current servings and the food's
+own weight is used, so the list and the log always agree and a serving the
+athlete re-weighed ("1 scoop" from 30 g to 32 g) follows the food. When the
+food no longer has a serving with that label, the saved label and weight are
+used as they are. `items[].serving` is the serving that will be logged.
+
+### `GET /api/v1/nutrition/meals`
+
+Response `200`: `{ "meals": [SavedMeal] }`, most recently logged first, then
+most recently saved; `[]` when none. At most 50.
+
+### `POST /api/v1/nutrition/meals` → `201 SavedMeal`
+
+```json
+{
+  "name": "Usual breakfast", "section": "breakfast",
+  "items": [
+    { "food": { "id": "<uuid>" }, "serving": { "label": "1 cup (81 g)", "grams": 81 }, "amount": 1 }
+  ],
+  "operation_key": "saved-meal:<uuid>"
+}
+```
+
+`name` is trimmed, 1–60 characters, and unique among the athlete's saved meals
+ignoring case (`422` on `name`). `items` holds 1–20 foods. Each item needs a
+`food.id` from search, barcode, recent, or create; a `serving` that is one of
+the food's servings or a grams-only serving `{ "label": "<n> g", "grams": n }`
+with `grams` 0.1–5,000; and an `amount` of 0.1–50 with at most two decimals.
+Serving weights are stored to one decimal. The same food and serving may
+appear once (compared after that rounding); the same food with two different
+servings is allowed.
+Optional `section` is one of the four headings; absent or `null` means the
+meal remembers none (`422` on `section` otherwise). `expected_revision` must
+be absent. A fault in one item is `422` with
+`details.field: "items"` and `details.index` set to the item's zero-based
+position; a food that is unknown, another athlete's, or archived gets one
+shared message. An athlete may hold 50 saved meals; one more is
+`409 SAVED_MEAL_LIMIT_REACHED` with `details.limit: 50`.
+
+### `PUT /api/v1/nutrition/meals/{id}` → `200 SavedMeal`
+
+Same body plus `expected_revision` (the meal's current revision, ≥ 1). Replaces
+the name, the heading (absent clears it), and the whole item list. Stale → `409 REVISION_CONFLICT` with the
+stored meal under `resource`. A food the meal already holds may stay after the
+athlete archives it; an archived food cannot be added. Unknown, foreign, and
+malformed ids are the shared `404`.
+
+### `DELETE /api/v1/nutrition/meals/{id}?expected_revision=<n>` → `204`
+
+Deletes the meal (`Idempotency-Key` header is the operation key). Entries it
+logged stay on their days. Stale → `409 REVISION_CONFLICT`; unknown, foreign,
+and malformed ids are the shared `404`.
+
+### `POST /api/v1/nutrition/days/{date}/meal-logs` → `201`
+
+```json
+{ "meal": { "id": "<uuid>" }, "operation_key": "meal-log:<uuid>" }
+```
+
+Logs the saved meal to `date` (a local calendar date, never after local today)
+as one food entry per item, in item order, each with the food's facts at that
+moment. All entries and the day's totals change in one transaction, or nothing
+changes. Optional `items` (same shape and rules as on save) replaces the saved
+items for this log only, for a different amount or a food left out, and never
+changes the saved meal; an archived own food is accepted only when the saved
+meal holds it. Override servings are new input and must match the food's
+current servings exactly, as on save. Optional `section` puts every entry of
+this log under that heading; absent or `null` uses the meal's own heading, or
+none when it has none. `logged_at` is optional (default now).
+
+Response: `{ "entries": [FoodEntry], "day": NutritionDay, "converted": [FoodEntry] }`.
+`converted` follows `POST /days/{date}/entries`: typed totals already on the
+date (`manual` or `apple_health`, no entries) become one `quick_add` entry
+first. An item that cannot be logged is `422` on `items` with `details.index`
+and nothing is logged. An unknown or foreign meal is the shared `404`. To undo
+a log, delete the returned entries with `DELETE /entries/{id}`.
+
+### Codes
+
+`VALIDATION_ERROR` (`details.field` ∈ `name`, `section`, `items` (with
+`details.index` when one item is at fault), `date`, `meal`, `expected_revision`,
+`operation_key`, `Idempotency-Key`), `NOT_FOUND`, `IDEMPOTENCY_CONFLICT`,
+`REVISION_CONFLICT`, `SAVED_MEAL_LIMIT_REACHED`.
 
 ## Workout history import
 
@@ -2057,6 +2209,13 @@ A read failure answers the standard JSON error with no attachment header.
 - `knee_kit_days` (added in contract 1.7.0, additive, `schema_version` still
   1) holds every Knee Kit day oldest first; `completed_items` is sorted and
   `[]` when nothing was ticked. Exports made by an older API omit the key.
+- `nutrition.saved_meals` (added in contract 1.8.0, additive, `schema_version`
+  still 1) holds every saved meal in the order saved:
+  `{ "name": "Usual breakfast", "section": "breakfast", "items": [{ "food_name": "Oats", "serving_label": "1 cup (81 g)", "serving_g": 81, "amount": 1 }] }`.
+  It carries no values; `[]` when none. Exports made by an older API omit the
+  key.
+- `nutrition.food_entries[].section` (added in contract 1.8.0, additive) is the
+  entry's day heading or `null`.
 - Programs, the schedule, weekly plans, criteria-based training blocks, and
   Health export receipts are not in version 1.
 

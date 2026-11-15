@@ -1,0 +1,2 @@
+ALTER TABLE saved_meals DROP COLUMN IF EXISTS section;
+ALTER TABLE food_entries DROP COLUMN IF EXISTS section;

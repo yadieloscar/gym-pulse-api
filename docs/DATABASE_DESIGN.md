@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **41 tables and 430 supported columns**. For the Supabase-managed
+The current inventory contains **43 tables and 447 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -1246,6 +1246,7 @@ policies and existing Data API roles have table privileges revoked.
 | `protein_g` | `numeric(6,1)` | nullable | Snapshot protein | Health |
 | `carbs_g` | `numeric(6,1)` | nullable | Snapshot carbohydrate | Health |
 | `fat_g` | `numeric(6,1)` | nullable | Snapshot fat | Health |
+| `section` | `text` | nullable | Day heading the athlete put it under: `breakfast`, `lunch`, `dinner`, `snacks`, or none | Health |
 | `revision` | `bigint` | not null; `1` | Optimistic revision | Operational |
 | `logged_at` | `timestamptz` | not null | When the athlete logged it | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
@@ -1254,13 +1255,13 @@ policies and existing Data API roles have table privileges revoked.
 **Current constraints and indexes**
 
 - PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`; FK `catalog_food_id → food_catalog(id) ON DELETE RESTRICT`; FK `user_food_id → user_foods(id) ON DELETE RESTRICT`.
-- Checks: `kind IN ('food', 'quick_add')`; `ck_food_entries_kind` requires a `food` entry to reference exactly one food with serving, amount, and all four values, and a `quick_add` entry to reference none with at least one value; value bounds as on `nutrition_days`; `amount` 0.1–50; `revision > 0`.
+- Checks: `kind IN ('food', 'quick_add')`; `ck_food_entries_kind` requires a `food` entry to reference exactly one food with serving, amount, and all four values, and a `quick_add` entry to reference none with at least one value; value bounds as on `nutrition_days`; `amount` 0.1–50; `revision > 0`; `section` is one of the four headings or null (041). A heading is a label only: no total, target, or other table reads it, and moving an entry between headings writes only `section`, `revision`, and `updated_at`.
 - `ix_food_entries_user_date(user_id, date, logged_at)` serves the day list oldest first and the rollup sum.
 - `ix_food_entries_user_logged(user_id, logged_at DESC)` serves the 30-day recents query.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows first among the food tables. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
 
-**Migration source**: 030.
+**Migration source**: 030; `section` added by 041.
 
 ### Table: `public.food_barcode_misses`
 
@@ -1278,6 +1279,58 @@ policies and existing Data API roles have table privileges revoked.
 **Ownership/lifecycle**: Shared; no personal data. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
 
 **Migration source**: 030.
+
+### Table: `public.saved_meals`
+
+**Purpose**: A named, ordered list of foods an athlete saved to log again in one request. It stores no energy or macro values; a meal's values are always computed from its foods' current facts. Logging a meal inserts ordinary `food_entries` rows, which never reference a meal.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Meal identity | Operational |
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `name` | `text` | not null | Athlete's name for the meal, 1–60 chars | Health |
+| `section` | `text` | nullable | Day heading its entries are logged under unless the log names another; same four values as `food_entries.section` | Health |
+| `revision` | `bigint` | not null; `1` | Optimistic revision; advances on name or item change only | Operational |
+| `last_logged_at` | `timestamptz` | nullable | Last time the meal was logged; list order | Health |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last change instant | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; FK `user_id → auth.users(id) ON DELETE CASCADE`.
+- Checks: `char_length(name)` 1–60; `revision > 0`; `section` is one of the four headings or null (041).
+- Unique `ux_saved_meals_user_name(user_id, lower(name))` enforces one name per athlete ignoring case and serves the owner list and count.
+
+**Ownership/lifecycle**: Private to the authenticated owner; at most 50 per athlete, counted in the create transaction under the `nutrition:` lock. Hard-deleted by the athlete (no entry references a meal). Account deletion removes the rows before `user_foods`. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
+
+**Migration source**: 040; `section` added by 041.
+
+### Table: `public.saved_meal_items`
+
+**Purpose**: One food in a saved meal with the serving and amount to log. Owned through its meal.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `id` | `uuid` | not null | Item identity | Operational |
+| `meal_id` | `uuid` | not null | Owning meal | Operational |
+| `position` | `smallint` | not null | Order in the meal, 0–19 | Health |
+| `catalog_food_id` | `uuid` | nullable | Catalog food | Health |
+| `user_food_id` | `uuid` | nullable | Own food | Health |
+| `serving_label` | `text` | not null | Serving to log, 1–60 chars | Health |
+| `serving_g` | `numeric(7,1)` | not null | Serving weight in grams | Health |
+| `amount` | `numeric(5,2)` | not null | Servings to log, 0.1–50 | Health |
+
+**Current constraints and indexes**
+
+- PK `id`; FK `meal_id → saved_meals(id) ON DELETE CASCADE`; FK `catalog_food_id → food_catalog(id) ON DELETE RESTRICT`; FK `user_food_id → user_foods(id) ON DELETE NO ACTION DEFERRABLE INITIALLY DEFERRED` (checked at commit, after the identity cascade has removed both the food and the meal, so removing `auth.users` succeeds; deleting a food a meal still holds is refused at commit).
+- Checks: `position` 0–19; `ck_saved_meal_items_food` requires exactly one food reference; serving label 1–60; `serving_g` in (0, 5000]; `amount` 0.1–50.
+- Unique `ux_saved_meal_items_position(meal_id, position)` keeps the order and, with the position check, caps a meal at 20 items.
+- Unique `ux_saved_meal_items_food_serving(meal_id, COALESCE(catalog_food_id, user_food_id), serving_g, serving_label)` allows a food and serving once per meal.
+- `ix_saved_meal_items_user_food(user_food_id) WHERE user_food_id IS NOT NULL` is the referencing side of the own-food key.
+
+**Ownership/lifecycle**: Inherited from the meal; replaced as a set when the meal changes. The API resolves an own food through the owner-filtered food read before inserting, so an item never references another athlete's food. RLS, Data API revocation, and runtime-role provisioning as for `food_catalog`.
+
+**Migration source**: 040.
 
 ### Table: `public.criteria_training_blocks`
 
@@ -1417,11 +1470,12 @@ columns:
 | Program generation | 1 | 7 |
 | Mobility sessions | 1 | 13 |
 | Knee Kit days | 1 | 11 |
-| Nutrition and food logging | 6 | 72 |
+| Workout imports | 1 | 15 (plus `day_logs.import_id`) |
+| Nutrition, food logging, and saved meals | 8 | 89 |
 | Criteria-based training blocks | 4 | 41 |
-| **Total** | **40** | **414** |
+| **Total** | **43** | **447** |
 
-The count is derived from the final state after migration 037, not the sum of every historical
+The count is derived from the final state after migration 041, not the sum of every historical
 `CREATE`/`ALTER` statement.
 
 ## 8. Relationship and deletion policy
@@ -1430,9 +1484,11 @@ The count is derived from the final state after migration 037, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries` | Cascade | Removes all application-owned data |
-| `food_catalog` | `food_entries` | Restrict | Catalog rows are never deleted; entries keep their reference |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals` | Cascade | Removes all application-owned data |
+| `food_catalog` | `food_entries`, `saved_meal_items` | Restrict | Catalog rows are never deleted; entries and meal items keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
+| `user_foods` | `saved_meal_items` | No action, deferred | A held own food cannot be deleted on its own; the identity cascade removes meal and food together |
+| `saved_meals` | `saved_meal_items` | Cascade | Removes the meal's composition; logged entries are untouched |
 | `workout_templates` | `exercises` | Cascade | Removes mutable template composition |
 | `workout_templates` | `day_logs`, `weekly_plans`, `plan_overrides` | Set null | Keeps log/plan row but loses template provenance |
 | `exercises` | `exercise_overrides` | Cascade | Removes legacy aggregate detail |
@@ -1513,6 +1569,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Knee Kit days | `knee_kit_days`, idempotency | Owner range list oldest first and whole-day replacement; only the data export also reads it | Authoritative revisioned per-day fact; never counted, no guidance computed |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
 | Food logging | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`, `nutrition_days` | Search and barcode lookups, recents, day entries with the day as their sum | Shared published facts; owner-scoped entries with snapshot values; same-transaction rollup |
+| Saved meals | `saved_meals`, `saved_meal_items`, idempotency; logging writes `food_entries` and `nutrition_days` | Owner list with current food facts; the data export also reads it | Athlete-authored revisioned list; values never stored; logged entries carry no link back |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
 | Account deletion | All user-owned roots, avatar storage, then auth provider | None | Retryable destructive workflow |
 
@@ -1572,6 +1629,10 @@ snapshot; `set_logs` is the preferred per-set history.
 | `user_foods` | `ix_user_foods_user_gtin(user_id, gtin)` partial | Owner-first barcode lookup |
 | `food_entries` | `ix_food_entries_user_date(user_id, date, logged_at)` | Day entries oldest first; rollup sum |
 | `food_entries` | `ix_food_entries_user_logged(user_id, logged_at DESC)` | 30-day recents |
+| `saved_meals` | `ux_saved_meals_user_name(user_id, lower(name))` unique | One name per athlete ignoring case; owner list and count |
+| `saved_meal_items` | `ux_saved_meal_items_position(meal_id, position)` unique | Item order; 20-item cap with the position check |
+| `saved_meal_items` | `ux_saved_meal_items_food_serving(meal_id, COALESCE(catalog_food_id, user_food_id), serving_g, serving_label)` unique | A food and serving once per meal |
+| `saved_meal_items` | `ix_saved_meal_items_user_food(user_food_id)` partial | Referencing side of the own-food key |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_user_status_updated` | Owner/status bounded summary pages |
 | `criteria_training_blocks` | `idx_criteria_training_blocks_program` | Nullable program association/set-null |
 | `criteria_training_exposures` | `idx_criteria_training_exposures_block_created` | Latest exposure history |
@@ -1707,8 +1768,9 @@ activity updates `scheduled_workouts`; it never takes `program:`.
 Every new workflow touching both domains must preserve that order. Single-session set changes lock
 the owned session row directly. Avoid waiting on network I/O inside a transaction.
 
-Nutrition day saves and food-entry writes share the `nutrition:<user UUID>` lock, so an entry
-rollup and a typed save for the same athlete never interleave. Outside food sources are called
+Nutrition day saves, food-entry writes, and saved-meal writes (create, change, delete, log) share
+the `nutrition:<user UUID>` lock, so an entry rollup, a meal log, and a typed save for the same
+athlete never interleave, and the saved-meal count and name checks are exact. Outside food sources are called
 before any transaction opens.
 
 Knee Kit day saves take only the `knee-kit:<user UUID>` lock, which serializes the idempotency
@@ -2248,6 +2310,8 @@ Report one of:
 | 034 | `exercise_catalog.sub_pattern` (nullable, checked) seeded for isolation and push entries; four power entries (Box Jump, Broad Jump, Medicine Ball Slam, Push Press) |
 | 037 | `knee_kit_days` daily knee checklist and pain log (one revisioned row per athlete and date), RLS and role revocation, runtime-role grant and policy. 035 and 036 are reserved by other open branches |
 | 038 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
+| 040 | `saved_meals` and `saved_meal_items` (athlete-saved lists of foods; no stored values), unique name and item indexes, RLS and role revocation, runtime-role grants and policies |
+| 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 
 ## 19. Decision summary
 
