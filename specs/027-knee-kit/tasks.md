@@ -32,21 +32,21 @@ Tests are required by the constitution and by SC-001..SC-003.
 
 - [X] T012 [US2] Implement `ListDays` in the DAO, service, and handler (range ≤ 366 days, `{"days":[]}`)
 - [X] T013 [US2] Route registration in `internal/router/training_routes_test.go` and the `router.New` call sites
-- [X] T014 [US2] PostgreSQL integration test for create, replay, both conflicts, replacement, concurrent first saves, range, ownership, constraints, and the runtime role in `internal/dao/knee_kit_integration_test.go` (written; not yet run, see Verification)
+- [X] T014 [US2] PostgreSQL integration test for create, replay, both conflicts, replacement, concurrent first saves, range, ownership, constraints, and the runtime role in `internal/dao/knee_kit_integration_test.go`
 
 ## Phase 5: User Story 3 - Knee Kit never moves consistency (P1)
 
 **Independent test**: stats and participation identical with and without Knee Kit days.
 
 - [X] T015 [US3] Static isolation tests (no other DAO source names `knee_kit_days` except account deletion and the export; the Knee Kit DAO names no other table) in `internal/dao/knee_kit_dao_test.go`
-- [X] T016 [US3] Integration regression comparing stats and participation with and without days, plus account-deletion and auth-cascade removal, in `internal/dao/knee_kit_integration_test.go` (written; not yet run, see Verification)
+- [X] T016 [US3] Integration regression comparing stats and participation with and without days, plus account-deletion and auth-cascade removal, in `internal/dao/knee_kit_integration_test.go`
 - [X] T017 [US3] Additive `knee_kit_days` export section in `internal/model/export.go` and `internal/dao/export_dao.go`, with handler, static, and integration test updates
 
 ## Phase 6: Polish
 
 - [X] T018 Document the routes and the export section in `docs/CONTRACTS.md` (contract 1.7.0); regenerate Swagger
-- [X] T019 Add Knee Kit step 13j to `scripts/smoke.sh` (written; not yet run, see Verification)
-- [ ] T020 Run the PostgreSQL-backed gates (integration suite, smoke, RLS validator, migration down/up) against a disposable stack and record the results below
+- [X] T019 Add Knee Kit step 13j to `scripts/smoke.sh`
+- [X] T020 Run the PostgreSQL-backed gates (integration suite, smoke, RLS validator, migration down/up) against a disposable stack and record the results below
 - [X] T021 Run the static gates and record the results below
 
 ## Dependencies
@@ -57,12 +57,12 @@ T001 → T002 → T003..T006 → US1 → US2 → US3 → Polish. US2 and US3 reu
 
 | Requirement | Tasks | Verification |
 |---|---|---|
-| FR-001 | T009–T011 | service + handler tests; integration and smoke unverified |
-| FR-002 | T009–T011, T014 | service + handler + static DAO tests; integration and smoke unverified |
-| FR-003 | T012–T014 | service + handler + router tests; integration and smoke unverified |
-| FR-004 | T002, T014 | migration-contract test, database-design validator; constraints and RLS on a live database unverified |
-| FR-005 | T015, T016 | static isolation tests passed; stats/participation regression unverified |
-| FR-006 | T005, T016, T017 | static account and export tests passed; integration unverified |
+| FR-001 | T009–T011 | service + handler tests, integration, smoke |
+| FR-002 | T009–T011, T014 | service + handler + static DAO tests, integration, smoke |
+| FR-003 | T012–T014 | service + handler + router tests, integration, smoke |
+| FR-004 | T002, T014 | migration-contract test, database-design validator, constraint and runtime-role integration tests, RLS validator |
+| FR-005 | T015, T016 | static isolation tests, stats/participation regression |
+| FR-006 | T005, T016, T017 | static account and export tests, cascade and export integration tests, smoke |
 | FR-007 | T018 | CONTRACTS.md review; Swagger regenerated with no further drift |
 
 ## Verification (2026-11-14)
@@ -77,7 +77,8 @@ T001 → T002 → T003..T006 → US1 → US2 → US3 → Polish. US2 and US3 reu
 | `swag init -g cmd/server/main.go --output docs` (v1.16.4) then `git diff --exit-code docs/` | Passed after committing the regenerated files |
 | `./scripts/validate-database-design.sh` | Passed: 40 tables, 414 columns, 42 named indexes |
 | `govulncheck ./...` | Passed (exit 0): no reachable vulnerabilities |
-| `go test -race -tags=integration ./internal/dao -count=1` | **Not run**: the Docker daemon was not running on the development machine and no local PostgreSQL is installed |
-| `scripts/smoke.sh` (step 13j) | **Not run**: same reason; `bash -n` syntax check only |
-| `scripts/validate-supabase-security.sh` | **Not run**: needs a live migrated database |
-| Migration 037 applied, and down then up | **Not run**: needs a live database; the CHECK expressions were reviewed and their logic exercised outside PostgreSQL only |
+| Disposable CI-equivalent stack (compose project `kneekit-api`: postgres 16 + API image from this branch, owner migrates, API runs as `gym_pulse_api`) | Migrations 001–037 applied on boot (version 37, not dirty) |
+| Migration 037 down then up (files piped to `psql` as the owner) | Passed: table dropped, recreated with RLS, policy, and runtime-role grant |
+| `scripts/validate-supabase-security.sh` (run inside the db container) | Passed |
+| `API=http://localhost:18137 ./scripts/smoke.sh` | 32 passed, 0 failed, including step 13j (Knee Kit) |
+| `go test -race -tags=integration ./internal/dao -count=1` | Passed, including the 6 Knee Kit integration tests (runtime-role test not skipped) and the export tests |
