@@ -40,9 +40,9 @@ func (r *logDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart tim
 	weekEnd := weekStart.AddDate(0, 0, 6)
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT dl.id, dl.date, dl.type_id, dl.subtype_id,
+		SELECT dl.id, to_char(dl.date, 'YYYY-MM-DD'), dl.type_id, dl.subtype_id,
 		       dl.template_id, wt.name AS template_name,
-		       dl.session_notes, dl.logged_at
+		       dl.session_notes, dl.logged_at, dl.import_id
 		FROM day_logs dl
 		LEFT JOIN workout_templates wt ON wt.id = dl.template_id
 		WHERE dl.user_id = $1 AND dl.date BETWEEN $2 AND $3
@@ -60,7 +60,7 @@ func (r *logDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart tim
 		if err := rows.Scan(
 			&s.ID, &s.Date, &s.TypeID, &s.SubtypeID,
 			&s.TemplateID, &s.TemplateName,
-			&s.SessionNotes, &s.LoggedAt,
+			&s.SessionNotes, &s.LoggedAt, &s.ImportID,
 		); err != nil {
 			return nil, fmt.Errorf("scanning day log summary: %w", err)
 		}
@@ -77,13 +77,13 @@ func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (
 	dl := &model.DayLog{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, user_id, to_char(date, 'YYYY-MM-DD'),
-		       type_id, subtype_id, template_id, session_notes, logged_at
+		       type_id, subtype_id, template_id, session_notes, logged_at, import_id
 		FROM day_logs
 		WHERE user_id = $1 AND date = $2`,
 		userID, date,
 	).Scan(
 		&dl.ID, &dl.UserID, &dl.Date, &dl.TypeID, &dl.SubtypeID,
-		&dl.TemplateID, &dl.SessionNotes, &dl.LoggedAt,
+		&dl.TemplateID, &dl.SessionNotes, &dl.LoggedAt, &dl.ImportID,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -151,12 +151,12 @@ func (r *logDAO) getOverrides(ctx context.Context, dayLogID uuid.UUID) ([]model.
 
 func (r *logDAO) getSetLogs(ctx context.Context, dayLogID uuid.UUID) ([]model.SetLog, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, day_log_id, exercise_id, set_index,
-		       target_reps, target_weight, actual_reps, actual_weight,
-		       duration_seconds, completed
+		SELECT id, day_log_id, exercise_id, exercise_name, exercise_category,
+		       exercise_modality, set_index, target_reps, target_weight,
+		       actual_reps, actual_weight, duration_seconds, completed
 		FROM set_logs
 		WHERE day_log_id = $1
-		ORDER BY exercise_id, set_index`,
+		ORDER BY logged_at, exercise_id, set_index`,
 		dayLogID,
 	)
 	if err != nil {
@@ -168,9 +168,9 @@ func (r *logDAO) getSetLogs(ctx context.Context, dayLogID uuid.UUID) ([]model.Se
 	for rows.Next() {
 		var s model.SetLog
 		if err := rows.Scan(
-			&s.ID, &s.DayLogID, &s.ExerciseID, &s.SetIndex,
-			&s.TargetReps, &s.TargetWeight, &s.ActualReps, &s.ActualWeight,
-			&s.DurationSeconds, &s.Completed,
+			&s.ID, &s.DayLogID, &s.ExerciseID, &s.ExerciseName, &s.ExerciseCategory,
+			&s.ExerciseModality, &s.SetIndex, &s.TargetReps, &s.TargetWeight,
+			&s.ActualReps, &s.ActualWeight, &s.DurationSeconds, &s.Completed,
 		); err != nil {
 			return nil, fmt.Errorf("scanning set log: %w", err)
 		}
@@ -335,7 +335,7 @@ func (r *logDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exercise
 		); err != nil {
 			return nil, fmt.Errorf("scanning exercise history: %w", err)
 		}
-		s.ExerciseID = exID
+		s.ExerciseID = &exID
 		h, ok := byExercise[exID]
 		if !ok {
 			h = &model.ExerciseHistory{ExerciseID: exID, Date: date, Sets: []model.SetLog{}}

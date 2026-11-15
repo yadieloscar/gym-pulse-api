@@ -6,16 +6,22 @@ import "github.com/google/uuid"
 // It is the per-set source of truth behind the active workout player and the
 // "last time you did X" history. exercise_overrides keeps per-exercise notes.
 type SetLog struct {
-	ID              uuid.UUID `json:"id"`
-	DayLogID        uuid.UUID `json:"-"`
-	ExerciseID      uuid.UUID `json:"exercise_id" validate:"required"`
-	SetIndex        int       `json:"set_index" validate:"required,min=1"`
-	TargetReps      *int      `json:"target_reps,omitempty"`
-	TargetWeight    *float64  `json:"target_weight,omitempty"`
-	ActualReps      *int      `json:"actual_reps,omitempty"`
-	ActualWeight    *float64  `json:"actual_weight,omitempty"`
-	DurationSeconds *int      `json:"duration_seconds,omitempty"`
-	Completed       bool      `json:"completed"`
+	ID       uuid.UUID `json:"id"`
+	DayLogID uuid.UUID `json:"-"`
+	// ExerciseID is the owned saved-workout exercise. It is null for an
+	// imported set with no matching saved-workout exercise, or when that
+	// exercise was deleted; the name snapshot below still identifies it.
+	ExerciseID       *uuid.UUID `json:"exercise_id"`
+	ExerciseName     string     `json:"exercise_name,omitempty"`
+	ExerciseCategory string     `json:"exercise_category,omitempty"`
+	ExerciseModality string     `json:"exercise_modality,omitempty"`
+	SetIndex         int        `json:"set_index" validate:"required,min=1"`
+	TargetReps       *int       `json:"target_reps,omitempty"`
+	TargetWeight     *float64   `json:"target_weight,omitempty"`
+	ActualReps       *int       `json:"actual_reps,omitempty"`
+	ActualWeight     *float64   `json:"actual_weight,omitempty"`
+	DurationSeconds  *int       `json:"duration_seconds,omitempty"`
+	Completed        bool       `json:"completed"`
 }
 
 // CreateSetLogRequest is a single set in a create/update day-log request. A

@@ -49,6 +49,12 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		return
 	}
 
+	var importFile *model.ImportFileError
+	if errors.As(err, &importFile) {
+		writeError(w, http.StatusUnprocessableEntity, importFile.Message, importFile.Code, importFile.Details)
+		return
+	}
+
 	var foodsDay *model.DayHasFoodEntriesError
 	if errors.As(err, &foodsDay) {
 		writeJSON(w, http.StatusConflict, apiError{Error: foodsDay.Error(), Code: "DAY_HAS_FOOD_ENTRIES", Resource: foodsDay.Day})
