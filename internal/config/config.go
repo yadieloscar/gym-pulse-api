@@ -407,3 +407,9 @@ func positiveDurationEnv(name string, fallback time.Duration) (time.Duration, er
 	}
 	return parsed, nil
 }
+
+// IsReleaseEnvironment reports whether the process serves staging or
+// production, where TLS termination and HTTPS-only clients are guaranteed.
+func (c *Config) IsReleaseEnvironment() bool {
+	return c.Environment == "staging" || c.Environment == "production"
+}

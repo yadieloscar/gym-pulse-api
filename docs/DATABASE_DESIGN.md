@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **40 tables and 418 supported columns**. For the Supabase-managed
+The current inventory contains **40 tables and 419 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -305,6 +305,7 @@ account deletion leaves this row to the Supabase Admin API, after application an
 | `muscle_group` | `text` | not null | Primary muscle group (chest, back, shoulders, arms, quads, hamstrings, glutes, calves, core, full_body) | Public |
 | `equipment_required` | `text[]` | not null | Profile equipment values the entry needs; `{bodyweight}` is always available | Public |
 | `impact` | `text` | not null | `low` or `high` | Public |
+| `sub_pattern` | `text` | nullable | Finer pattern for isolation and push entries (incline_push, chest_isolation, shoulder_isolation, rear_delt, triceps, biceps, quad_isolation, hamstring_isolation, glute_isolation, calf) | Public |
 
 **Current constraints and indexes**
 
@@ -312,14 +313,16 @@ account deletion leaves this row to the Supabase Admin API, after application an
 - Unique: `(category, name)`.
 - Modality: `strength|cardio`; mechanic: `compound|isolation`.
 - Shape check: strength requires a mechanic; cardio requires `NULL` mechanic.
-- Pattern, muscle group, and impact enumerations; `equipment_required` non-empty and a subset of
-  the profile equipment values (`exercise_catalog_*_check`).
+- Pattern, muscle group, impact, and sub-pattern enumerations; `equipment_required` non-empty and
+  a subset of the profile equipment values (`exercise_catalog_*_check`).
 - Named indexes `idx_exercise_catalog_category(category)` and `idx_exercise_catalog_pattern(pattern)`.
 
 **Lifecycle**: Changes and seed additions ship as migrations; there is no public write endpoint.
-Migration 032 seeds the programming metadata for all 79 entries and fails if any row is missed.
+Migration 032 seeds the programming metadata for all 79 entries and fails if any row is missed;
+migration 034 adds `sub_pattern` for 20 entries and four power entries (83 rows).
 
-**Migration source**: `008_create_exercise_catalog`, `032_add_exercise_catalog_programming`.
+**Migration source**: `008_create_exercise_catalog`, `032_add_exercise_catalog_programming`,
+`034_add_exercise_catalog_sub_pattern_and_power`.
 
 ### Table: `public.workout_templates`
 
@@ -393,15 +396,15 @@ scheduled/performed snapshots do not change.
 | `template_id` | `uuid` | nullable | Optional template provenance | Private |
 | `session_notes` | `text` | nullable | User session notes | Health |
 | `logged_at` | `timestamptz` | not null; `now()` | Creation instant | Health |
-| `import_id` | `uuid` | nullable | Workout import that created the log (034); null for logs recorded in GymPulse | Operational |
+| `import_id` | `uuid` | nullable | Workout import that created the log (035); null for logs recorded in GymPulse | Operational |
 
 **Current constraints and indexes**
 
 - Primary key: `id`.
 - FK `template_id → workout_templates(id) ON DELETE SET NULL`.
-- FK `import_id → workout_imports(id) ON DELETE CASCADE` (034): removing an import removes its logs, and their set logs and overrides through the existing cascades.
+- FK `import_id → workout_imports(id) ON DELETE CASCADE` (035): removing an import removes its logs, and their set logs and overrides through the existing cascades.
 - Named index `idx_logs_user_date(user_id, date)`.
-- Partial index `idx_day_logs_import(import_id) WHERE import_id IS NOT NULL` (034) serves import removal.
+- Partial index `idx_day_logs_import(import_id) WHERE import_id IS NOT NULL` (035) serves import removal.
 - Migration 003 created unique `(user_id, date)`; migration 012 dropped it.
 - **P0 gap**: the current API still creates, gets, updates, and deletes a singular log by date and
   maps duplicate insert to `409`. Without uniqueness, duplicate rows are possible, `QueryRow` is
@@ -1063,7 +1066,7 @@ policies and existing Data API roles have table privileges revoked.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Account deletion removes the rows; RLS is enabled without direct-client policies, Data API roles have table privileges revoked, and the runtime role holds the `gym_pulse_api_access` policy.
 
-**Migration source**: 034.
+**Migration source**: 035.
 
 ### Table: `public.nutrition_days`
 
@@ -2205,7 +2208,8 @@ Report one of:
 | 031 | `program_generations` daily-limit ledger, RLS and role revocation, runtime-role grant and policy |
 | 032 | `exercise_catalog` programming metadata (`pattern`, `muscle_group`, `equipment_required`, `impact`), seed for all rows, checks, `idx_exercise_catalog_pattern` |
 | 033 | `mobility_sessions` recorded stretching (write-once, row-level operation key), RLS and role revocation, runtime-role grant and policy |
-| 034 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
+| 034 | `exercise_catalog.sub_pattern` (nullable, checked) seeded for isolation and push entries; four power entries (Box Jump, Broad Jump, Medicine Ball Slam, Push Press) |
+| 035 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
 
 ## 19. Decision summary
 

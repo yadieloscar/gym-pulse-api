@@ -2,7 +2,7 @@
 
 **Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)
 
-- [x] T001 Migration 034 `workout_imports` + `day_logs.import_id` — FR-003, FR-009
+- [x] T001 Migration 035 `workout_imports` + `day_logs.import_id` — FR-003, FR-009
 - [x] T002 Import model types and file error codes (`internal/model/workout_import.go`) — FR-001, FR-010
 - [x] T003 Strict layout detection and row parsing (`internal/service/import_parse.go`) — FR-004, FR-006
 - [x] T004 Exercise matcher and saved-exercise link (`internal/service/import_match.go`) — clarifications

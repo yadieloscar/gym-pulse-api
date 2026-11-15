@@ -89,6 +89,28 @@ description: "Implementation tasks for the rule-based program engine"
 - [x] T032 Fill the Result column of the evidence table; note any table value changed during implementation back into research R3
 - [x] T033 (written to the parent workspace `docs/briefs/2026-11-02-program-engine-app-amendment.md`) Write the sibling app amendment brief for spec 019 (constraint chips replace the request field, `provider` read hides the wait copy, `variant` counter on "Try another", mock catalog fields) and hand it to the app repository
 
+## Phase 8: Evidence amendment (2026-11-07)
+
+Owner direction: research training regimes, then "lets do the follow ups too". Source: the
+workspace brief `docs/briefs/2026-11-07-training-regimes-research.md`; spec FR-013 to FR-020.
+
+- [x] T034 Migration 034: `exercise_catalog.sub_pattern` (nullable, checked, seeded for 20 isolation and push entries) and four power entries (Box Jump, Broad Jump, Medicine Ball Slam, Push Press); `DATABASE_DESIGN.md`; model `SubPattern` and `HasSubPattern`; DAO select; catalog handler test
+- [x] T035 Refactor `internal/engine`: `Build` as named workout and weekly rules (`workoutRules`, `weeklyRules`); slots select isolation and incline work by `sub_pattern`; `engine_test.go` covers each rule and the rule list order; `matrix_test.go` adds the constrained matrix (five avoid sets × four focus values × three equipment sets × two variants)
+- [x] T036 Tables: heavy and moderate `Targets` with rep ranges and reps in reserve per goal and experience, weekly set bands, minimal budget under 20 minutes, cardio doses with intensity lines, the progression line; `tables_test.go` asserts every cell and the source comments
+- [x] T037 Rules: heavy/moderate undulation (FR-015), A/B full-body alternation with "Full body A/B" names, hypertrophy focus opener (FR-016), minimal sessions (FR-017), weekly set bands with the four-stage trim and the focus allowance (FR-014), notes on every exercise (FR-013), progression line in the rationale (FR-018); adapter carries `Note` into `notes`
+- [x] T038 Gates and evidence: `go vet`, `golangci-lint`, `go test ./...`, `-race` on engine and service, `validate-database-design.sh`, isolated acceptance stack (migration 034 applied, smoke 13h, RLS validator); refresh the golden draft; CONTRACTS.md, Swagger; fill the evidence rows below
+
+| Requirement / acceptance | Tasks | Verification | Result / limitation |
+| --- | --- | --- | --- |
+| FR-013 | T036, T037 | `TestNotesArePlainAndPresent`; matrix asserts a note on every exercise; service golden draft shows notes | Passed 2026-11-07: notes on every exercise in both matrices (1 728 drafts); golden draft carries 18 notes; smoke 13h draft valid |
+| FR-014 | T036, T037 | `TestWeeklySetBands` (rule alone and in a 6-day draft); both matrices assert no group above its band (focus allowance applied) | Passed: `TestWeeklySetBands`, both matrices assert bands (focus allowance 1.5×; core, carries, explosive lifts not banded) |
+| FR-015 | T037 | `TestBuildHypertrophyThreeDaysIntermediate` (heavy/moderate reps, A/B names and alternation); `TestPowerNonBeginnerLeadsWithExplosiveWork`; beginners never undulate | Passed: heavy/moderate alternation and A/B names in `TestBuildHypertrophyThreeDaysIntermediate`, power alternation, beginners never undulate |
+| FR-016 | T037 | `TestHypertrophyFocusOpensWithIsolation` (and strength keeps compounds first) | Passed: `TestHypertrophyFocusOpensWithIsolation` |
+| FR-017 | T036, T037 | `TestShortAndMinimalSessions` (15 minutes: three compounds at two sets) | Passed: `TestShortAndMinimalSessions` |
+| FR-018 | T036, T037 | `TestRationaleIsShortPlainAndComplete` (progression line last, survives the cap; absent for conditioning) | Passed: `TestRationaleIsShortPlainAndComplete` |
+| FR-019 | T034, T035 | `TestSlotOrderCoversEveryKind` (sub-pattern match, never by name or category); migration 034 on the acceptance stack | Passed: sub-pattern slot tests; acceptance stack: migration 034 applied, 83 rows, 0 null patterns, 20 sub_patterns |
+| FR-020 | T035 | `TestRuleListIsNamedAndOrdered`; `TestConstrainedMatrix` | Passed: `TestRuleListIsNamedAndOrdered`, `TestConstrainedMatrix` (864 constrained builds, refusals under a quarter) |
+
 ## Dependencies & Execution Order
 
 T001 first. T002, T003, T005, T006, T007, T009 in parallel; T004 after T003; T008 after T007; T010 after T009. US1: T011, T012, T014, T015, T016 (tests) in parallel, then T013 → T017. US2 (T018 → T019 → T020) and US3 (T021 → T022) and US4 (T023) after T017, in any order. Phase 7: T024, T025, T027 parallel with the stories; T026 after T017; T028 → T029 → T030 → T031 → T032 last; T033 after T028.

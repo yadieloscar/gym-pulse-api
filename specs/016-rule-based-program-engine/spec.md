@@ -49,6 +49,35 @@ override any of them.
 - Q: Does the rationale stay? → A: Yes, as templated plain-language sentences assembled from the
   choices the engine made (split, main lifts, what was avoided, what could not be honored).
 
+### Session 2026-11-07 (evidence amendment)
+
+Owner direction: "make some research on training regimes first" → the workspace brief
+`docs/briefs/2026-11-07-training-regimes-research.md`, then "lets do the follow ups too". The
+brief's ranked items become this amendment; the engine refactors it names come first.
+
+- Q: How are rep ranges and effort carried without a contract change? → A: In each strength
+  exercise's `notes` (already in the draft shape, at most 200 characters), in athlete words:
+  "8 to 12 reps, leave 1 to 2 in reserve." `target_reps` stays the lower bound the player
+  prefills. A structured field is a later, separate contract change.
+- Q: What is the progression stance? → A: Static draft (PRODUCT.md), plus one sentence of
+  guidance in the rationale: "Add a rep each week until you reach the top of the range, then
+  add a little load." No history is read; nothing changes on its own.
+- Q: Does weekly volume get checked? → A: Yes. After filling, the engine tallies sets per muscle
+  group across the week against a band per goal and trims an isolation exercise from an
+  over-served group or adds one for an under-served group where the session has room.
+- Q: Undulation? → A: Strength, hypertrophy, and power drafts alternate a heavy and a moderate
+  day across the week (odd and even workouts) with no history and no progression.
+- Q: Full-body variety? → A: Days alternate between two fixed exercise sets (A and B) instead of
+  rotating one position per day, so Monday and Wednesday stay recognisable and repeat weekly.
+- Q: Sub-patterns? → A: The catalog gains an optional `sub_pattern` so the engine no longer
+  guesses triceps versus biceps or incline presses from names and categories.
+- Q: Cardio intensity? → A: In the cardio exercise's `notes`: "Easy pace, you can talk." or
+  "Hard efforts: 4 × 4 minutes with 3 easy minutes between."
+- Q: Shortest sessions? → A: Under 20 minutes becomes a minimalist budget: three compounds at two
+  hard sets each.
+- Q: Power exercises? → A: Box Jump, Broad Jump, Medicine Ball Slam, and Push Press join the
+  catalog so power drafts stop depending on Olympic-lift variants.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Get a draft instantly from my answers (Priority: P1)
@@ -215,6 +244,25 @@ three workouts, and the rationale names the secondary goal.
   outcome, duration, and the chosen split only.
 - **FR-012**: `docs/CONTRACTS.md` and the OpenAPI contract MUST describe `avoid`, `focus`,
   `variant`, the catalog fields, and the provider rule in the same change as the implementation.
+
+- **FR-013**: Every strength exercise in a draft MUST carry a `notes` line naming its rep range
+  and effort in athlete words; every cardio exercise MUST carry a `notes` line naming its
+  intensity. `target_reps` MUST be the lower bound of the range.
+- **FR-014**: The engine MUST tally sets per muscle group per week and keep each group inside the
+  goal's band where the session budget allows, trimming or adding isolation work; the matrix test
+  MUST assert no group exceeds its band's maximum.
+- **FR-015**: Strength, hypertrophy, and power drafts with two or more days MUST alternate heavy
+  and moderate targets across the days; full-body splits MUST alternate two fixed exercise sets
+  (A and B) across days.
+- **FR-016**: Under a hypertrophy goal with a focus, one isolation exercise for the focus area
+  MUST open the session before the compounds.
+- **FR-017**: Sessions under 20 minutes MUST build three compound exercises at two sets each.
+- **FR-018**: The rationale MUST end with one progression sentence for every goal but
+  conditioning; nothing in the draft or the profile changes on its own.
+- **FR-019**: The catalog MUST carry an optional `sub_pattern` for isolation and push entries,
+  and the engine MUST select by it instead of by name or category heuristics.
+- **FR-020**: `Build` MUST be a list of named rules applied in order, each covered by its own test,
+  and the exhaustive matrix MUST also run over a fixed set of `avoid` and `focus` combinations.
 
 ### Key Entities
 

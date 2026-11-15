@@ -35,7 +35,7 @@ func TestExerciseCatalogHandler_List(t *testing.T) {
 			t.Errorf("exercises len=%d want 2", len(got["exercises"]))
 		}
 		// Programming metadata (spec 016 FR-005) rides on the same entry shape.
-		if first := got["exercises"][0]; first.Pattern != "squat" || first.MuscleGroup != "quads" || len(first.EquipmentRequired) != 1 || first.EquipmentRequired[0] != "barbell" || first.Impact != "low" {
+		if first := got["exercises"][0]; first.Pattern != "squat" || first.MuscleGroup != "quads" || len(first.EquipmentRequired) != 1 || first.EquipmentRequired[0] != "barbell" || first.Impact != "low" || first.SubPattern != nil {
 			t.Errorf("programming metadata missing from the wire shape: %+v", first)
 		}
 	})
