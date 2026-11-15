@@ -232,6 +232,14 @@ type ScheduledSport struct {
 	PerformedDate   *string    `json:"performed_date,omitempty"`
 }
 
+// Size limits for a program. Schedule materialization allocates one set per
+// target set of every exercise of every unit, so each factor is bounded.
+const (
+	MaxProgramWorkouts         = 14
+	MaxProgramWorkoutExercises = 50
+	MaxProgramTargetSets       = 20
+)
+
 type ProgramWorkout struct {
 	ID               uuid.UUID         `json:"id"`
 	Kind             UnitKind          `json:"kind"`
@@ -348,7 +356,7 @@ func ProgramFromLegacyWeeklyPlan(primaryGoal string, assignments []LegacyWeeklyA
 			modality := "strength"
 			targetSets := 1
 			if legacy.Sets != nil && *legacy.Sets > 0 {
-				targetSets = *legacy.Sets
+				targetSets = min(*legacy.Sets, MaxProgramTargetSets)
 			}
 			var durationSeconds *int
 			if legacy.DurationMinutes != nil {

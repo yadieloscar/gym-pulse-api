@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -341,6 +342,9 @@ func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 	if !model.IsValidTrainingGoal(goal) {
 		return &model.ValidationError{Message: "unknown training goal", Field: "primary_goal"}
 	}
+	if len(workouts) > model.MaxProgramWorkouts {
+		return &model.ValidationError{Message: fmt.Sprintf("a program has at most %d workouts", model.MaxProgramWorkouts), Field: "workouts"}
+	}
 	for i := range workouts {
 		workout := &workouts[i]
 		workout.Kind = model.NormalizeUnitKind(workout.Kind)
@@ -359,12 +363,18 @@ func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 			if len(workout.Exercises) == 0 {
 				return &model.ValidationError{Message: "invalid program workout", Field: "workouts"}
 			}
+			if len(workout.Exercises) > model.MaxProgramWorkoutExercises {
+				return &model.ValidationError{Message: fmt.Sprintf("a workout has at most %d exercises", model.MaxProgramWorkoutExercises), Field: "workouts"}
+			}
 		default:
 			return &model.ValidationError{Message: "kind must be exercises or sport", Field: "workouts"}
 		}
 		for _, exercise := range workout.Exercises {
 			if exercise.Name == "" || exercise.ExerciseOrder < 1 || exercise.TargetSets < 1 || (exercise.Modality != "strength" && exercise.Modality != "cardio") {
 				return &model.ValidationError{Message: "invalid program exercise", Field: "workouts"}
+			}
+			if exercise.TargetSets > model.MaxProgramTargetSets {
+				return &model.ValidationError{Message: fmt.Sprintf("target_sets must be between 1 and %d", model.MaxProgramTargetSets), Field: "workouts"}
 			}
 		}
 	}
