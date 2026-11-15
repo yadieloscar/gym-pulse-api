@@ -22,7 +22,7 @@
 | `golangci-lint run ./...` | 0 issues |
 | `go test -race -tags=integration ./internal/dao -count=1` on a disposable migrated PostgreSQL 16 (CI-equivalent compose) | passed, whole suite |
 | 25,000 imported sets in one commit | 0.8 s (SC-001) |
-| `scripts/smoke.sh` against the CI-equivalent stack, requests as `gym_pulse_api` | 32 passed, 0 failed (found and fixed COPY-under-RLS) |
+| `scripts/smoke.sh` against the CI-equivalent stack, requests as `gym_pulse_api` | 32 passed, 0 failed (found and fixed COPY-under-RLS); re-run 2026-11-14 after merging main and renumbering to 035 |
 | `scripts/validate-supabase-security.sh` | passed |
 | `scripts/validate-database-design.sh` | passed: 40 tables, 418 columns, 44 indexes |
 | `swag init` | additions; `exercise_id` no longer required on set logs |
