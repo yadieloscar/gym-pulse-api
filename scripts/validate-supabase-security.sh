@@ -266,9 +266,21 @@ BEGIN
         RAISE EXCEPTION 'runtime role % table provisioning: %', runtime_role, findings;
     END IF;
 
-    -- Identity verification reads auth.users and nothing else in auth.
-    IF NOT has_table_privilege(runtime_role, 'auth.users', 'SELECT') THEN
-        RAISE EXCEPTION 'runtime role % cannot read auth.users', runtime_role;
+    -- Identity verification reads auth.users.id and nothing else in auth
+    -- (migration 039): no table-wide read, no other readable column.
+    IF NOT has_column_privilege(runtime_role, 'auth.users', 'id', 'SELECT') THEN
+        RAISE EXCEPTION 'runtime role % cannot read auth.users.id', runtime_role;
+    END IF;
+    SELECT string_agg(a.attname, ', ' ORDER BY a.attname)
+    INTO findings
+    FROM pg_attribute a
+    WHERE a.attrelid = 'auth.users'::regclass
+      AND a.attnum > 0
+      AND NOT a.attisdropped
+      AND a.attname <> 'id'
+      AND has_column_privilege(runtime_role, a.attrelid, a.attnum, 'SELECT');
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'runtime role % can read auth.users columns beyond id: %', runtime_role, findings;
     END IF;
     IF has_table_privilege(runtime_role, 'auth.users', 'INSERT')
         OR has_table_privilege(runtime_role, 'auth.users', 'UPDATE')

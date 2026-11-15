@@ -43,6 +43,6 @@ fi
 # empty. smoke.sh deletes this user and all owned data in its final step.
 ( cd "$compose_dir" && docker compose exec -T db \
   psql -U gympulse -d gympulse -v ON_ERROR_STOP=1 \
-  -c "INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-000000000001') ON CONFLICT (id) DO NOTHING;" >/dev/null )
+  -c "INSERT INTO auth.users (id) VALUES ('00000000-0000-0000-0000-000000000001'), ('00000000-0000-0000-0000-000000000002') ON CONFLICT (id) DO NOTHING;" >/dev/null )
 
 "$here/smoke.sh"
