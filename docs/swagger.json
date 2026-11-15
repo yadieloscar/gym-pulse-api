@@ -653,6 +653,132 @@
                 }
             }
         },
+        "/api/v1/knee-kit/days": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "knee-kit"
+                ],
+                "summary": "List knee checklist and pain-log days in a range",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "YYYY-MM-DD (at most 366 days after from)",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.KneeKitRange"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/knee-kit/days/{date}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Full replacement of the date's record; expected_revision is 0 when none exists.\nSee docs/CONTRACTS.md \"Knee Kit days\".",
+                "tags": [
+                    "knee-kit"
+                ],
+                "summary": "Create or replace one day's knee checklist and pain log",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Local calendar date YYYY-MM-DD",
+                        "name": "date",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Checklist items and pain values",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveKneeKitDayRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.KneeKitDay"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.KneeKitDay"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/logs": {
             "get": {
                 "security": [
@@ -4299,6 +4425,12 @@
                 "exported_at": {
                     "type": "string"
                 },
+                "knee_kit_days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportKneeKitDay"
+                    }
+                },
                 "nutrition": {
                     "$ref": "#/definitions/model.ExportNutrition"
                 },
@@ -4712,6 +4844,32 @@
                 },
                 "serving_label": {
                     "type": "string"
+                }
+            }
+        },
+        "model.ExportKneeKitDay": {
+            "type": "object",
+            "properties": {
+                "activity_pain": {
+                    "type": "integer"
+                },
+                "completed_items": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "date": {
+                    "type": "string"
+                },
+                "limping": {
+                    "type": "boolean"
+                },
+                "morning_pain": {
+                    "type": "integer"
+                },
+                "sharp_pain": {
+                    "type": "boolean"
                 }
             }
         },
@@ -5485,6 +5643,55 @@
                 }
             }
         },
+        "model.KneeKitDay": {
+            "type": "object",
+            "properties": {
+                "activity_pain": {
+                    "type": "integer"
+                },
+                "completed_items": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "date": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "limping": {
+                    "type": "boolean"
+                },
+                "morning_pain": {
+                    "type": "integer"
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "sharp_pain": {
+                    "type": "boolean"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.KneeKitRange": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.KneeKitDay"
+                    }
+                }
+            }
+        },
         "model.MaterializeScheduleRequest": {
             "type": "object",
             "required": [
@@ -6128,6 +6335,35 @@
                 },
                 "operation_key": {
                     "type": "string"
+                }
+            }
+        },
+        "model.SaveKneeKitDayRequest": {
+            "type": "object",
+            "properties": {
+                "activity_pain": {
+                    "type": "integer"
+                },
+                "completed_items": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "limping": {
+                    "type": "boolean"
+                },
+                "morning_pain": {
+                    "type": "integer"
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "sharp_pain": {
+                    "type": "boolean"
                 }
             }
         },

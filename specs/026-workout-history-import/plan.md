@@ -42,7 +42,7 @@
 
 ## Persistence
 
-Migration 035: `workout_imports` (row-level operation key, like 033), `day_logs.import_id` with
+Migration 038: `workout_imports` (row-level operation key, like 033), `day_logs.import_id` with
 `ON DELETE CASCADE` and a partial index, RLS and Data API revocation, runtime-role grant and
 policy. Additive; existing logs keep `NULL`.
 

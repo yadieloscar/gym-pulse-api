@@ -2,7 +2,7 @@
 
 **Spec**: [spec.md](spec.md) | **Plan**: [plan.md](plan.md)
 
-- [x] T001 Migration 035 `workout_imports` + `day_logs.import_id` — FR-003, FR-009
+- [x] T001 Migration 038 `workout_imports` + `day_logs.import_id` — FR-003, FR-009
 - [x] T002 Import model types and file error codes (`internal/model/workout_import.go`) — FR-001, FR-010
 - [x] T003 Strict layout detection and row parsing (`internal/service/import_parse.go`) — FR-004, FR-006
 - [x] T004 Exercise matcher and saved-exercise link (`internal/service/import_match.go`) — clarifications
@@ -22,7 +22,7 @@
 | `golangci-lint run ./...` | 0 issues |
 | `go test -race -tags=integration ./internal/dao -count=1` on a disposable migrated PostgreSQL 16 (CI-equivalent compose) | passed, whole suite |
 | 25,000 imported sets in one commit | 0.8 s (SC-001) |
-| `scripts/smoke.sh` against the CI-equivalent stack, requests as `gym_pulse_api` | 32 passed, 0 failed (found and fixed COPY-under-RLS); re-run 2026-11-14 after merging main and renumbering to 035 |
+| `scripts/smoke.sh` against the CI-equivalent stack, requests as `gym_pulse_api` | 32 passed, 0 failed (found and fixed COPY-under-RLS); re-run 2026-11-14 after merging main and renumbering to 035; 2026-11-15 renumbered to 038 after Knee Kit took 037 |
 | `scripts/validate-supabase-security.sh` | passed |
 | `scripts/validate-database-design.sh` | passed: 40 tables, 418 columns, 44 indexes |
 | `swag init` | additions; `exercise_id` no longer required on set logs |

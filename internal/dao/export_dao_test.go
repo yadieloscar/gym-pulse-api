@@ -22,6 +22,7 @@ func TestExportDAOReadsOneOwnedReadOnlySnapshot(t *testing.T) {
 		"WHERE t.user_id=$1",
 		"WHERE fe.user_id=$1",
 		"uf.user_id = fe.user_id",
+		"FROM knee_kit_days WHERE user_id=$1 ORDER BY date",
 	} {
 		if !strings.Contains(source, invariant) {
 			t.Errorf("export DAO missing %q", invariant)
@@ -36,7 +37,7 @@ func TestExportDAOReadsOneOwnedReadOnlySnapshot(t *testing.T) {
 			t.Errorf("export DAO must not write (%s)", strings.TrimSpace(write))
 		}
 	}
-	if got := strings.Count(source, "$1"); got < 15 {
+	if got := strings.Count(source, "$1"); got < 16 {
 		t.Errorf("expected every section to bind the user id, found %d binds", got)
 	}
 }

@@ -47,13 +47,13 @@ func TestExportHandler_ExportJSON(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{"schema_version", "exported_at", "profile", "settings", "training_profile", "workouts", "templates", "sport_activities", "body_weights", "nutrition"} {
+	for _, key := range []string{"schema_version", "exported_at", "profile", "settings", "training_profile", "workouts", "templates", "sport_activities", "body_weights", "nutrition", "knee_kit_days"} {
 		if _, ok := body[key]; !ok {
 			t.Errorf("missing top-level %q", key)
 		}
 	}
 	// Empty collections are arrays, never null.
-	if !strings.Contains(rec.Body.String(), `"workouts":[]`) || !strings.Contains(rec.Body.String(), `"food_entries":[]`) {
+	if !strings.Contains(rec.Body.String(), `"workouts":[]`) || !strings.Contains(rec.Body.String(), `"food_entries":[]`) || !strings.Contains(rec.Body.String(), `"knee_kit_days":[]`) {
 		t.Errorf("empty collections must encode as []: %s", rec.Body.String())
 	}
 }

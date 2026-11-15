@@ -24,6 +24,7 @@ type DataExport struct {
 	SportActivities []ExportSportActivity  `json:"sport_activities"`
 	BodyWeights     []ExportBodyWeight     `json:"body_weights"`
 	Nutrition       ExportNutrition        `json:"nutrition"`
+	KneeKitDays     []ExportKneeKitDay     `json:"knee_kit_days"`
 }
 
 // ExportProfile is the athlete's own profile; absent until it is created.
@@ -202,6 +203,16 @@ type ExportOwnFood struct {
 	Archived     bool    `json:"archived"`
 }
 
+// ExportKneeKitDay is one day's knee checklist items and pain log.
+type ExportKneeKitDay struct {
+	Date           string   `json:"date"`
+	CompletedItems []string `json:"completed_items"`
+	MorningPain    *int     `json:"morning_pain"`
+	ActivityPain   *int     `json:"activity_pain"`
+	SharpPain      bool     `json:"sharp_pain"`
+	Limping        bool     `json:"limping"`
+}
+
 // NewDataExport returns an export whose collections are empty arrays.
 func NewDataExport(exportedAt time.Time) *DataExport {
 	return &DataExport{
@@ -217,5 +228,6 @@ func NewDataExport(exportedAt time.Time) *DataExport {
 			FoodEntries: []ExportFoodEntry{},
 			OwnFoods:    []ExportOwnFood{},
 		},
+		KneeKitDays: []ExportKneeKitDay{},
 	}
 }
