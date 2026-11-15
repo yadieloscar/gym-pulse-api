@@ -320,7 +320,7 @@ func toSetLogs(reqs []model.CreateSetLogRequest) []model.SetLog {
 	sets := make([]model.SetLog, len(reqs))
 	for i, r := range reqs {
 		sets[i] = model.SetLog{
-			ExerciseID:      r.ExerciseID,
+			ExerciseID:      &r.ExerciseID,
 			SetIndex:        r.SetIndex,
 			TargetReps:      r.TargetReps,
 			TargetWeight:    r.TargetWeight,

@@ -19,6 +19,7 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
+	"github.com/gym-pulse/gym-pulse-api/internal/middleware"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
@@ -167,7 +168,7 @@ var (
 func TestRouter_HidesSwaggerInProduction(t *testing.T) {
 	cfg := &config.Config{Environment: "production", AllowedOrigins: []string{"https://app.example.com"}}
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
 	if rec.Code != http.StatusNotFound {
@@ -197,7 +198,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 
-	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	do := func(req *http.Request) *http.Response {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -438,4 +439,42 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 			t.Errorf("missing CORS allow-origin header")
 		}
 	})
+}
+
+func TestRouter_AuthenticatedRoutesShareDefaultUserLimit(t *testing.T) {
+	cfg := &config.Config{SupabaseJWTSecret: "test-secret", AllowedOrigins: []string{"https://app.example.com"}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	activeUsers := &fakeActiveUserChecker{exists: true}
+	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	get := func(sub string) int {
+		claims := jwt.MapClaims{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()}
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.SupabaseJWTSecret))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/settings", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	alice, bob := uuid.NewString(), uuid.NewString()
+	for i := range middleware.DefaultUserLimit {
+		if code := get(alice); code != http.StatusOK {
+			t.Fatalf("GET /api/v1/settings request %d = %d, want 200", i+1, code)
+		}
+	}
+	callsBefore := activeUsers.calls
+	if code := get(alice); code != http.StatusTooManyRequests {
+		t.Fatalf("GET /api/v1/settings past the default limit = %d, want 429", code)
+	}
+	if activeUsers.calls != callsBefore {
+		t.Error("a rate-limited request still reached the active-user lookup")
+	}
+	if code := get(bob); code != http.StatusOK {
+		t.Fatalf("GET /api/v1/settings for another user = %d, want 200", code)
+	}
 }

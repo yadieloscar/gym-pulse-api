@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -510,4 +511,27 @@ func TestMustGetUserID_Panic(t *testing.T) {
 		ctx := context.WithValue(context.Background(), UserIDKey, "invalid-uuid")
 		MustGetUserID(ctx)
 	})
+}
+
+// A caller that disconnects mid-request must not fail the shared JWKS refresh:
+// a failed refresh starts the cooldown, during which every token whose key is
+// not freshly cached is rejected.
+func TestJWKSRefreshSurvivesCallerCancellation(t *testing.T) {
+	body := `{"keys":[{"kty":"RSA","kid":"current","n":"AQ","e":"Aw","alg":"RS256"}]}`
+	client := &http.Client{Transport: middlewareRoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		if err := req.Context().Err(); err != nil {
+			return nil, err
+		}
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(body))}, nil
+	})}
+	cache := &keyCache{keys: map[string]cachedKey{}, missing: map[string]time.Time{}, client: client, now: time.Now}
+
+	canceled, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := cache.getPublicKey(canceled, "https://jwks.example.test", "attacker-kid"); !errors.Is(err, errJWKSKeyNotFound) {
+		t.Fatalf("getPublicKey(canceled ctx, unknown kid) error = %v, want %v", err, errJWKSKeyNotFound)
+	}
+	if _, err := cache.getPublicKey(context.Background(), "https://jwks.example.test", "current"); err != nil {
+		t.Fatalf("getPublicKey(valid kid) after a canceled caller: %v", err)
+	}
 }

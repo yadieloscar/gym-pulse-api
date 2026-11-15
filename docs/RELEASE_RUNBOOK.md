@@ -130,9 +130,11 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
 2. **Grant** by deploying the release that contains migration 026 with the current configuration
    (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL). The
    migration grants schema usage, table DML, default DML for future tables, and creates the
-   `gym_pulse_api_access` policy on every application table. It also attempts
-   `GRANT SELECT ON auth.users`; if the log shows the warning that this grant failed, run
-   `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; GRANT SELECT ON auth.users TO gym_pulse_api;`
+   `gym_pulse_api_access` policy on every application table. Migrations 026 and 039 together
+   leave the role with `SELECT` on `auth.users.id` only, never the emails or password hashes
+   in the other columns. If the log shows a warning that either statement failed, run
+   `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; REVOKE SELECT ON auth.users FROM gym_pulse_api;
+   GRANT SELECT (id) ON auth.users TO gym_pulse_api;`
    as a role that owns `auth.users` (`supabase_auth_admin` or the dashboard owner). If
    `auth.users` has row-level security enabled in the hosted project, add a read policy for
    `gym_pulse_api` or the identity check denies every request.
