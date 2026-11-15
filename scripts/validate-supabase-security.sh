@@ -267,7 +267,7 @@ BEGIN
     END IF;
 
     -- Identity verification reads auth.users.id and nothing else in auth
-    -- (migration 039): no table-wide read, no other readable column.
+    -- (migration 041): no table-wide read, no other readable column.
     IF NOT has_column_privilege(runtime_role, 'auth.users', 'id', 'SELECT') THEN
         RAISE EXCEPTION 'runtime role % cannot read auth.users.id', runtime_role;
     END IF;
