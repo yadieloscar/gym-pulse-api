@@ -50,7 +50,7 @@ policy. Additive; existing logs keep `NULL`.
 
 Contract 1.6.0, additive. Old apps never call the import routes and ignore the new fields. The one
 visible change for old apps is `exercise_id: null` on imported sets, which only exist after a new
-app imports. Deploy the API before the app release (app spec 030). Rollback: the down migration
+app imports. Deploy the API before the app release (app spec 032). Rollback: the down migration
 drops the column and table (imported logs would then lose their batch link, so remove imports
 first if rolling back).
 

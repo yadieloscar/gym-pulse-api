@@ -4,7 +4,7 @@
 
 **Feature ID**: `gympulse-workout-history-import`
 
-**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/030-workout-history-import/spec.md)
+**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/032-workout-history-import/spec.md)
 
 **Created**: 2026-11-03
 
