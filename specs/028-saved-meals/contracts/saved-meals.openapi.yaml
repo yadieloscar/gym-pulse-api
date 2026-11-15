@@ -1,0 +1,108 @@
+openapi: 3.0.3
+info: {title: GymPulse Saved Meals Contract, version: 1.0.0, description: 'Additive in API contract 1.8.0. Food, Serving, FoodEntry, and NutritionDay are the shapes documented under "Food logging" and "Nutrition" in docs/CONTRACTS.md.'}
+paths:
+  /api/v1/nutrition/meals:
+    get:
+      summary: The athlete's saved meals, most recently logged first, then most recently saved
+      responses:
+        '200': {description: 'up to 50; [] when none', content: {application/json: {schema: {type: object, required: [meals], properties: {meals: {type: array, items: {$ref: '#/components/schemas/SavedMeal'}}}}}}}
+    post:
+      summary: Save a meal
+      description: Requires Idempotency-Key equal to operation_key; a verbatim retry replays 201.
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveMealRequest'}}}}
+      responses:
+        '201': {description: Created, content: {application/json: {schema: {$ref: '#/components/schemas/SavedMeal'}}}}
+        '409': {description: 'SAVED_MEAL_LIMIT_REACHED (details.limit 50) or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+  /api/v1/nutrition/meals/{id}:
+    put:
+      summary: Replace a saved meal's name and items; days already logged do not change
+      parameters: [{name: id, in: path, required: true, schema: {type: string, format: uuid}}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/SaveMealRequest'}}}}
+      responses:
+        '200': {description: Replaced, content: {application/json: {schema: {$ref: '#/components/schemas/SavedMeal'}}}}
+        '404': {description: Not owned or unknown (shared NOT_FOUND)}
+        '409': {description: 'REVISION_CONFLICT with the meal under resource, or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+    delete:
+      summary: Delete a saved meal; entries it logged stay on their days
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+        - {name: expected_revision, in: query, required: true, schema: {type: integer, minimum: 1}}
+        - {name: Idempotency-Key, in: header, required: true, schema: {type: string, minLength: 1, maxLength: 128}}
+      responses:
+        '204': {description: 'Deleted, or verbatim replay'}
+        '404': {description: Not owned or unknown}
+        '409': {description: 'REVISION_CONFLICT or IDEMPOTENCY_CONFLICT', content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+  /api/v1/nutrition/days/{date}/meal-logs:
+    post:
+      summary: Log a saved meal to a day as one food entry per item, all or nothing
+      description: Requires Idempotency-Key equal to operation_key; a verbatim retry replays 201 with the same entries.
+      parameters: [{name: date, in: path, required: true, schema: {type: string, format: date}, description: 'local calendar date, never after local today'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/LogMealRequest'}}}}
+      responses:
+        '201':
+          description: Entries in item order; day.source is foods; converted holds the quick add made from typed totals, if any
+          content: {application/json: {schema: {type: object, required: [entries, day, converted], properties: {entries: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/FoodEntry'}}, day: {$ref: '#/components/schemas/NutritionDay'}, converted: {type: array, items: {$ref: '#/components/schemas/FoodEntry'}}}}}}
+        '404': {description: Meal not owned or unknown (shared NOT_FOUND)}
+        '409': {description: IDEMPOTENCY_CONFLICT, content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}}
+        '422': {$ref: '#/components/responses/ValidationError'}
+components:
+  responses:
+    ValidationError:
+      description: 'VALIDATION_ERROR; details.field is one of name, items, date, meal, logged_at, expected_revision, operation_key, Idempotency-Key. With field items, details.index is the zero-based item at fault when one item is the cause.'
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+  schemas:
+    Error:
+      type: object
+      required: [error, code]
+      properties: {error: {type: string}, code: {type: string}, details: {type: object}, resource: {type: object}}
+    MealItemInput:
+      type: object
+      required: [food, serving, amount]
+      properties:
+        food: {type: object, required: [id], properties: {id: {type: string, format: uuid}}}
+        serving: {type: object, required: [label, grams], properties: {label: {type: string, minLength: 1, maxLength: 60}, grams: {type: number, exclusiveMinimum: true, minimum: 0, maximum: 5000}}, description: "one of the food's servings or a grams-only serving"}
+        amount: {type: number, minimum: 0.1, maximum: 50, multipleOf: 0.01}
+    SaveMealRequest:
+      type: object
+      required: [name, items, operation_key]
+      properties:
+        name: {type: string, minLength: 1, maxLength: 60, description: 'trimmed; unique per athlete ignoring case'}
+        items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/MealItemInput'}, description: 'order is kept; the same food and serving may appear once'}
+        expected_revision: {type: integer, minimum: 1, description: required on PUT; absent on POST}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    LogMealRequest:
+      type: object
+      required: [meal, operation_key]
+      properties:
+        meal: {type: object, required: [id], properties: {id: {type: string, format: uuid}}}
+        items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/MealItemInput'}, description: 'optional; replaces the saved items for this log only and never changes the saved meal'}
+        logged_at: {type: string, format: date-time, description: defaults to now}
+        operation_key: {type: string, minLength: 1, maxLength: 128}
+    SavedMealItem:
+      type: object
+      required: [food, serving, amount, available]
+      properties:
+        food: {type: object, description: Food}
+        serving: {type: object, description: Serving}
+        amount: {type: number}
+        available: {type: boolean, description: false when the food's current facts cannot be shown; the four values are then omitted}
+        energy_kcal: {type: integer}
+        protein_g: {type: number}
+        carbs_g: {type: number}
+        fat_g: {type: number}
+    SavedMeal:
+      type: object
+      required: [id, name, items, totals, revision, last_logged_at, created_at, updated_at]
+      properties:
+        id: {type: string, format: uuid}
+        name: {type: string}
+        items: {type: array, minItems: 1, maxItems: 20, items: {$ref: '#/components/schemas/SavedMealItem'}}
+        totals: {type: object, nullable: true, required: [energy_kcal, protein_g, carbs_g, fat_g], properties: {energy_kcal: {type: integer}, protein_g: {type: number}, carbs_g: {type: number}, fat_g: {type: number}}, description: 'sum of the items at current food facts; null when any item is unavailable'}
+        revision: {type: integer, minimum: 1, description: advances when name or items change; logging does not advance it}
+        last_logged_at: {type: string, format: date-time, nullable: true}
+        created_at: {type: string, format: date-time}
+        updated_at: {type: string, format: date-time}
+    FoodEntry: {type: object, description: 'FoodEntry as documented under Food logging; kind is always food'}
+    NutritionDay: {type: object, description: NutritionDay as documented under Nutrition}
