@@ -11,6 +11,23 @@ if ! command -v psql >/dev/null 2>&1; then
   exit 1
 fi
 
+# The Data API checks below only run for roles that exist. A plain local or CI
+# database has no anon, authenticated, or service_role, so those checks pass
+# without proving anything. Against hosted Supabase, set
+# REQUIRE_SUPABASE_DATA_API_ROLES=true so a missing role fails instead.
+if [[ "${REQUIRE_SUPABASE_DATA_API_ROLES:-}" == "true" ]]; then
+  missing_roles=$(psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 -At -c "
+    SELECT string_agg(expected, ', ' ORDER BY expected)
+    FROM unnest(ARRAY['anon', 'authenticated', 'service_role']) AS expected
+    WHERE NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = expected)")
+  if [[ -n "${missing_roles}" ]]; then
+    echo "supabase security validation failed: Data API roles missing: ${missing_roles}" >&2
+    exit 1
+  fi
+else
+  echo "supabase security validation: Data API role checks cover only roles present; set REQUIRE_SUPABASE_DATA_API_ROLES=true against hosted Supabase"
+fi
+
 psql "${DATABASE_URL}" -v ON_ERROR_STOP=1 <<'SQL'
 DO $$
 DECLARE

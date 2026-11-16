@@ -35,7 +35,7 @@ func (r *bodyWeightDAO) Upsert(ctx context.Context, userID uuid.UUID, w *model.B
 		SET weight = EXCLUDED.weight,
 		    unit = EXCLUDED.unit,
 		    logged_at = now()
-		RETURNING id, user_id, date, weight, unit, logged_at`,
+		RETURNING id, user_id, date::text, weight, unit, logged_at`,
 		userID, w.Date, w.Weight, w.Unit,
 	).Scan(&result.ID, &result.UserID, &result.Date, &result.Weight, &result.Unit, &result.LoggedAt)
 	if err != nil {
@@ -46,7 +46,7 @@ func (r *bodyWeightDAO) Upsert(ctx context.Context, userID uuid.UUID, w *model.B
 
 func (r *bodyWeightDAO) List(ctx context.Context, userID uuid.UUID) ([]model.BodyWeight, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, user_id, date, weight, unit, logged_at
+		SELECT id, user_id, date::text, weight, unit, logged_at
 		FROM body_weights
 		WHERE user_id = $1
 		ORDER BY date DESC`,

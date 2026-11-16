@@ -48,8 +48,7 @@ func New(
 	r := chi.NewRouter()
 
 	// Global middleware.
-	r.Use(chimiddleware.RequestID)
-	r.Use(middleware.RequestIDHeaderMiddleware)
+	r.Use(middleware.RequestIDMiddleware)
 	r.Use(middleware.LoggingMiddleware(logger))
 	// HSTS only where TLS is guaranteed; a local HTTP API must stay reachable.
 	r.Use(middleware.SecurityHeaders(cfg.IsReleaseEnvironment()))
@@ -60,8 +59,9 @@ func New(
 	r.Get("/health", handler.HealthCheck)
 	r.Get("/ready", readinessHandler.ServeHTTP)
 	// The Swagger UI is a development aid. docs/CONTRACTS.md is the client
-	// contract, so production has no reason to publish the route inventory.
-	if cfg.Environment != "production" {
+	// contract, so a publicly reachable environment has no reason to publish
+	// the route inventory.
+	if !cfg.IsReleaseEnvironment() {
 		r.Get("/docs/*", httpswagger.WrapHandler)
 	}
 

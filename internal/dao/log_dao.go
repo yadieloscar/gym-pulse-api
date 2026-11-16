@@ -105,7 +105,7 @@ func (r *logDAO) GetByDate(ctx context.Context, userID uuid.UUID, date string) (
 	dl.SetLogs = setLogs
 
 	if dl.TemplateID != nil {
-		tmpl, err := r.getTemplate(ctx, *dl.TemplateID)
+		tmpl, err := r.getTemplate(ctx, dl.UserID, *dl.TemplateID)
 		if err != nil {
 			return nil, err
 		}
@@ -355,13 +355,15 @@ func (r *logDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exercise
 	return history, nil
 }
 
-func (r *logDAO) getTemplate(ctx context.Context, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
+// getTemplate loads the day log's template only when the log's owner also
+// owns it, so a template id never exposes another user's template.
+func (r *logDAO) getTemplate(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
 	t := &model.WorkoutTemplate{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, name, type_id, subtype_id, created_at, updated_at
 		FROM workout_templates
-		WHERE id = $1`,
-		templateID,
+		WHERE id = $1 AND user_id = $2`,
+		templateID, userID,
 	).Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {

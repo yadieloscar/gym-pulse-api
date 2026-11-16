@@ -238,6 +238,9 @@ const (
 	MaxProgramWorkouts         = 14
 	MaxProgramWorkoutExercises = 50
 	MaxProgramTargetSets       = 20
+	// MaxProgramRoadmapBytes bounds the free-form roadmap, measured as
+	// compact JSON. Real roadmaps are a few hundred bytes.
+	MaxProgramRoadmapBytes = 16 * 1024
 )
 
 type ProgramWorkout struct {
