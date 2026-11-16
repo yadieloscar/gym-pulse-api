@@ -283,10 +283,25 @@ BEGIN
         RAISE EXCEPTION 'runtime role % table provisioning: %', runtime_role, findings;
     END IF;
 
-    -- Identity verification reads auth.users.id and nothing else in auth
-    -- (migration 039): no table-wide read, no other readable column.
-    IF NOT has_column_privilege(runtime_role, 'auth.users', 'id', 'SELECT') THEN
-        RAISE EXCEPTION 'runtime role % cannot read auth.users.id', runtime_role;
+    -- Identity verification calls gym_pulse_private.auth_user_exists
+    -- (migration 043); the role needs no access to the auth schema, and on
+    -- hosted Supabase cannot be given any. Whatever direct access exists must
+    -- stay within auth.users.id (migration 039).
+    IF to_regprocedure('gym_pulse_private.auth_user_exists(uuid)') IS NULL
+        OR NOT has_schema_privilege(runtime_role, 'gym_pulse_private', 'USAGE')
+        OR NOT has_function_privilege(runtime_role, 'gym_pulse_private.auth_user_exists(uuid)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'runtime role % cannot call gym_pulse_private.auth_user_exists', runtime_role;
+    END IF;
+    IF has_function_privilege('public', 'gym_pulse_private.auth_user_exists(uuid)', 'EXECUTE') THEN
+        RAISE EXCEPTION 'gym_pulse_private.auth_user_exists is executable by PUBLIC';
+    END IF;
+    SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname)
+    INTO findings
+    FROM pg_roles r
+    WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+      AND has_function_privilege(r.rolname, 'gym_pulse_private.auth_user_exists(uuid)', 'EXECUTE');
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'Data API roles can call gym_pulse_private.auth_user_exists: %', findings;
     END IF;
     SELECT string_agg(a.attname, ', ' ORDER BY a.attname)
     INTO findings

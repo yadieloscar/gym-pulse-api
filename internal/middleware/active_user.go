@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -34,6 +35,8 @@ func RequireActiveUser(checker ActiveUserChecker) func(http.Handler) http.Handle
 			exists, err := checker.Exists(checkContext, userID)
 			cancel()
 			if err != nil {
+				// Without this line a missing grant looks like a generic 503.
+				slog.ErrorContext(r.Context(), "active user check failed", "error", err)
 				writeActiveUserError(w, http.StatusServiceUnavailable, "authentication service temporarily unavailable", "AUTHENTICATION_UNAVAILABLE")
 				return
 			}
