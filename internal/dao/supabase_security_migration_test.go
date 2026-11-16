@@ -48,9 +48,14 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 	if len(publicTables) != 42 {
 		t.Fatalf("found %d public application tables, want 42: %v", len(publicTables), publicTables)
 	}
+	// Migration 044's helper enables RLS and provisions the runtime role in one
+	// call, so a table secured through it satisfies both checks below.
+	securedByHelper := func(table string) bool {
+		return strings.Contains(contents, "gym_pulse_private.secure_table('"+table+"')")
+	}
 	for _, table := range publicTables {
 		statement := "ALTER TABLE " + table + " ENABLE ROW LEVEL SECURITY;"
-		if !strings.Contains(contents, statement) {
+		if !strings.Contains(contents, statement) && !securedByHelper(table) {
 			t.Errorf("%s is created without an RLS migration", table)
 		}
 	}
@@ -70,8 +75,8 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 		listed := strings.Contains(string(runtimeRoleMigration), "'"+short+"'")
 		ownPolicy := strings.Contains(contents, "CREATE POLICY gym_pulse_api_access ON "+table) ||
 			strings.Contains(contents, "CREATE POLICY gym_pulse_api_access ON "+short)
-		if !listed && !ownPolicy {
-			t.Errorf("%s is not provisioned for the gym_pulse_api runtime role (list it in 026 or add gym_pulse_api_access in its migration)", table)
+		if !listed && !ownPolicy && !securedByHelper(table) {
+			t.Errorf("%s is not provisioned for the gym_pulse_api runtime role (list it in 026 or call gym_pulse_private.secure_table in its migration)", table)
 		}
 	}
 }
@@ -124,5 +129,36 @@ func TestSupabaseSecurityMigrationRevokesDataAPIAccess(t *testing.T) {
 	}
 	if !strings.Contains(contents, "REVOKE EXECUTE ON FUNCTIONS FROM PUBLIC") {
 		t.Error("migration leaves PostgreSQL's default PUBLIC function execution enabled")
+	}
+}
+
+func TestSecureTableHelperMigration(t *testing.T) {
+	body, err := os.ReadFile("../../migrations/044_create_secure_table_helper.up.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	contents := string(body)
+
+	for _, required := range []string{
+		"CREATE SCHEMA IF NOT EXISTS gym_pulse_private;",
+		"REVOKE ALL ON SCHEMA gym_pulse_private FROM PUBLIC;",
+		"CREATE OR REPLACE FUNCTION gym_pulse_private.secure_table(target regclass)",
+		"SECURITY INVOKER",
+		"SET search_path = pg_catalog",
+		"ALTER TABLE %s ENABLE ROW LEVEL SECURITY",
+		"WHERE rolname IN ('anon', 'authenticated', 'service_role')",
+		"REVOKE ALL PRIVILEGES ON TABLE %s FROM %I",
+		"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE %s TO %I",
+		"AS PERMISSIVE FOR ALL TO %I USING (true) WITH CHECK (true)",
+		"REVOKE ALL ON FUNCTION gym_pulse_private.secure_table(regclass) FROM PUBLIC;",
+	} {
+		if !strings.Contains(contents, required) {
+			t.Errorf("migration 044 is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{"SECURITY DEFINER", "GRANT ALL", "TRUNCATE", "REFERENCES", "TRIGGER", "WITH GRANT OPTION", "FORCE ROW LEVEL SECURITY", "PASSWORD", "GRANT USAGE ON SCHEMA gym_pulse_private", "GRANT EXECUTE"} {
+		if strings.Contains(strings.ToUpper(contents), strings.ToUpper(forbidden)) {
+			t.Errorf("migration 044 must not contain %q", forbidden)
+		}
 	}
 }

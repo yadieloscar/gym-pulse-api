@@ -51,3 +51,15 @@ description: "Implementation tasks for the least-privilege runtime database role
 - [x] T011 Isolated stack and fresh-cluster evidence recorded above
 - [x] T012 `gofmt`, `go test ./...`, `golangci-lint run`, `./scripts/validate-database-design.sh`
 - [ ] T013 Staging rollout per runbook; record validator output and `pg_stat_activity` roles in release evidence (operator task)
+
+## Amendment A1 (2026-11-16)
+
+- [x] T014 [A1] `internal/dbmigrate` runner shared by `cmd/migrate` and dev/test server startup; `cmd/migrate` binary in the image
+- [x] T015 [A1] `internal/config`: `LoadMigrate`, release `DATABASE_MIGRATE_URL` optional, `MigrateOnStart` dev/test only; tests
+- [x] T016 [A1] Migration 044 `gym_pulse_private.secure_table`; security migration test accepts the helper
+- [x] T017 [A1] `internal/dbmigrate/lint_test.go`: pairing, contiguous versions, one transaction per file, re-runnable rules from 043
+- [x] T018 [A1] Integration: `internal/dao/runtime_role_integration_test.go`, `internal/dbmigrate/dbmigrate_integration_test.go` (round trip, strict re-run)
+- [x] T019 [A1] CI: `migrate` service gates the API; runtime URL for the DAO suite; round-trip step
+- [x] T020 [A1] Docs: `.env.example`, README, runbook (migration job, writing a migration), DATABASE_DESIGN §13, AGENTS/CLAUDE test commands
+- [x] T021 [A1] Parent workspace `docker-compose.yml`: runtime-role login at init, API as `gym_pulse_api`, owner for migrations (separate parent-repo change)
+- [ ] T022 [A1] Configure Railway pre-deploy `./migrate` at first hosted deploy (operator task)

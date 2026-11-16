@@ -98,6 +98,71 @@ A release deployment that forgets the separate owner migration connection, or po
 - **SC-003**: `go test ./...`, `golangci-lint run`, and the database-design gate pass.
 - **SC-004**: No public API contract changes; `docs/CONTRACTS.md` is unchanged.
 
+## Amendment A1: migration job, local least privilege, table helper (2026-11-16)
+
+**Why:** the owner asked for a cleaner database setup around roles and migrations. Three gaps were
+left after the first rollout: the long-running API process still holds the owner credential because
+it migrates at startup; local development and the DAO suite connect as a superuser, so a missing
+grant or policy surfaces only in CI smoke; and every table-creating migration copies about 25 lines
+of grant and policy SQL.
+
+### Clarifications
+
+- Q: Where do release migrations run? → A: In a separate one-shot `migrate` binary shipped in the
+  same image and run as the platform's pre-deploy step (Railway `preDeployCommand: ./migrate`). A
+  failed migration fails the deploy before any new server starts.
+- Q: Does the server still migrate at startup? → A: In development and test, yes, using
+  `DATABASE_MIGRATE_URL` (defaulting to `DATABASE_URL`). In staging and production never: no
+  release deployment exists yet, so there is nothing to keep compatible, and Railway's pre-deploy
+  step shares the service's variables, so "migrate when the URL is set" would re-run on every boot.
+- Q: Can the server check the schema version itself? → A: No. The runtime role deliberately cannot
+  read `schema_migrations` (FR-002); the deploy-blocking pre-deploy step is the guarantee.
+- Q: Where does the table helper live? → A: In a private schema `gym_pulse_private` that no client
+  role can use, so the Supabase Data API never exposes it. It runs as the caller (the migrator).
+- Q: Does the whole DAO suite move to the runtime role? → A: No. Its fixtures insert into
+  `auth.users` and some tests run migrations, which need the owner. A dedicated integration test
+  connects as the runtime role and proves every application table is reachable and DDL is denied.
+
+### Requirements
+
+- **FR-A1-001:** `cmd/migrate` runs pending up migrations with `DATABASE_MIGRATE_URL` and exits
+  non-zero on failure. In staging and production it applies the same session-capable and TLS
+  rules as FR-004. It needs no other configuration.
+- **FR-A1-002:** In staging and production the server never migrates, and `DATABASE_MIGRATE_URL`
+  becomes optional for it. When set it is still validated and used only for the owner-connection
+  check; when unset the server still refuses a request connection as `postgres` or `supabase_admin`
+  (unless `ALLOW_OWNER_DATABASE_URL=true`).
+- **FR-A1-003:** The local Docker stack creates the `gym_pulse_api` login at database init and runs
+  the API's request and lock pools as that role, with migrations on the owner. `.env.example`
+  shows the same split.
+- **FR-A1-004:** An integration test connected as the runtime role reads every public application
+  table and `auth.users.id`, and is denied `CREATE TABLE`, `TRUNCATE`, and `schema_migrations`.
+  CI runs it.
+- **FR-A1-005:** Migration 044 adds `gym_pulse_private.secure_table(regclass)`: enable RLS, revoke
+  every Data API role, grant DML and the `gym_pulse_api_access` policy to the runtime role.
+  `EXECUTE` is revoked from `PUBLIC`. New table migrations call it instead of copying the blocks,
+  and the repository test accepts the call as provisioning.
+
+- **FR-A1-006:** Migrations from 043 on are re-runnable and single-transaction: `INSERT` has
+  `ON CONFLICT`; tables, indexes, schemas, and columns use `IF NOT EXISTS`; drops use `IF EXISTS`;
+  functions and views use `CREATE OR REPLACE`; `CREATE POLICY` and `ADD CONSTRAINT` follow a
+  `DROP ... IF EXISTS` of the same name; no `BEGIN`/`COMMIT` or `CONCURRENTLY`; a new table calls
+  the FR-A1-005 helper. A static test enforces this in `go test ./...`. 001–042 stay as applied.
+- **FR-A1-007:** Every version has exactly one up and one down file, and versions from 043 are
+  contiguous.
+- **FR-A1-008:** CI applies every migration to a scratch database, re-applies (no change), rolls all
+  back to an empty schema, re-applies, and requires the catalog snapshot (columns, constraints,
+  indexes, policies, RLS flags, grants, functions) to match the first apply. It also re-executes
+  each strict migration against the migrated database in a rolled-back transaction.
+
+### Acceptance
+
+- `go test ./...` covers the config changes and the helper's static checks.
+- The runtime-role integration test passes against a migrated database in CI.
+- The CI smoke stack runs the image's `./migrate` as its own service, the API starts only after
+  it exits 0, and `validate-supabase-security.sh` still passes.
+- No public contract change; `docs/CONTRACTS.md` is unchanged.
+
 ## Assumptions
 
 - Hosted Supabase's `postgres` role holds `CREATEROLE` and owns the application tables, so it can create the role locally when absent and grant on every table.

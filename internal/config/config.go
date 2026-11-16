@@ -20,7 +20,8 @@ var (
 	ErrProductionAdmin           = errors.New("staging and production require a canonical HTTPS SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY")
 	ErrSupabaseProjectMismatch   = errors.New("supabase issuer and JWKS URLs must match SUPABASE_URL")
 	ErrProductionDatabaseLock    = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
-	ErrProductionDatabaseMigrate = errors.New("staging and production require a direct or session-mode DATABASE_MIGRATE_URL for the schema owner")
+	ErrProductionDatabaseMigrate = errors.New("staging and production require DATABASE_MIGRATE_URL to be a direct or session-mode connection for the schema owner")
+	ErrMissingMigrateURL         = errors.New("DATABASE_MIGRATE_URL is required in staging and production; development and test fall back to DATABASE_URL")
 	ErrProductionDatabaseTLS     = errors.New("staging and production require sslmode=require, verify-ca, or verify-full on DATABASE_URL, DATABASE_LOCK_URL, and DATABASE_MIGRATE_URL")
 	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS without wildcards")
 	ErrProductionOwnerConnection = errors.New("staging and production require DATABASE_URL to use the least-privilege runtime role, not the schema owner; set ALLOW_OWNER_DATABASE_URL=true only while bootstrapping or rolling back the role")
@@ -53,11 +54,13 @@ type Config struct {
 	Port            string
 	DatabaseURL     string
 	DatabaseLockURL string
-	// DatabaseMigrateURL connects as the schema owner and is used only to run
-	// migrations at startup. Staging and production require it so DATABASE_URL
-	// can point at the least-privilege gym_pulse_api role; development and test
-	// default it to DATABASE_URL.
-	DatabaseMigrateURL  string
+	// DatabaseMigrateURL is the schema-owner connection. Development and test
+	// default it to DATABASE_URL and migrate with it at startup. Staging and
+	// production never migrate in the server: the cmd/migrate pre-deploy job
+	// does, and here the value (optional) only feeds the owner-connection check.
+	DatabaseMigrateURL string
+	// MigrateOnStart is true in development and test only.
+	MigrateOnStart      bool
 	SupabaseJWTSecret   string
 	SupabaseJWKSURL     string
 	SupabaseJWTIssuer   string
@@ -177,10 +180,18 @@ func Load() (*Config, error) {
 		if err := validateProductionLockURL(lockURL); err != nil {
 			return nil, err
 		}
-		if err := validateProductionMigrateURL(migrateURL); err != nil {
-			return nil, err
+		// DATABASE_MIGRATE_URL is optional here: the cmd/migrate pre-deploy job
+		// owns release migrations. When the platform still exposes it to the
+		// server (Railway pre-deploy shares service variables) it is validated
+		// and used only to refuse an owner request connection.
+		releaseURLs := []string{dbURL, lockURL}
+		if migrateURL != "" {
+			if err := validateProductionMigrateURL(migrateURL); err != nil {
+				return nil, err
+			}
+			releaseURLs = append(releaseURLs, migrateURL)
 		}
-		for _, databaseURL := range []string{dbURL, lockURL, migrateURL} {
+		for _, databaseURL := range releaseURLs {
 			if err := validateProductionDatabaseTLS(databaseURL); err != nil {
 				return nil, err
 			}
@@ -288,6 +299,7 @@ func Load() (*Config, error) {
 		DatabaseURL:                       dbURL,
 		DatabaseLockURL:                   lockURL,
 		DatabaseMigrateURL:                migrateURL,
+		MigrateOnStart:                    !isReleaseEnvironment,
 		SupabaseJWTSecret:                 jwtSecret,
 		SupabaseJWKSURL:                   jwksURL,
 		SupabaseJWTIssuer:                 issuer,
@@ -352,6 +364,55 @@ func validateProductionLockURL(raw string) error {
 // migrations. golang-migrate serializes runs with a session-level advisory
 // lock, so the Supavisor transaction-mode endpoint is rejected like the lock
 // URL.
+// MigrateConfig is the configuration for the cmd/migrate job. It holds only
+// the owner connection, so the job needs none of the server's secrets.
+type MigrateConfig struct {
+	Environment        string
+	LogLevel           string
+	DatabaseMigrateURL string
+}
+
+// LoadMigrate reads the configuration for the cmd/migrate job. Staging and
+// production require an explicit DATABASE_MIGRATE_URL that is session-capable
+// and uses TLS; development and test fall back to DATABASE_URL.
+func LoadMigrate() (*MigrateConfig, error) {
+	env := strings.ToLower(strings.TrimSpace(os.Getenv("ENVIRONMENT")))
+	switch env {
+	case "development", "test", "staging", "production":
+	default:
+		return nil, ErrInvalidEnvironment
+	}
+
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+
+	migrateURL := strings.TrimSpace(os.Getenv("DATABASE_MIGRATE_URL"))
+	if env == "staging" || env == "production" {
+		if migrateURL == "" {
+			return nil, ErrMissingMigrateURL
+		}
+		if err := validateProductionMigrateURL(migrateURL); err != nil {
+			return nil, err
+		}
+		if err := validateProductionDatabaseTLS(migrateURL); err != nil {
+			return nil, err
+		}
+	} else if migrateURL == "" {
+		migrateURL = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		if migrateURL == "" {
+			return nil, ErrMissingMigrateURL
+		}
+	}
+
+	return &MigrateConfig{
+		Environment:        env,
+		LogLevel:           logLevel,
+		DatabaseMigrateURL: migrateURL,
+	}, nil
+}
+
 func validateProductionMigrateURL(raw string) error {
 	if !isSessionCapablePostgresURL(raw) {
 		return ErrProductionDatabaseMigrate

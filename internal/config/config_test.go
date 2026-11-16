@@ -389,26 +389,24 @@ func TestLoad_ProductionRequiresSessionCapableLockURL(t *testing.T) {
 	})
 }
 
-func TestLoad_ProductionRequiresOwnerMigrateURL(t *testing.T) {
-	t.Run("explicit migrate URL required", func(t *testing.T) {
-		clearAll(t)
-		setValidReleaseEnv(t, "production")
-		setEnv(t, "DATABASE_MIGRATE_URL", "")
+func TestLoad_ReleaseMigrateURLIsOptionalButValidated(t *testing.T) {
+	for _, environment := range []string{"staging", "production"} {
+		for _, blank := range []string{"", " "} {
+			t.Run(environment+"/unset means the migrate job owns migrations", func(t *testing.T) {
+				clearAll(t)
+				setValidReleaseEnv(t, environment)
+				setEnv(t, "DATABASE_MIGRATE_URL", blank)
 
-		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
-			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
+				cfg, err := Load()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if cfg.DatabaseMigrateURL != "" || cfg.MigrateOnStart {
+					t.Fatalf("migrate URL = %q, MigrateOnStart = %t; want empty and false", cfg.DatabaseMigrateURL, cfg.MigrateOnStart)
+				}
+			})
 		}
-	})
-
-	t.Run("staging requires it too", func(t *testing.T) {
-		clearAll(t)
-		setValidReleaseEnv(t, "staging")
-		setEnv(t, "DATABASE_MIGRATE_URL", " ")
-
-		if _, err := Load(); !errors.Is(err, ErrProductionDatabaseMigrate) {
-			t.Fatalf("expected ErrProductionDatabaseMigrate, got %v", err)
-		}
-	})
+	}
 
 	t.Run("Supavisor transaction port rejected", func(t *testing.T) {
 		clearAll(t)
@@ -444,6 +442,9 @@ func TestLoad_ProductionRequiresOwnerMigrateURL(t *testing.T) {
 		if cfg.DatabaseMigrateURL == cfg.DatabaseURL {
 			t.Fatal("migrate URL must not be replaced by the request URL in release environments")
 		}
+		if cfg.MigrateOnStart {
+			t.Fatal("release servers must not migrate at startup even when the owner URL is visible")
+		}
 	})
 }
 
@@ -457,6 +458,9 @@ func TestLoad_DevelopmentDefaultsMigrateURLToDatabaseURL(t *testing.T) {
 	}
 	if cfg.DatabaseMigrateURL != cfg.DatabaseURL {
 		t.Fatalf("migrate URL = %q, want DATABASE_URL %q", cfg.DatabaseMigrateURL, cfg.DatabaseURL)
+	}
+	if !cfg.MigrateOnStart {
+		t.Fatal("development must migrate at startup")
 	}
 
 	setEnv(t, "DATABASE_MIGRATE_URL", "postgres://owner")
@@ -662,6 +666,9 @@ func TestLoad_ReleaseRejectsOwnerRequestConnection(t *testing.T) {
 		{name: "supabase_admin", requestURL: "postgres://supabase_admin:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://owner:secret@db.example.com:5432/postgres?sslmode=require", wantErr: true},
 		{name: "explicit bootstrap override", requestURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", allow: "true"},
 		{name: "override needs the exact value", requestURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", allow: "yes", wantErr: true},
+		{name: "runtime role without a migrate URL", requestURL: "postgres://gym_pulse_api.ref:secret@pooler.example.com:6543/postgres?sslmode=require"},
+		{name: "Supabase owner without a migrate URL", requestURL: "postgres://postgres.ref:secret@pooler.example.com:6543/postgres?sslmode=require", wantErr: true},
+		{name: "supabase_admin without a migrate URL", requestURL: "postgres://supabase_admin:secret@db.example.com:5432/postgres?sslmode=require", wantErr: true},
 	}
 	for _, environment := range []string{"staging", "production"} {
 		for _, tt := range tests {
@@ -731,6 +738,49 @@ func TestLoad_AllowedUserIDs(t *testing.T) {
 			setEnv(t, "ALLOWED_USER_IDS", bad)
 			if _, err := Load(); !errors.Is(err, ErrInvalidAllowedUserIDs) {
 				t.Fatalf("Load() error = %v, want ErrInvalidAllowedUserIDs", err)
+			}
+		})
+	}
+}
+
+func TestLoadMigrate(t *testing.T) {
+	const ownerURL = "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require"
+	tests := []struct {
+		name        string
+		environment string
+		databaseURL string
+		migrateURL  string
+		wantURL     string
+		wantErr     error
+	}{
+		{name: "release uses the explicit owner URL", environment: "production", migrateURL: ownerURL, wantURL: ownerURL},
+		{name: "release ignores DATABASE_URL", environment: "staging", databaseURL: ownerURL, wantErr: ErrMissingMigrateURL},
+		{name: "release rejects the transaction pooler", environment: "production", migrateURL: "postgres://postgres:secret@pooler.example.com:6543/postgres?sslmode=require", wantErr: ErrProductionDatabaseMigrate},
+		{name: "release rejects plaintext", environment: "production", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres", wantErr: ErrProductionDatabaseTLS},
+		{name: "development falls back to DATABASE_URL", environment: "development", databaseURL: "postgres://gympulse@localhost/gympulse", wantURL: "postgres://gympulse@localhost/gympulse"},
+		{name: "test prefers the explicit migrate URL", environment: "test", databaseURL: "postgres://gym_pulse_api@localhost/gympulse", migrateURL: "postgres://gympulse@localhost/gympulse", wantURL: "postgres://gympulse@localhost/gympulse"},
+		{name: "development needs some URL", environment: "development", wantErr: ErrMissingMigrateURL},
+		{name: "environment is required", environment: "", migrateURL: ownerURL, wantErr: ErrInvalidEnvironment},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			clearAll(t)
+			setEnv(t, "ENVIRONMENT", tt.environment)
+			setEnv(t, "DATABASE_URL", tt.databaseURL)
+			setEnv(t, "DATABASE_MIGRATE_URL", tt.migrateURL)
+
+			cfg, err := LoadMigrate()
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("LoadMigrate() error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("LoadMigrate() error = %v", err)
+			}
+			if cfg.DatabaseMigrateURL != tt.wantURL {
+				t.Fatalf("DatabaseMigrateURL = %q, want %q", cfg.DatabaseMigrateURL, tt.wantURL)
 			}
 		})
 	}

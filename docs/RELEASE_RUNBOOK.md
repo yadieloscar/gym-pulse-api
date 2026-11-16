@@ -29,11 +29,13 @@ logs, commits, or release notes.
       (any legacy explicit overrides must match it exactly).
 - [ ] `DATABASE_LOCK_URL` uses a direct PostgreSQL or Supavisor session-mode
       connection (normally port 5432), never transaction mode on port 6543.
-- [ ] `DATABASE_MIGRATE_URL` is the schema-owner connection (`postgres` on Supabase),
-      direct or session-mode, with TLS. `DATABASE_URL` and `DATABASE_LOCK_URL` connect
-      as `gym_pulse_api`, never as the owner. Staging and production refuse to start
-      when `DATABASE_URL` uses the same role as `DATABASE_MIGRATE_URL`, `postgres`, or
-      `supabase_admin`, unless `ALLOW_OWNER_DATABASE_URL=true`. That override exists only
+- [ ] The platform's pre-deploy command is `./migrate` (Railway: `preDeployCommand`), and only
+      that step has `DATABASE_MIGRATE_URL`: the schema-owner connection (`postgres` on Supabase),
+      direct or session-mode, with TLS. A staging or production server never migrates and never
+      opens that connection; see "Migration job" below. `DATABASE_URL` and
+      `DATABASE_LOCK_URL` connect as `gym_pulse_api`, never as the owner. Staging and production
+      refuse to start when `DATABASE_URL` uses the same role as `DATABASE_MIGRATE_URL`, `postgres`,
+      or `supabase_admin`, unless `ALLOW_OWNER_DATABASE_URL=true`. That override exists only
       for the role bootstrap and rollback below; `ALLOW_OWNER_DATABASE_URL` is unset in
       steady state.
 - [ ] `ALLOWED_ORIGINS` lists exact HTTPS origins. Wildcards such as `https://*.example.com`
@@ -138,6 +140,44 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
 Rollback is a configuration change: point `DATABASE_URL` and `DATABASE_LOCK_URL` back at the
 owner and set `ALLOW_OWNER_DATABASE_URL=true`. Do not roll the migration down while any deployment still connects as `gym_pulse_api`.
 
+## Migration job (`cmd/migrate`)
+
+The image ships two binaries: `./server` and `./migrate`. `./migrate` reads only `ENVIRONMENT`,
+`LOG_LEVEL`, and `DATABASE_MIGRATE_URL`, applies pending migrations, logs the resulting version,
+and exits non-zero on any failure, so the platform aborts the deploy before a new server starts.
+
+- **Railway**: set the service's pre-deploy command to `./migrate` and give the service
+  `DATABASE_MIGRATE_URL`. Pre-deploy shares the service's variables, so the owner URL is visible to
+  the server container, but a staging or production server never opens it: it does not migrate and
+  uses the value only to refuse an owner request connection. To keep the credential out of the
+  server container entirely, run `./migrate` from a separate one-off service instead.
+- **Startup log**: a release server logs `skipping startup migrations`; development and test
+  servers still migrate at startup with `DATABASE_MIGRATE_URL` (default `DATABASE_URL`).
+- **Failure**: a failed migration leaves `schema_migrations` dirty because each file runs as one
+  transaction and rolls back, but golang-migrate records the attempt. Fix the cause, then clear the
+  flag as the owner with `UPDATE schema_migrations SET dirty = false, version = <last good>` and
+  rerun `./migrate`. Never edit an applied migration file; add a new one.
+
+## Writing a migration
+
+`internal/dbmigrate/lint_test.go` (in `go test ./...`) and the CI round-trip job enforce these for
+migration 043 and later; 001–042 predate them and are never edited.
+
+- Fetch `origin/main` first and take the next number; versions are contiguous from 043.
+- Every up has a down that fully reverses it. CI applies all migrations to a scratch database,
+  rolls them all back, re-applies them, and requires an identical schema.
+- Each file runs as one transaction: no `BEGIN`/`COMMIT`, no `CREATE INDEX CONCURRENTLY`.
+- Re-runnable: `INSERT ... ON CONFLICT`, `IF NOT EXISTS` on tables, indexes, schemas, and
+  columns, `IF EXISTS` on drops, `CREATE OR REPLACE` for functions and views, and a
+  `DROP ... IF EXISTS` of the same name before `CREATE POLICY` or `ADD CONSTRAINT`. Renames and
+  types go inside a `DO` block that checks the catalog. CI re-executes each strict migration on the
+  migrated database inside a rolled-back transaction.
+- A new table ends with `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 044),
+  which enables RLS, revokes the Supabase Data API roles, and provisions `gym_pulse_api`.
+- Assert what the migration promises: when it backfills or transforms data, end with a `DO` block
+  that `RAISE EXCEPTION`s if the postcondition does not hold (see 026), so a bad migration rolls
+  back instead of shipping.
+
 ## Deployment order
 
 1. Record the release commit and current production image.
@@ -160,7 +200,7 @@ owner and set `ALLOW_OWNER_DATABASE_URL=true`. Do not roll the migration down wh
    removes the legacy path plus both slots. Supabase Storage deletion must
    receive explicit full object paths; do not rely on recursive folder
    deletion.
-7. Apply the same migrations to production.
+7. Apply the same migrations to production (the `./migrate` pre-deploy step does this).
 8. Deploy the exact staging-accepted image to production, following the runtime role rollout
    order above the first time migration 026 ships.
 9. Verify `/health` and `/ready` before enabling dependent app rollout.
