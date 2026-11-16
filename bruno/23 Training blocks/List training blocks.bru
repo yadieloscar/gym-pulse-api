@@ -1,0 +1,25 @@
+meta {
+  name: List training blocks
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/training-blocks?status=active&limit=20&offset=0
+  body: none
+  auth: inherit
+}
+
+params:query {
+  status: active
+  limit: 20
+  offset: 0
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/training-blocks`
+}

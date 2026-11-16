@@ -1,0 +1,25 @@
+meta {
+  name: Exercise set history
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/exercises/history?ids={{templateExerciseId}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ids: {{templateExerciseId}}
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/exercises/history`
+  
+  Comma-separated exercise UUIDs
+}

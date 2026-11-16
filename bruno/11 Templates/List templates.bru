@@ -1,0 +1,21 @@
+meta {
+  name: List templates
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/templates
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/templates`
+  
+  Optional ?type= and ?subtype= filters
+}

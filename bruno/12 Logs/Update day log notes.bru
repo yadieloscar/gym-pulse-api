@@ -1,0 +1,27 @@
+meta {
+  name: Update day log notes
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/v1/logs/{{today}}
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "session_notes": "Felt strong, add 5 lb next week"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/logs/{date}`
+  
+  Partial; omitted fields preserved
+}

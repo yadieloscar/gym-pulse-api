@@ -1,0 +1,25 @@
+meta {
+  name: Weekly volume
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/stats/volume?weeks=4
+  body: none
+  auth: inherit
+}
+
+params:query {
+  weeks: 4
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/stats/volume`
+  
+  weeks 1-52, default 8
+}

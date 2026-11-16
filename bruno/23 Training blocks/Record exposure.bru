@@ -1,0 +1,49 @@
+meta {
+  name: Record exposure
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/training-blocks/{{blockId}}/exposures
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "performed_on": "2026-11-15",
+    "activity_label": "Box jumps",
+    "load_level": "easy",
+    "performed_count": 20,
+    "duration_minutes": 15,
+    "performed_intensity_percent": 70,
+    "session_outcome": "completed_as_planned",
+    "notes": "Felt controlled",
+    "expected_revision": {{blockRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.exposures[0].id; if (v !== undefined && v !== null) bru.setVar("exposureId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("blockRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/training-blocks/{block_id}/exposures`
+  
+  operation_key must be a UUID; load_level must match the current stage; not a future date
+}

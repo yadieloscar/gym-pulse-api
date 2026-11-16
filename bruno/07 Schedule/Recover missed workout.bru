@@ -1,0 +1,47 @@
+meta {
+  name: DESTRUCTIVE Recover missed workout
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/schedule/recover
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "date": "2026-11-16",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/schedule/recover`
+  
+  30/min; 404 unless an unresolved missed workout exists; 201
+}

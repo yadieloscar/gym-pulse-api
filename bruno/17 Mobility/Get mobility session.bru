@@ -1,0 +1,19 @@
+meta {
+  name: Get mobility session
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/mobility-sessions/{{mobilitySessionId}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/mobility-sessions/{id}`
+}

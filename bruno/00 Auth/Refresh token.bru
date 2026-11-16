@@ -1,0 +1,48 @@
+meta {
+  name: Refresh token
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{supabaseUrl}}/auth/v1/token?grant_type=refresh_token
+  body: json
+  auth: none
+}
+
+params:query {
+  grant_type: refresh_token
+}
+
+headers {
+  apikey: {{supabasePublishableKey}}
+}
+
+body:json {
+  {
+    "refresh_token": "{{refreshToken}}"
+  }
+}
+
+script:pre-request {
+  // Needs a Supabase project; skipped when no publishable key is set (for example the local stack).
+  if (!bru.getEnvVar("supabasePublishableKey")) {
+    bru.runner.skipRequest();
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setEnvVar("accessToken", res.body.access_token);
+    bru.setEnvVar("refreshToken", res.body.refresh_token);
+  }
+}
+
+tests {
+  test("refreshed", () => expect(res.status).to.equal(200));
+}
+
+docs {
+  Exchanges the stored refresh token for a new access token. Refresh tokens rotate:
+  each one works once, and this request stores the new one.
+}

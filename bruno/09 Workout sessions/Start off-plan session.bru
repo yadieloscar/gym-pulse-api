@@ -1,0 +1,44 @@
+meta {
+  name: Start off-plan session
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/workout-sessions
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "scheduled_workout_id": null,
+    "date": "2026-11-16",
+    "name": "Off-plan upper",
+    "operation_key": "{{operationKey}}",
+    "expected_revision": 0
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("sessionId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("sessionRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/workout-sessions`
+  
+  201
+}

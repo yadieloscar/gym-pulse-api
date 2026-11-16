@@ -1,0 +1,46 @@
+meta {
+  name: DESTRUCTIVE Skip missed workout
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{baseUrl}}/api/v1/scheduled-workouts/{{scheduledWorkoutId}}/skip
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{scheduledWorkoutRevision}}
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/scheduled-workouts/{id}/skip`
+  
+  Only a missed workout; otherwise 409 RESOLUTION_CONFLICT; undo with unskip Needs a past scheduled workout that is still unfinished; a finished one answers 409.
+}

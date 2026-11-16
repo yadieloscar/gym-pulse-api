@@ -1,0 +1,47 @@
+meta {
+  name: Replace template
+  type: http
+  seq: 4
+}
+
+put {
+  url: {{baseUrl}}/api/v1/templates/{{templateId}}
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "name": "Push Day",
+    "type_id": "push",
+    "subtype_id": "hypertrophy",
+    "exercises": [
+      {
+        "name": "Bench Press",
+        "sort_order": 1,
+        "sets": 4,
+        "reps": 6,
+        "weight": 185,
+        "rest_seconds": 150
+      }
+    ]
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.exercises[0].id; if (v !== undefined && v !== null) bru.setVar("templateExerciseId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/templates/{id}`
+  
+  Same body as create
+}

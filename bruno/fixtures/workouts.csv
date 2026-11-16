@@ -1,0 +1,6 @@
+"title","start_time","end_time","description","exercise_title","superset_id","exercise_notes","set_index","set_type","weight_lbs","reps","distance_miles","duration_seconds","rpe"
+"Chest/Back","19 Aug 2025, 18:11","19 Aug 2025, 18:55","barbells","Bench Press (Barbell)",,"",0,"warmup",95,10,,,
+"Chest/Back","19 Aug 2025, 18:11","19 Aug 2025, 18:55","barbells","Bench Press (Barbell)",,"",1,"normal",135,5,,,8
+"Chest/Back","19 Aug 2025, 18:11","19 Aug 2025, 18:55","barbells","Bench Press (Barbell)",,"",2,"failure",135,3,,,10
+"Chest/Back","19 Aug 2025, 18:11","19 Aug 2025, 18:55","barbells","Lat Pulldown (Cable)",,"",0,"dropset",120,10,,,
+"Run","22 Sep 2025, 14:05","22 Sep 2025, 14:33","","Running",,"",0,"normal",,,3.1,1680,

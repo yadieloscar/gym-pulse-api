@@ -1,0 +1,58 @@
+meta {
+  name: Create training block
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/training-blocks
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Return to jumping",
+    "purpose": "Build back to full-height jumps",
+    "operation_key": "{{operationKey}}",
+    "stages": [
+      {
+        "name": "Controlled contacts",
+        "instructions": "Low box step-offs",
+        "load_level": "easy",
+        "target_count": 20,
+        "required_qualifying_exposures": 2
+      },
+      {
+        "name": "Full approach jumps",
+        "load_level": "demanding",
+        "target_count": 15,
+        "target_intensity_percent": 80,
+        "required_qualifying_exposures": 3
+      }
+    ]
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("blockId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("blockRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/training-blocks`
+  
+  operation_key must be a UUID; 2-12 stages; 201
+}

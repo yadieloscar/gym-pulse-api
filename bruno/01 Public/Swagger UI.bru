@@ -1,0 +1,21 @@
+meta {
+  name: Swagger UI
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/docs/index.html
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /docs/index.html`
+  
+  Router pattern is /docs/*; served only outside staging/production; no auth
+}

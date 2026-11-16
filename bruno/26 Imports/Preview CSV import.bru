@@ -1,0 +1,26 @@
+meta {
+  name: Preview CSV import
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/imports/preview
+  body: multipartForm
+  auth: inherit
+}
+
+body:multipart-form {
+  file: @file(fixtures/workouts.csv)
+  source_weight_unit: lb
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/imports/preview`
+  
+  multipart: Strong or Hevy CSV in part named file (max 10 MiB); writes nothing; 6/min
+}

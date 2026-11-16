@@ -1,0 +1,42 @@
+meta {
+  name: Rename scheduled workout
+  type: http
+  seq: 5
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/scheduled-workouts/{{scheduledWorkoutId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Lower A (heavy)",
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{scheduledWorkoutRevision}}
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+    try { const v = body.required_sets[0].id; if (v !== undefined && v !== null) bru.setVar("setId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PATCH /api/v1/scheduled-workouts/{id}`
+  
+  Not on finalized or past workouts (409) Replaces the workout's sets with new ids, so this request re-captures setId.
+}

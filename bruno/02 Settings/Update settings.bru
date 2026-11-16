@@ -1,0 +1,29 @@
+meta {
+  name: Update settings
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/settings
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "weekly_goal": 5,
+    "weight_unit": "kg",
+    "palette": "voltLime"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/settings`
+  
+  Partial body allowed
+}
