@@ -41,7 +41,7 @@ func TestLegacyAdoptionTransactionContract(t *testing.T) {
 	mutationOrder := []string{
 		"UPDATE programs SET active=false",
 		"insertProgramWorkouts(ctx, tx",
-		"insertScheduledWorkouts(ctx, tx",
+		"insertLayoutSessions(ctx, tx",
 		"INSERT INTO legacy_adoptions",
 	}
 	last = -1

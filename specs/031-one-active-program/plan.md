@@ -99,9 +99,10 @@ FR-021) without changing owner decisions D1 to D6.
 
 ### DAO (`internal/dao`)
 
-- `program_dao.go`: select and insert `weekdays`; `Replace` updates matched units in place with the
-  two-pass renumber (R2), takes the schedule lock, and when the program is active applies the unit
-  diff to planned unstarted sessions dated after today (R7). New `Delete` (R9).
+- `program_dao.go`: select and insert `weekdays`. `training_mutation_dao.go` (the idempotent path
+  the service uses): `ReplaceProgram` updates matched units in place with the two-pass renumber
+  (R2), takes the schedule lock, and when the program is active applies the unit diff to planned
+  unstarted sessions dated after today (R7). New `DeleteProgram` (R9).
 - New `schedule_fill.go`: `fillActiveProgram(ctx, tx, userID, today)` and
   `fillProgram(ctx, tx, userID, program, from, through)` shared by every caller (R4). Inserts with
   `ON CONFLICT (program_workout_id, slot_date) ... DO NOTHING` and advances `scheduled_through`.

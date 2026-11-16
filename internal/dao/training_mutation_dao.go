@@ -571,7 +571,7 @@ func (r *trainingMutationDAO) AdoptLegacy(ctx context.Context, userID uuid.UUID,
 	if len(assignments) == 0 {
 		return nil, false, &model.NotFoundError{Message: "no adoptable weekly plan"}
 	}
-	program, weekdays, err := model.ProgramFromLegacyWeeklyPlan(primaryGoal, assignments)
+	program, _, err := model.ProgramFromLegacyWeeklyPlan(primaryGoal, assignments)
 	if err != nil {
 		return nil, false, err
 	}
@@ -596,11 +596,17 @@ func (r *trainingMutationDAO) AdoptLegacy(ctx context.Context, userID uuid.UUID,
 		return nil, false, err
 	}
 
-	schedule, err := model.MaterializeProgramForWeekdays(program, weekdays, from, to)
+	// The adopted program is already placed on its legacy weekdays, so the
+	// first week is laid out like any other and the rolling fill continues
+	// from it.
+	schedule, err := model.LayoutSessions(program, from, to)
 	if err != nil {
 		return nil, false, err
 	}
-	if err := insertScheduledWorkouts(ctx, tx, userID, schedule); err != nil {
+	if err := insertLayoutSessions(ctx, tx, userID, schedule, true); err != nil {
+		return nil, false, err
+	}
+	if err := advanceScheduledThrough(ctx, tx, program.ID, to); err != nil {
 		return nil, false, err
 	}
 

@@ -31,7 +31,7 @@ paths:
                 workouts:
                   items: { $ref: "#/components/schemas/ProgramUnitInput" }
       responses:
-        "422": { description: "VALIDATION_ERROR, details.field = workouts (bad weekdays, mixed placed and unplaced units, or a unit id that is not in this program)" }
+        "422": { description: "VALIDATION_ERROR, details.field = workouts (bad weekdays, or mixed placed and unplaced units). A unit id this program does not own is treated as a new unit." }
     delete:
       summary: Remove a saved program and its planned unstarted sessions.
       responses:
@@ -76,7 +76,7 @@ paths:
       responses:
         "200": { description: The full ScheduledWorkout at its new date and revision }
         "404": { description: Missing or foreign session (shared NOT_FOUND shape) }
-        "409": { description: "CONFLICT with resource (session is started, finished, missed, or in the past), or a stale revision" }
+        "409": { description: "CONFLICT with resource (session is started, finished, missed, or in the past); REVISION_CONFLICT with resource for a stale revision" }
         "422": { description: "VALIDATION_ERROR, details.field = date (before today or after today + 56)" }
 components:
   schemas:
@@ -134,7 +134,7 @@ components:
             name: { type: string }
         off_availability:
           type: array
-          description: Always present. Placed units of the target with a weekday outside available_days.
+          description: Always present. Placed units of the target with a weekday outside available_days; weekdays holds only those weekdays.
           items:
             properties:
               program_workout_id: { type: [string, "null"], format: uuid }

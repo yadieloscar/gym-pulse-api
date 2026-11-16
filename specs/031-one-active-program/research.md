@@ -23,7 +23,9 @@ Evidence is from `origin/main` at `cafdb2a` (2026-11-16).
   `scheduled_workouts.program_workout_id` to `NULL` on every existing session.
 - **Decision**: `PUT /programs/{id}` accepts an optional `id` on each unit. A unit whose `id` belongs
   to the program is updated in place; a unit without an `id` is inserted; an existing unit absent
-  from the request is deleted. A foreign or unknown `id` is 422 `workouts`.
+  from the request is deleted. An `id` the program does not own names nothing: the unit is
+  inserted as new (amended in implementation; a stale client ID must not turn a save that worked
+  before into a 422, and no foreign row is ever touched).
 - **Rationale**: FR-015 and FR-016 need to know which unit changed. Without stable IDs every save
   would look like "all units removed, all units added" and every one-off move would be lost.
 - **Compatibility**: A released app sends no unit `id`, so its saves behave as today (all units
