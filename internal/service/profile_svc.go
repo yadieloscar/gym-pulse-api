@@ -38,8 +38,18 @@ type profileService struct {
 	repo      dao.ProfileDAO
 	validator *validator.Validate
 	storage   AvatarStorage
+	links     *avatarLinks
 	active    ProfileActiveUserChecker
 	locker    UserOperationLocker
+}
+
+// linksFor signs avatar links when the storage can; a storage that cannot
+// (a test double, or none) leaves stored references as they are.
+func linksFor(storage AvatarStorage) *avatarLinks {
+	if signer, ok := storage.(AvatarSigner); ok && signer != nil {
+		return newAvatarLinks(signer)
+	}
+	return nil
 }
 
 // NewProfileService creates a new ProfileService.
@@ -48,7 +58,7 @@ func NewProfileService(repo dao.ProfileDAO, v *validator.Validate, storage ...Av
 	if len(storage) > 0 {
 		avatarStorage = storage[0]
 	}
-	return &profileService{repo: repo, validator: v, storage: avatarStorage}
+	return &profileService{repo: repo, validator: v, storage: avatarStorage, links: linksFor(avatarStorage)}
 }
 
 func NewProfileServiceWithUserBoundary(
@@ -59,7 +69,7 @@ func NewProfileServiceWithUserBoundary(
 	locker UserOperationLocker,
 ) ProfileService {
 	return &profileService{
-		repo: repo, validator: v, storage: storage, active: active, locker: locker,
+		repo: repo, validator: v, storage: storage, links: linksFor(storage), active: active, locker: locker,
 	}
 }
 
@@ -123,12 +133,14 @@ func (s *profileService) UploadAvatar(ctx context.Context, userID uuid.UUID, con
 		if err := s.locker.WithUserLock(ctx, userID, upload); err != nil {
 			return nil, err
 		}
-		return profile, nil
+		s.links.forget(userID)
+		return s.links.present(ctx, userID, profile), nil
 	}
 	if err := upload(ctx); err != nil {
 		return nil, err
 	}
-	return profile, nil
+	s.links.forget(userID)
+	return s.links.present(ctx, userID, profile), nil
 }
 
 func (s *profileService) confirmAvatarCommit(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error) {
@@ -138,7 +150,11 @@ func (s *profileService) confirmAvatarCommit(ctx context.Context, userID uuid.UU
 }
 
 func (s *profileService) Get(ctx context.Context, userID uuid.UUID) (*model.UserProfile, error) {
-	return s.repo.Get(ctx, userID)
+	profile, err := s.repo.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.links.present(ctx, userID, profile), nil
 }
 
 func (s *profileService) Update(ctx context.Context, userID uuid.UUID, req model.UpdateProfileRequest) (*model.UserProfile, error) {
@@ -149,9 +165,24 @@ func (s *profileService) Update(ctx context.Context, userID uuid.UUID, req model
 		return nil, &model.ValidationError{Message: "invalid profile data", Field: "body"}
 	}
 
+	// A client may send back the link it was given. Store the stable reference
+	// instead of a link that expires, and never another athlete's object.
+	if req.AvatarURL != nil {
+		canonical, allowed := s.links.canonical(userID, *req.AvatarURL)
+		if !allowed {
+			return nil, &model.ValidationError{Message: "avatar_url must be your own avatar or an external https URL", Field: "avatar_url"}
+		}
+		req.AvatarURL = &canonical
+	}
+
 	if err := s.repo.Upsert(ctx, userID, &req); err != nil {
 		return nil, err
 	}
+	s.links.forget(userID)
 
-	return s.repo.Get(ctx, userID)
+	profile, err := s.repo.Get(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+	return s.links.present(ctx, userID, profile), nil
 }
