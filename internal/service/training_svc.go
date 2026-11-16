@@ -208,6 +208,10 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 	if err := validateRoadmap(req.Roadmap); err != nil {
 		return nil, err
 	}
+	if req.Roadmap == nil {
+		// The roadmap is optional on the wire and NOT NULL in storage.
+		req.Roadmap = map[string]any{}
+	}
 	// Saving starts the program only for clients that do not say otherwise;
 	// active false saves it beside the program the athlete follows.
 	active := req.Active == nil || *req.Active
@@ -314,6 +318,10 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 	}
 	if err := validateRoadmap(req.Roadmap); err != nil {
 		return nil, err
+	}
+	if req.Roadmap == nil {
+		// The roadmap is optional on the wire and NOT NULL in storage.
+		req.Roadmap = map[string]any{}
 	}
 	p := &model.Program{ID: programID, Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: req.Active, Workouts: req.Workouts}
 	if s.mutations != nil {

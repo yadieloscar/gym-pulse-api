@@ -335,7 +335,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
   "roadmap": {}, "active": true, "revision": 1,
   "workouts": [{
     "id": "<uuid>", "kind": "exercises", "name": "Full Body A", "preferred_weekday": 1,
-    "sequence_position": 1,
+    "weekdays": [1, 5], "sequence_position": 1,
     "exercises": [{
       "id": "<uuid>", "catalog_id": "<uuid|null>",
       "source_starter_exercise_id": "<uuid|null>", "name": "Back Squat",
@@ -345,7 +345,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
     }]
   }, {
     "id": "<uuid>", "kind": "sport", "name": "Long ride", "preferred_weekday": 6,
-    "sequence_position": 2,
+    "weekdays": [6], "sequence_position": 2,
     "sport": {
       "sport_id": "cycling", "sport_name": "Cycling",
       "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null
@@ -367,6 +367,31 @@ custom name), `target_duration_minutes` is 1–1,440, optional
 `details.field = "workouts"`. Starter programs, `from-starter`, and
 `adopt-legacy` produce `exercises` units only.
 
+One active program on fixed weekdays (contract 1.10.0, additive): every program
+unit carries `weekdays`, the ISO weekdays (Monday=1) it sits on. The schedule
+places each unit on each of its weekdays and nowhere else, every week; the
+athlete's `available_days` never move a placed unit, and two units may share a
+weekday. `weekdays` is **always an array** in every program and starter
+response, so its presence tells a client that this contract is supported. It is
+`[]` while the unit is **unplaced**.
+
+- On write, `weekdays` holds 1–7 unique values from 1–7 (returned sorted). A
+  program's units all carry `weekdays` or none do; anything else is
+  `422 VALIDATION_ERROR` with `details.field = "workouts"`.
+- A program saved without `weekdays` (a client older than 1.10.0, a starter
+  copy) is unplaced. The server places it **once**, the first time a session
+  would be created for it: walking forward from that operation's start date,
+  it deals the units in `sequence_position` order onto the available days
+  until every unit and every day has been used (a program with fewer units
+  than days repeats units inside the week; one with more units than days puts
+  several on one day). The result is stored and returned as `weekdays`.
+  Placement does not change the program `revision`.
+- `preferred_weekday` remains in responses and is the first weekday of a
+  placed unit.
+- Starting a program is `POST /api/v1/plan-transitions/apply`; see "Schedule
+  and scheduled workouts". The released-client behaviors that change are
+  listed there.
+
 Program size limits: a program has at most 14 workouts, an `exercises` unit at
 most 50 exercises, and `target_sets` is 1–20. `POST /api/v1/programs` and
 `PUT /api/v1/programs/{id}` reject anything larger with `422 VALIDATION_ERROR`
@@ -382,8 +407,14 @@ Response 200: one full `Program`. Foreign/missing ID → 404.
 #### `POST /api/v1/programs`
 
 Creates a custom owned program. Body is `name`, `primary_goal`, `operation_key`, optional
-`roadmap`, and one or more `workouts` using the nested shape above but omitting
+`roadmap`, optional `active`, and one or more `workouts` using the nested shape above but omitting
 server IDs/source fields. Response 201: full `Program`.
+
+`active` (contract 1.10.0) defaults to `true`, which makes the new program the
+active one and deactivates the previous one, as before. `"active": false`
+**saves the program without starting it**: the active program and every
+scheduled workout are unchanged, and the program starts later through a plan
+transition. Creating a program never creates scheduled workouts.
 
 #### `POST /api/v1/programs/from-starter`
 
@@ -401,8 +432,43 @@ active program. Unknown ID/version → 404; key/payload mismatch → 409.
 #### `PUT /api/v1/programs/{id}`
 
 Full replacement body: `name`, `primary_goal`, `roadmap`, `active`, `workouts`,
-`expected_revision`, and `operation_key`. Response 200: full authoritative `Program`. Replacing
-the program never changes already materialized scheduled workouts.
+`expected_revision`, and `operation_key`. Response 200: full authoritative `Program`.
+
+Units keep their identity (contract 1.10.0). A unit whose `id` names a unit of
+this program is updated in place; a unit without an `id`, or with an `id` this
+program does not own, is inserted as new; a stored unit the body omits is
+deleted. A client that sends no unit `id` therefore replaces every unit, as
+before.
+
+Saving the **active** program updates its scheduled workouts in the same
+transaction, for sessions that are `planned`, not started, and dated **after
+today** in the training-profile timezone:
+
+| Unit in the saved body | Its future sessions |
+| --- | --- |
+| Removed | Deleted |
+| `weekdays` changed | Deleted and laid out again on the new weekdays |
+| Name, kind, sport target, exercises, or `sequence_position` changed | Kept on their dates; name and targets re-snapshotted, `revision` + 1 |
+| New | Laid out on its weekdays |
+| Unchanged | Untouched, so a session moved with `/move` keeps its date |
+
+Sessions that are in progress, finished, missed, or dated today or earlier
+never change. If the saved active program has no `weekdays` (an older client),
+the server places it at once from tomorrow, so the week is never left empty; a
+following `schedule/regenerate` yields the same schedule. A body with
+`active: true` for a program that was not active also removes the planned,
+unstarted sessions of the other programs dated after today; `active: false`
+for the active program removes its own. Saving an inactive program changes no
+scheduled workout.
+
+#### `DELETE /api/v1/programs/{id}` (contract 1.10.0)
+
+Removes a saved program and its planned, unstarted scheduled workouts.
+Response 204. The active program cannot be removed:
+`409 CONFLICT` with the program in `resource`. Finished, in-progress, and
+missed workouts stay in history with their snapshots and a null `program_id`;
+a training block that named the program keeps its history with a null
+`program_id`. Foreign/missing ID → 404, including a repeated delete.
 
 #### `POST /api/v1/programs/adopt-legacy`
 
@@ -630,6 +696,17 @@ unresolved when the field is absent. It never changes `status`, participation,
 streaks, records, volume, or history. If a correction changes the outcome to
 `completed` or `incomplete`, `resolution` and `resolved_at` are cleared.
 
+Rolling schedule (contract 1.10.0): for an athlete with an active program and a
+training profile, a `GET /api/v1/schedule` whose range reaches today or later
+first makes sure that program has scheduled workouts from today through
+**56 days ahead**, with no request from the client. The fill is idempotent and
+safe under concurrent reads: the database allows one session per program unit
+per layout date. It never creates a session dated before today, and never
+creates again a session the athlete moved, skipped, or deleted. If the athlete
+was away longer than the filled range, the dates that passed unfilled stay
+empty; they are not reported as `missed`. A date may hold more than one
+scheduled workout.
+
 #### `POST /api/v1/schedule/materialize`
 
 ```json
@@ -640,6 +717,10 @@ streaks, records, volume, or history. If a correction changes the outcome to
 ```
 Response 201: `{ "scheduled_workouts": [ScheduledWorkout] }`. A matching replay
 returns the exact stored result and cannot advance the program sequence twice.
+Since contract 1.10.0 the sessions come from the program's `weekdays` (an
+unplaced program is placed first, from `from`), and a date that already holds
+the unit's session is returned as stored rather than duplicated. Clients on
+1.10.0 do not need this route: starting a program fills its schedule.
 
 #### `POST /api/v1/schedule/regenerate`
 
@@ -662,11 +743,15 @@ Apply repeats the body with `apply:true` and `preview_token`. It atomically
 replaces only unstarted future work. Any active session → 409
 `ACTIVE_SESSION_CONFLICT` with the authoritative session in `resource`.
 A matching apply replay returns the exact originally stored response.
+Since contract 1.10.0 the sessions come from the program's `weekdays` (an
+unplaced program is placed first, from `from`). Clients on 1.10.0 do not need
+this route: saving the active program updates its schedule.
 
 #### `POST /api/v1/plan-transitions/preview`
 
-Previews a primary-goal/profile change together with its target program and
-dated replacement. It is read-only and authenticated.
+Previews the start of a program, optionally together with a
+primary-goal/profile change. It is read-only and authenticated. Preview then
+apply is the **one way a program starts** (contract 1.10.0).
 ```json
 {
   "proposed_profile": {
@@ -680,20 +765,92 @@ dated replacement. It is read-only and authenticated.
   "from": "2026-07-20", "to": "2026-08-02"
 }
 ```
-When no program/starter is supplied, the highest-ranked goal-matching starter
-is selected. Response 200 contains `preview_token`, `proposed_profile`, the full
-`target_program`, nullable `recommended_starter_program`, nullable
-`first_affected_date`, and `scheduled_workouts`. Materialization uses the exact
-ISO weekdays in `proposed_profile.available_days`.
+Since contract 1.10.0, `proposed_profile` and `to` are optional:
+
+- Without `proposed_profile` the stored training profile is used and is not
+  changed. With neither a proposed nor a stored profile the request is
+  `422 VALIDATION_ERROR` with `details.field = "available_days"`.
+- `to` only bounds the returned `scheduled_workouts`; it defaults to `from` +
+  27 days. It never limits what apply replaces.
+
+The target is the named `program_id`; else the named starter; else **the
+athlete's active program**; else the highest-ranked goal-matching starter. A
+profile change that names no program therefore keeps the program the athlete
+follows.
+
+Response 200 contains `preview_token`, `proposed_profile` (null when none was
+sent), the full `target_program` with its `weekdays`, nullable
+`recommended_starter_program` (a suggestion; never applied unless named),
+nullable `first_affected_date`, `scheduled_workouts`, and since 1.10.0:
+
+```json
+{
+  "start_date": "2026-07-20",
+  "replaces_program": { "id": "<uuid>", "name": "Three-day Strength" },
+  "off_availability": [
+    { "program_workout_id": "<uuid|null>", "name": "Pull", "weekdays": [6] }
+  ]
+}
+```
+
+`start_date` is the later of `from` and today in the profile timezone: no
+session is ever created in the past. `replaces_program` is the active program
+this start would replace, or null when there is none or the target is already
+active. `off_availability` is **always an array**: the target's units that sit
+on weekdays outside the profile's `available_days`, each with only those
+weekdays. `first_affected_date` is null when the target is already the active,
+placed program, because nothing would change. `scheduled_workouts` follow the
+target's `weekdays`; a target without them is placed across the profile's
+`available_days` from `start_date` for the preview.
 
 #### `POST /api/v1/plan-transitions/apply`
 
 Repeats the exact preview request and adds `preview_token`, `operation_key`, and
 `expected_profile_revision`; the operation key must match `Idempotency-Key`.
-The server verifies the opaque preview, then atomically saves the profile,
-deactivates the prior plan, activates exactly one target plan, and replaces
-only unstarted workouts in the requested range. A stale preview or profile
-revision returns 409. A matching replay returns the authoritative target plan.
+`expected_profile_revision` is used only when `proposed_profile` is sent.
+The server verifies the opaque preview, then in one transaction:
+
+1. saves the profile, when one is proposed;
+2. if the target is already the active program and already has `weekdays`:
+   changes **no** program and **no** scheduled workout;
+3. otherwise stores the target's placement if it had none, makes it the only
+   active program, deletes every planned, unstarted scheduled workout dated on
+   or after `start_date` (whatever `to` says, so two programs never share the
+   future), and fills the target's sessions from `start_date` through at
+   least 56 days after today.
+
+Scheduled workouts that are in progress, finished, or missed are never
+changed, and an active workout session does not block a start. A stale preview
+or profile revision returns 409; the preview goes stale when the athlete's
+local date changes. A matching replay returns the authoritative target
+program. `scheduled_workouts` in the response are the target's stored sessions
+between `start_date` and `to`.
+
+Behavior that changes for a client older than contract 1.10.0, by design:
+
+- A profile change with no `program_id` or `starter_program_id` keeps an
+  active program instead of replacing it with a starter.
+- Once a program is placed, its weeks no longer rotate: each unit stays on its
+  weekdays.
+
+#### `POST /api/v1/scheduled-workouts/{id}/move` (contract 1.10.0)
+
+```json
+{ "date": "2026-07-25", "expected_revision": 3, "operation_key": "move-123" }
+```
+Moves one scheduled workout or sport session to another date. `operation_key`
+must equal `Idempotency-Key`. Only that session's `date` and `revision` change;
+the program's `weekdays` do not, its original date is not refilled, and the
+target date may already hold another session. Response 200 is the full
+`ScheduledWorkout`; a matching replay returns the exact stored response.
+
+- The session must be `planned`, not started, and dated today or later.
+  Otherwise: `409 CONFLICT` with the current session in `resource`.
+- A stale `expected_revision` → `409 REVISION_CONFLICT` with the current
+  session in `resource`.
+- `date` must be from today through 56 days ahead in the profile timezone:
+  otherwise `422 VALIDATION_ERROR` with `details.field = "date"`.
+- Foreign/missing ID → 404.
 
 #### `POST /api/v1/schedule/recover`
 

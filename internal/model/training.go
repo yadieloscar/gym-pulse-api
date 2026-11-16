@@ -388,6 +388,9 @@ func ProgramFromLegacyWeeklyPlan(primaryGoal string, assignments []LegacyWeeklyA
 		workout := ProgramWorkout{
 			Name:             assignment.Template.Name,
 			PreferredWeekday: &weekday,
+			// An adopted weekly plan already says which day each workout
+			// sits on, so the program is placed from the start.
+			Weekdays:         WeekdayList{weekday},
 			SequencePosition: index + 1,
 			Exercises:        make([]ProgramExercise, 0, len(assignment.Template.Exercises)),
 		}

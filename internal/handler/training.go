@@ -243,8 +243,8 @@ func (h *ProgramHandler) AdoptLegacy(w http.ResponseWriter, r *http.Request) {
 // @Security BearerAuth
 // @Param id path string true "Program ID"
 // @Success 204
-// @Failure 404 {object} ErrorResponse
-// @Failure 409 {object} ErrorResponse
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError
 // @Router /programs/{id} [delete]
 func (h *ProgramHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathUUID(w, r, "id")
@@ -527,9 +527,9 @@ func (h *ScheduleHandler) Unskip(w http.ResponseWriter, r *http.Request) {
 // @Param Idempotency-Key header string true "Must equal operation_key"
 // @Param body body model.MoveScheduledWorkoutRequest true "Move operation"
 // @Success 200 {object} model.ScheduledWorkout
-// @Failure 404 {object} ErrorResponse
-// @Failure 409 {object} ErrorResponse
-// @Failure 422 {object} ErrorResponse
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError
+// @Failure 422 {object} apiError
 // @Router /scheduled-workouts/{id}/move [post]
 func (h *ScheduleHandler) Move(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathUUID(w, r, "id")

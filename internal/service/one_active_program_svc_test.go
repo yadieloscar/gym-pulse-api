@@ -65,6 +65,9 @@ func TestCreateProgramSavesWithoutStartingAndValidatesWeekdays(t *testing.T) {
 	if saved.Active {
 		t.Fatal("Create(active=false) started the program")
 	}
+	if saved.Roadmap == nil {
+		t.Fatal("an omitted roadmap must be stored as an empty object, not null")
+	}
 	if got := []int(saved.Workouts[0].Weekdays); !slices.Equal(got, []int{1, 5}) {
 		t.Fatalf("weekdays = %v, want sorted [1 5]", got)
 	}
