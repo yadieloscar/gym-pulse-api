@@ -217,6 +217,9 @@ The fill gets its own DAO file because four callers share it.
 4. App spec 037 implements against the deployed contract, detecting support by `weekdays` (R10).
 5. Retiring materialize, regenerate, and the legacy weekly plan is a later, separate change.
 
+**Migration timing**: 045 alters three tables that requests write to. Run the pre-deploy migrate job
+at a quiet moment; if PostgreSQL reports a deadlock, re-run the job (it is re-runnable).
+
 **Rollback**: Roll the image back; the columns are nullable and ignored by the previous image.
 Sessions the fill created remain valid planned sessions. Run the down migration only if the columns
 must go.

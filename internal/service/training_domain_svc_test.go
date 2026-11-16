@@ -129,7 +129,7 @@ func (s *adoptionMutationStub) PutTrainingProfile(_ context.Context, _ uuid.UUID
 	return profile, false, nil
 }
 
-func (s *adoptionMutationStub) CreateProgram(_ context.Context, _ uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error) {
+func (s *adoptionMutationStub) CreateProgram(_ context.Context, _ uuid.UUID, program *model.Program, _ time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	s.records = append(s.records, record)
 	program.ID = uuid.New()
 	program.Revision = 1
@@ -142,7 +142,7 @@ func (s *adoptionMutationStub) ReplaceProgram(_ context.Context, _ uuid.UUID, pr
 	return program, false, nil
 }
 
-func (s *adoptionMutationStub) DeleteProgram(_ context.Context, _, programID uuid.UUID) error {
+func (s *adoptionMutationStub) DeleteProgram(_ context.Context, _, programID uuid.UUID, _ time.Time) error {
 	s.deleted = append(s.deleted, programID)
 	return s.deleteErr
 }

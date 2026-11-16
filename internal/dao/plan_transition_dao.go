@@ -25,9 +25,11 @@ type PlanTransitionApply struct {
 	// AvailableDays places an owned target that has no weekdays yet.
 	AvailableDays []int
 	// Start is the first date that may change. Through is the last date to
-	// fill; From and To bound the sessions returned to the caller.
+	// fill; From and To bound the sessions returned to the caller. Today is
+	// the athlete's local date.
 	Start, Through string
 	From, To       string
+	Today          string
 	OperationKey   string
 	RequestHash    string
 }
@@ -43,6 +45,10 @@ type PlanTransitionResult struct {
 
 type PlanTransitionDAO interface {
 	Apply(ctx context.Context, userID uuid.UUID, apply PlanTransitionApply) (*PlanTransitionResult, error)
+	// Replayed reports whether a start with this operation key already
+	// committed, so a retry can be answered before anything is recomputed.
+	// A key reused with another payload is a conflict.
+	Replayed(ctx context.Context, userID uuid.UUID, operationKey, requestHash, from, to string) (result *PlanTransitionResult, found bool, err error)
 }
 
 type planTransitionDAO struct{ pool *pgxpool.Pool }
@@ -94,9 +100,20 @@ func (r *planTransitionDAO) Apply(ctx context.Context, userID uuid.UUID, apply P
 	if err != nil {
 		return nil, err
 	}
-	if !unchanged {
+	if unchanged {
+		// Nothing is replaced, but a program that was never filled (it became
+		// active through a save) still gets its sessions.
+		if err := fillActiveProgram(ctx, tx, userID, apply.Today, apply.AvailableDays); err != nil {
+			return nil, err
+		}
+	} else {
 		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.date >= $2 AND `+unstartedPlanned, userID, apply.Start); err != nil {
 			return nil, fmt.Errorf("replacing unstarted future workouts: %w", err)
+		}
+		// Every other program lost its future; clear the marks that said
+		// otherwise.
+		if _, err := tx.Exec(ctx, `UPDATE programs SET scheduled_through=NULL WHERE user_id=$1 AND id<>$2 AND scheduled_through IS NOT NULL`, userID, target.ID); err != nil {
+			return nil, fmt.Errorf("clearing schedule watermarks of replaced programs: %w", err)
 		}
 		if err := fillProgram(ctx, tx, userID, target, apply.Start, apply.Through); err != nil {
 			return nil, err
@@ -110,17 +127,50 @@ func (r *planTransitionDAO) Apply(ctx context.Context, userID uuid.UUID, apply P
 		return nil, fmt.Errorf("committing plan transition: %w", err)
 	}
 
-	scheduled, err := (&scheduleDAO{pool: r.pool}).List(ctx, userID, apply.From, apply.To)
+	workouts, err := r.programSessions(ctx, userID, target.ID, apply.From, apply.To)
+	if err != nil {
+		return nil, err
+	}
+	return &PlanTransitionResult{ProgramID: target.ID, Workouts: workouts}, nil
+}
+
+// programSessions returns the stored sessions of one program in a date range.
+func (r *planTransitionDAO) programSessions(ctx context.Context, userID, programID uuid.UUID, from, to string) ([]model.ScheduledWorkout, error) {
+	scheduled, err := (&scheduleDAO{pool: r.pool}).List(ctx, userID, from, to)
 	if err != nil {
 		return nil, err
 	}
 	workouts := []model.ScheduledWorkout{}
 	for i := range scheduled {
-		if scheduled[i].ProgramID != nil && *scheduled[i].ProgramID == target.ID {
+		if scheduled[i].ProgramID != nil && *scheduled[i].ProgramID == programID {
 			workouts = append(workouts, scheduled[i])
 		}
 	}
-	return &PlanTransitionResult{ProgramID: target.ID, Workouts: workouts}, nil
+	return workouts, nil
+}
+
+// Replayed implements PlanTransitionDAO.
+func (r *planTransitionDAO) Replayed(ctx context.Context, userID uuid.UUID, operationKey, requestHash, from, to string) (*PlanTransitionResult, bool, error) {
+	var priorHash string
+	var priorID *uuid.UUID
+	err := r.pool.QueryRow(ctx, `SELECT request_hash, resource_id FROM idempotency_records WHERE user_id=$1 AND scope='plan-transitions/apply' AND operation_key=$2`, userID, operationKey).Scan(&priorHash, &priorID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, fmt.Errorf("checking transition idempotency: %w", err)
+	}
+	if priorHash != requestHash {
+		return nil, false, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+	}
+	if priorID == nil {
+		return nil, false, &model.ConflictError{Message: "idempotency record has no program"}
+	}
+	workouts, err := r.programSessions(ctx, userID, *priorID, from, to)
+	if err != nil {
+		return nil, false, err
+	}
+	return &PlanTransitionResult{ProgramID: *priorID, Workouts: workouts, Replay: true}, true, nil
 }
 
 func saveTransitionProfile(ctx context.Context, tx pgx.Tx, userID uuid.UUID, profile *model.TrainingProfile, expected int64) error {

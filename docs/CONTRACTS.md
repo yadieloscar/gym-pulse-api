@@ -416,6 +416,13 @@ active one and deactivates the previous one, as before. `"active": false`
 scheduled workout are unchanged, and the program starts later through a plan
 transition. Creating a program never creates scheduled workouts.
 
+Since 1.10.0, creating an **active** program that replaces another (here and in
+`from-starter`) also deletes the replaced program's planned, unstarted
+scheduled workouts dated **after today**, so two programs never share the
+future. The new program gets its sessions from the client's next
+`plan-transitions/apply`, `schedule/regenerate`, or `schedule/materialize`
+call; without one, the next schedule read fills it starting tomorrow.
+
 #### `POST /api/v1/programs/from-starter`
 
 ```json
@@ -456,17 +463,24 @@ Sessions that are in progress, finished, missed, or dated today or earlier
 never change. If the saved active program has no `weekdays` (an older client),
 the server places it at once from tomorrow, so the week is never left empty; a
 following `schedule/regenerate` yields the same schedule. A body with
-`active: true` for a program that was not active also removes the planned,
-unstarted sessions of the other programs dated after today; `active: false`
-for the active program removes its own. Saving an inactive program changes no
-scheduled workout.
+`active: true` for a program that was not active starts it from tomorrow: the
+planned, unstarted sessions of the other programs dated after today are
+removed and the program is laid out from tomorrow through 56 days after today
+in the same transaction. `active: false` for the active program removes its
+own planned, unstarted sessions dated after today. Saving an inactive program
+changes no scheduled workout. A plan transition remains the way to start a
+program with a preview.
+
+A client older than 1.10.0 that echoes unit `id` values but sends no
+`weekdays` keeps the weekdays already stored for those units; if such a save
+also adds a unit, the whole week is placed again across the available days.
 
 #### `DELETE /api/v1/programs/{id}` (contract 1.10.0)
 
-Removes a saved program and its planned, unstarted scheduled workouts.
-Response 204. The active program cannot be removed:
-`409 CONFLICT` with the program in `resource`. Finished, in-progress, and
-missed workouts stay in history with their snapshots and a null `program_id`;
+Removes a saved program and its planned, unstarted scheduled workouts dated
+today or later. Response 204. The active program cannot be removed:
+`409 CONFLICT` with the program in `resource`. Finished, in-progress, missed, and past workouts stay in history with their
+snapshots and a null `program_id`;
 a training block that named the program keeps its history with a null
 `program_id`. Foreign/missing ID → 404, including a repeated delete.
 
@@ -745,7 +759,9 @@ replaces only unstarted future work. Any active session → 409
 A matching apply replay returns the exact originally stored response.
 Since contract 1.10.0 the sessions come from the program's `weekdays` (an
 unplaced program is placed first, from `from`). Clients on 1.10.0 do not need
-this route: saving the active program updates its schedule.
+this route: saving the active program updates its schedule. Regenerate deletes
+by date, so a session moved into the range with `/move` from a slot outside
+it is removed and not laid out again; do not combine the two.
 
 #### `POST /api/v1/plan-transitions/preview`
 
@@ -822,9 +838,16 @@ The server verifies the opaque preview, then in one transaction:
 Scheduled workouts that are in progress, finished, or missed are never
 changed, and an active workout session does not block a start. A stale preview
 or profile revision returns 409; the preview goes stale when the athlete's
-local date changes. A matching replay returns the authoritative target
-program. `scheduled_workouts` in the response are the target's stored sessions
-between `start_date` and `to`.
+local date changes or the target program is saved. `scheduled_workouts` in the
+response are the target's stored sessions between `start_date` and `to`.
+
+A retry with the same `operation_key` and body is answered from the stored
+record **before** the preview is checked, so a retry after a lost response
+never reports a stale preview. The replay returns the program that start made
+active as `target_program`, its stored sessions as `scheduled_workouts`,
+`off_availability: []`, and null `recommended_starter_program` and
+`replaces_program`. The same key with a different body is
+`409 IDEMPOTENCY_CONFLICT`.
 
 Behavior that changes for a client older than contract 1.10.0, by design:
 

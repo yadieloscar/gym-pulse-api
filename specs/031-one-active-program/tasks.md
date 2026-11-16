@@ -119,8 +119,8 @@ tests first and see them fail for the intended gap before implementing.
 ## Phase 11: Verification
 
 - [X] T039 Run and record: `gofmt`, `go test ./...`, `golangci-lint run`, `go test -race ./...`, the tagged integration suite, `./scripts/validate-database-design.sh`, `./scripts/smoke-toggle.sh`, `govulncheck ./...`, and service coverage
-- [ ] T040 Independent read-only review of the final diff (transactions and lock order, the fill under concurrency, released-app compatibility, ownership); resolve or record each finding
-- [ ] T041 Update the evidence table above with actual results and tell the app session the deployed contract version
+- [X] T040 Independent read-only review of the final diff (transactions and lock order, the fill under concurrency, released-app compatibility, ownership); resolve or record each finding
+- [X] T041 Update the evidence table above with actual results and tell the app session the deployed contract version
 
 ## Dependencies
 
@@ -163,18 +163,49 @@ Commands run from the repository root against a disposable PostgreSQL 16 contain
 | Unit tests | `go test ./...` | Passed |
 | Race | `go test -race ./...` | Passed |
 | Lint | `golangci-lint run` | 0 issues |
-| Integration | `go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1` | Passed; 0 skipped tests |
+| Integration | `go test -race -tags=integration ./internal/dao -count=1` | Passed 6 runs in a row after the review fixes; 0 skipped tests |
+| Integration, both packages in one command | `go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1` | Passed 4 of 5 runs. 1 failure: a deadlock between a DAO test's account cleanup and the migration re-run test altering the same tables (confirmed in the PostgreSQL log). The two packages now run with `-p 1` locally; CI already runs them as separate steps |
 | Migration rules | `internal/dbmigrate` lint and round trip (part of the two lines above) | Passed for 045 |
 | Database design | `./scripts/validate-database-design.sh` | Passed: 43 tables, 450 columns, 51 indexes |
 | Row-level security | `scripts/validate-supabase-security.sh` inside the database container | Passed |
 | Coverage | `go test -coverprofile ./internal/service ./internal/middleware` | service 90.9%, middleware 92.2% |
 | Vulnerabilities | `govulncheck ./...` | No vulnerability in called code |
-| Smoke | `scripts/smoke.sh` against this branch's server running as `gym_pulse_api` | 40 passed, 0 failed, including new step 13l |
+| Smoke | `scripts/smoke.sh` against this branch's server running as `gym_pulse_api` | 40 passed, 0 failed, including new step 13l; rerun after the review fixes |
 | Swagger | `swag init -g cmd/server/main.go --output docs` | Regenerated and committed |
 
 Not run: `./scripts/smoke-toggle.sh` itself. It recreates the shared development container on port
 8080, which other sessions use. `scripts/smoke.sh`, the script it wraps, ran against a server built
 from this branch on another port instead.
+
+### Independent review (T040, 2026-11-16)
+
+A read-only reviewer with fresh context read the final diff against the spec. It reported no
+blocker, and confirmed lock order (program, then schedule) on every two-lock path, owner scoping of
+every statement, and the `ON CONFLICT` partial-index target.
+
+| # | Severity | Finding | Resolution |
+| --- | --- | --- | --- |
+| 1 | Major | A program started again through `PUT active:true` was filled only from its stale fill mark, leaving about seven weeks empty. | Fixed: a program that loses its future has its mark cleared; a save that starts a program lays it out from tomorrow. `TestSaveThatRestartsAProgramFillsItFromTomorrow` |
+| 2 | Major | Creating an active program (the default for older clients) left the replaced program's future sessions, so weeks held two programs. | Fixed in `CreateProgram`, `Create`, and `CreateIdempotent`: the replaced program's sessions after today are removed. `TestCreatingAnActiveProgramRetiresTheReplacedProgramsFuture` |
+| 3 | Major | A retried start returned 409 "stale preview" instead of replaying, because the token was checked before the idempotency record. | Fixed: the record is looked up first. `TestRetriedStartIsReplayedNotJudgedStale`, `TestStartRecordAnswersARetry` |
+| 4 | Minor | Removing a program deleted past sessions that were still `planned`. | Fixed: only today's and later sessions go. `TestRemoveProgramKeepsPastSessionsThatAreStillPlanned` |
+| 5 | Minor | Starting a program through a save doubled today. | Fixed with finding 1: the fill starts tomorrow. Same test |
+| 6 | Minor | An older client echoing unit IDs without `weekdays` re-dealt a placed week. | Fixed: known units keep their stored weekdays. `TestSaveWithoutWeekdaysKeepsThePlacedWeek` |
+| 7 | Minor | Regenerate can drop a session moved into its range from a slot outside it. | Accepted and documented in CONTRACTS: older clients cannot move, and clients on 1.10.0 do not call regenerate. |
+| 8 | Minor | The preview token did not cover the target program's revision. | Fixed: the revision is part of the token. `TestStartPreviewGoesStaleWhenTheProgramIsEdited` |
+| 9 | Minor | A start naming an active, placed, never-filled program returned no sessions. | Fixed: that branch fills. `TestStartOfAnUnfilledActiveProgramFillsIt` |
+| Tests | | `TestConcurrentFillsCreateEachSlotOnce` cannot make two fills race, because the advisory locks serialize them. | Comment corrected to say so; the index is proven by `TestSlotIndexRejectsASecondSessionForTheSameSlot`. |
+| Contract | | Three places in CONTRACTS did not say what the code did. | Rewritten with the fixes above. |
+
+Not changed: a replayed start returns fewer fields than the first response (no recommended starter,
+no `replaces_program`). CONTRACTS states exactly what a replay returns.
+
+### Rollout note
+
+Migration 045 alters three tables that requests write to. Each `ALTER` is fast, but if it runs
+while requests are in flight PostgreSQL can pick a deadlock victim: either the migration job
+(re-run it; it is re-runnable) or one request (a 500 that the client's idempotent retry repeats
+safely). Run the pre-deploy migrate job at a quiet moment.
 
 ### Query plans (T037)
 

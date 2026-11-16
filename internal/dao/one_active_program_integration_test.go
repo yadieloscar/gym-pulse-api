@@ -42,7 +42,7 @@ func pushPullLegsWeek() []model.ProgramWorkout {
 func (f *releaseFixture) saveProgram(t *testing.T, name string, units []model.ProgramWorkout) *model.Program {
 	t.Helper()
 	program := &model.Program{Name: name, PrimaryGoal: "strength", Roadmap: map[string]any{}, Active: false, Workouts: units}
-	saved, _, err := f.mutations.CreateProgram(f.ctx, f.userID, program, releaseRecord("programs/create"))
+	saved, _, err := f.mutations.CreateProgram(f.ctx, f.userID, program, saveNoon, releaseRecord("programs/create"))
 	if err != nil {
 		t.Fatalf("saving program %q: %v", name, err)
 	}
@@ -55,7 +55,7 @@ func (f *releaseFixture) start(t *testing.T, target *model.Program, start string
 	to, _ := shiftDate(start, 27)
 	result, err := (&planTransitionDAO{pool: f.pool}).Apply(f.ctx, f.userID, PlanTransitionApply{
 		Profile: profile, ExpectedProfileRevision: expectedProfileRevision, Target: target, AvailableDays: []int{1, 3},
-		Start: start, Through: through, From: start, To: to, OperationKey: uuid.NewString(), RequestHash: "hash",
+		Start: start, Through: through, From: start, To: to, Today: fillToday, OperationKey: uuid.NewString(), RequestHash: "hash",
 	})
 	if err != nil {
 		t.Fatalf("starting %q: %v", target.Name, err)
@@ -290,13 +290,13 @@ func TestStartPlacesAnActiveProgramThatHasNoWeekdaysYet(t *testing.T) {
 	for i := range legacy.Workouts {
 		legacy.Workouts[i].Weekdays = nil
 	}
-	created, _, err := f.mutations.CreateProgram(f.ctx, f.userID, legacy, releaseRecord("programs/create"))
+	created, _, err := f.mutations.CreateProgram(f.ctx, f.userID, legacy, saveNoon, releaseRecord("programs/create"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	through, _ := shiftDate(fillToday, model.ScheduleHorizonDays)
 	if _, err := (&planTransitionDAO{pool: f.pool}).Apply(f.ctx, f.userID, PlanTransitionApply{Target: created, AvailableDays: []int{2, 3, 5},
-		Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", OperationKey: uuid.NewString(), RequestHash: "hash"}); err != nil {
+		Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", Today: fillToday, OperationKey: uuid.NewString(), RequestHash: "hash"}); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{"2026-11-17 Tendon A", "2026-11-18 Volleyball", "2026-11-20 Tendon B", "2026-11-24 Tendon A"}
@@ -332,7 +332,7 @@ func TestStartReplaysAndRejectsAReusedKey(t *testing.T) {
 	f := newReleaseFixture(t)
 	saved := f.saveProgram(t, "Push pull legs", pushPullLegsWeek())
 	through, _ := shiftDate(fillToday, model.ScheduleHorizonDays)
-	apply := PlanTransitionApply{Target: saved, AvailableDays: []int{1, 3}, Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", OperationKey: "start-once", RequestHash: "hash"}
+	apply := PlanTransitionApply{Target: saved, AvailableDays: []int{1, 3}, Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", Today: fillToday, OperationKey: "start-once", RequestHash: "hash"}
 	transitions := &planTransitionDAO{pool: f.pool}
 	if _, err := transitions.Apply(f.ctx, f.userID, apply); err != nil {
 		t.Fatal(err)
@@ -359,7 +359,7 @@ func TestStartOfAnotherAthletesProgramIsNotFound(t *testing.T) {
 	other := newReleaseFixture(t)
 	foreign := owner.saveProgram(t, "Private", pushPullLegsWeek())
 	through, _ := shiftDate(fillToday, model.ScheduleHorizonDays)
-	_, err := (&planTransitionDAO{pool: other.pool}).Apply(other.ctx, other.userID, PlanTransitionApply{Target: foreign, AvailableDays: []int{1}, Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", OperationKey: uuid.NewString(), RequestHash: "hash"})
+	_, err := (&planTransitionDAO{pool: other.pool}).Apply(other.ctx, other.userID, PlanTransitionApply{Target: foreign, AvailableDays: []int{1}, Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", Today: fillToday, OperationKey: uuid.NewString(), RequestHash: "hash"})
 	var notFound *model.NotFoundError
 	if !errors.As(err, &notFound) {
 		t.Fatalf("starting a foreign program error = %v, want not found", err)
@@ -653,7 +653,7 @@ func TestRemoveProgramKeepsHistoryAndRefusesTheActiveProgram(t *testing.T) {
 	f.exec(t, `INSERT INTO criteria_training_blocks (id, user_id, program_id, name) VALUES ($1,$2,$3,'Block')`, blockID, f.userID, f.program.ID)
 
 	var conflict *model.ConflictError
-	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); !errors.As(err, &conflict) {
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID, saveNoon); !errors.As(err, &conflict) {
 		t.Fatalf("removing the active program error = %v, want a conflict", err)
 	}
 	if authoritative, ok := conflict.Authoritative.(*model.Program); !ok || authoritative.ID != f.program.ID {
@@ -662,7 +662,7 @@ func TestRemoveProgramKeepsHistoryAndRefusesTheActiveProgram(t *testing.T) {
 
 	current := f.startOwnWeek(t)
 	// The replaced program keeps one planned session for today; removal takes it.
-	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); err != nil {
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID, saveNoon); err != nil {
 		t.Fatalf("DeleteProgram() error = %v", err)
 	}
 	if n := f.count(t, `SELECT count(*) FROM programs WHERE id=$1`, f.program.ID); n != 0 {
@@ -682,7 +682,7 @@ func TestRemoveProgramKeepsHistoryAndRefusesTheActiveProgram(t *testing.T) {
 		t.Fatal("removing a saved program touched the active program's sessions")
 	}
 	var notFound *model.NotFoundError
-	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); !errors.As(err, &notFound) {
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID, saveNoon); !errors.As(err, &notFound) {
 		t.Fatalf("removing it again error = %v, want not found", err)
 	}
 }
@@ -699,7 +699,7 @@ func TestNewMutationsRefuseAnotherAthletesResources(t *testing.T) {
 	if _, _, err := other.schedules.MoveIdempotent(other.ctx, other.userID, session.ID, "2026-11-19", fillToday, session.Revision, releaseRecord("scheduled-workouts/move")); !errors.As(err, &notFound) {
 		t.Fatalf("moving a foreign session error = %v, want not found", err)
 	}
-	if err := other.mutations.DeleteProgram(other.ctx, other.userID, program.ID); !errors.As(err, &notFound) {
+	if err := other.mutations.DeleteProgram(other.ctx, other.userID, program.ID, saveNoon); !errors.As(err, &notFound) {
 		t.Fatalf("removing a foreign program error = %v, want not found", err)
 	}
 	foreign := *program
@@ -721,5 +721,161 @@ func TestNewMutationsRefuseAnotherAthletesResources(t *testing.T) {
 	}
 	if after := owner.snapshot(t); after != before {
 		t.Fatal("another athlete's requests changed the owner's data")
+	}
+}
+
+// Review finding 1 and 5: a program started again through a save is laid out
+// from tomorrow, not from a stale fill mark and not on top of today.
+func TestSaveThatRestartsAProgramFillsItFromTomorrow(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.fill(t, fillToday) // fixture program A, Mondays and Wednesdays
+	other := f.startOwnWeek(t)
+
+	// A week later the athlete switches back to A with a save.
+	later := saveNoon.AddDate(0, 0, 7) // Monday 2026-11-23
+	again, err := (&programDAO{pool: f.pool}).Get(f.ctx, f.userID, f.program.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if again.ScheduledThrough != nil {
+		t.Fatalf("the replaced program kept its fill mark %q; it must be cleared", *again.ScheduledThrough)
+	}
+	again.Active = true
+	if _, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, again, again.Revision, later, releaseRecord("programs/update")); err != nil {
+		t.Fatalf("ReplaceProgram() error = %v", err)
+	}
+
+	if active := f.activeProgramIDs(t); len(active) != 1 || active[0] != f.program.ID {
+		t.Fatalf("active programs = %v, want only the restarted program", active)
+	}
+	horizon, _ := shiftDate("2026-11-23", model.ScheduleHorizonDays)
+	assertMondaysAndWednesdays(t, f.programSessions(t, "2026-11-24"), "2026-11-24", horizon)
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND program_id=$2 AND date='2026-11-23' AND created_at > (SELECT updated_at - interval '1 minute' FROM programs WHERE id=$2)`, f.userID, f.program.ID); n != 0 {
+		t.Fatalf("the restarted program got %d new sessions today; it starts tomorrow", n)
+	}
+	if left := f.sessionsOf(t, other.ID, "2026-11-24"); len(left) != 0 {
+		t.Fatalf("the replaced program still has future sessions: %v", left[:1])
+	}
+	if today := f.sessionsOf(t, other.ID, "2026-11-23"); !slices.Equal(today, []string{"2026-11-23 Push"}) {
+		t.Fatalf("today's session of the replaced program = %v, want it kept", today)
+	}
+	// The next read adds nothing behind the mark and doubles nothing.
+	before := f.snapshot(t)
+	if err := f.schedules.EnsureFilled(f.ctx, f.userID, "2026-11-23", []int{1, 3}); err != nil {
+		t.Fatal(err)
+	}
+	if after := f.snapshot(t); after != before {
+		t.Fatal("the read after a restart changed the schedule")
+	}
+}
+
+// Review finding 2: creating an active program, as a client older than
+// contract 1.10.0 does, ends the replaced program's future.
+func TestCreatingAnActiveProgramRetiresTheReplacedProgramsFuture(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.fill(t, fillToday)
+	legacy := &model.Program{Name: "Created active", PrimaryGoal: "strength", Roadmap: map[string]any{}, Active: true,
+		Workouts: []model.ProgramWorkout{weekUnit("Upper", 1), weekUnit("Lower", 2)}}
+	for i := range legacy.Workouts {
+		legacy.Workouts[i].Weekdays = nil
+	}
+	created, _, err := f.mutations.CreateProgram(f.ctx, f.userID, legacy, saveNoon, releaseRecord("programs/create"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if left := f.programSessions(t, startTomorrow); len(left) != 0 {
+		t.Fatalf("the replaced program keeps %d future sessions", len(left))
+	}
+	if today := f.programSessions(t, fillToday); !slices.Equal(today, []string{fillToday}) {
+		t.Fatalf("today's session of the replaced program = %v, want it kept", today)
+	}
+	// With no follow-up call from the client, the next read starts the new
+	// program tomorrow, beside nothing.
+	f.fill(t, fillToday)
+	sessions := f.sessionsOf(t, created.ID, fillToday)
+	if len(sessions) == 0 || sessions[0] != "2026-11-18 Upper" {
+		t.Fatalf("new program sessions start %v, want Wednesday 2026-11-18 Upper", sessions[:min(2, len(sessions))])
+	}
+	if n := f.count(t, `SELECT count(*) FROM (SELECT date FROM scheduled_workouts WHERE user_id=$1 AND date >= $2 AND status='planned' GROUP BY date HAVING count(DISTINCT program_id) > 1) d`, f.userID, fillToday); n != 0 {
+		t.Fatalf("%d dates hold planned sessions of two programs", n)
+	}
+}
+
+// Review finding 4: removing a program keeps a past session that has not
+// been finalized yet; it is history, not future.
+func TestRemoveProgramKeepsPastSessionsThatAreStillPlanned(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.startOwnWeek(t)
+	if past := f.load(t, f.workout.ID); past.Status != model.WorkoutStatusPlanned || past.Date != "2026-10-12" {
+		t.Fatalf("fixture workout is not a past planned session: %+v", past)
+	}
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID, saveNoon); err != nil {
+		t.Fatal(err)
+	}
+	kept := f.load(t, f.workout.ID)
+	if kept.ProgramID != nil || kept.Name != "A" {
+		t.Fatalf("the past session was not kept as history: %+v", kept)
+	}
+}
+
+// Review finding 6: a client older than weekdays that echoes unit IDs must
+// not re-deal a week the athlete laid out.
+func TestSaveWithoutWeekdaysKeepsThePlacedWeek(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	before := f.sessionsOf(t, program.ID, startTomorrow)
+
+	echoed := &model.Program{ID: program.ID, Name: "Renamed by an older client", PrimaryGoal: program.PrimaryGoal, Roadmap: program.Roadmap, Active: true}
+	for _, unit := range program.Workouts {
+		unit.Weekdays = nil // the older client does not know the field
+		echoed.Workouts = append(echoed.Workouts, unit)
+	}
+	saved, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, echoed, program.Revision, saveNoon, releaseRecord("programs/update"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for index, unit := range saved.Workouts {
+		if !slices.Equal([]int(unit.Weekdays), []int(program.Workouts[index].Weekdays)) {
+			t.Fatalf("unit %s weekdays = %v, want the athlete's %v", unit.Name, unit.Weekdays, program.Workouts[index].Weekdays)
+		}
+	}
+	if after := f.sessionsOf(t, program.ID, startTomorrow); !slices.Equal(after, before) {
+		t.Fatal("a save that changed only the name moved sessions")
+	}
+}
+
+func TestStartRecordAnswersARetry(t *testing.T) {
+	f := newReleaseFixture(t)
+	saved := f.saveProgram(t, "Push pull legs", pushPullLegsWeek())
+	through, _ := shiftDate(fillToday, model.ScheduleHorizonDays)
+	transitions := &planTransitionDAO{pool: f.pool}
+	if _, found, err := transitions.Replayed(f.ctx, f.userID, "start-key", "hash", startTomorrow, "2026-11-23"); err != nil || found {
+		t.Fatalf("Replayed() before any start = found %v, err %v", found, err)
+	}
+	if _, err := transitions.Apply(f.ctx, f.userID, PlanTransitionApply{Target: saved, AvailableDays: []int{1, 3}, Start: startTomorrow, Through: through, From: startTomorrow, To: "2026-11-23", Today: fillToday, OperationKey: "start-key", RequestHash: "hash"}); err != nil {
+		t.Fatal(err)
+	}
+	replay, found, err := transitions.Replayed(f.ctx, f.userID, "start-key", "hash", startTomorrow, "2026-11-23")
+	if err != nil || !found || replay.ProgramID != saved.ID || len(replay.Workouts) != 5 || replay.Workouts[0].ID == uuid.Nil {
+		t.Fatalf("Replayed() = %+v found=%v err=%v, want the started program with its 5 stored sessions", replay, found, err)
+	}
+	var conflict *model.ConflictError
+	if _, _, err := transitions.Replayed(f.ctx, f.userID, "start-key", "another", startTomorrow, "2026-11-23"); !errors.As(err, &conflict) {
+		t.Fatalf("Replayed() with another payload error = %v, want a conflict", err)
+	}
+}
+
+// Review finding 9: a start that names the already active, placed program
+// still returns its sessions when that program was never filled.
+func TestStartOfAnUnfilledActiveProgramFillsIt(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := &model.Program{Name: "Active, never filled", PrimaryGoal: "strength", Roadmap: map[string]any{}, Active: true, Workouts: pushPullLegsWeek()}
+	created, _, err := f.mutations.CreateProgram(f.ctx, f.userID, program, saveNoon, releaseRecord("programs/create"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result := f.start(t, created, fillToday, nil, 0)
+	if len(result.Workouts) == 0 {
+		t.Fatal("the start returned no sessions for an active program that had none")
 	}
 }

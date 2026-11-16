@@ -44,7 +44,7 @@ go test ./...
 ./scripts/validate-database-design.sh # any migration or docs/DATABASE_DESIGN.md change
 ./scripts/smoke-toggle.sh # handler, validator, middleware, or contract changes
 GYMPULSE_TEST_DATABASE_URL=<owner url> GYMPULSE_TEST_RUNTIME_DATABASE_URL=<gym_pulse_api url> \
-  go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 # DAO or migration changes
+  go test -p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 # DAO or migration changes; -p 1 keeps the migration re-run off the DAO tests' tables
 ```
 
 `go test ./...` does not exercise the DAO against PostgreSQL. Every DB-backed DAO test is behind

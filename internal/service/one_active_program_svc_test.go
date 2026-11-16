@@ -32,13 +32,31 @@ func proposedProfile(days ...int) *model.ProposedTrainingProfile {
 	return &model.ProposedTrainingProfile{PrimaryGoal: model.GoalStrength, AvailableDays: days, UsualActivity: "light", Experience: "beginner", Equipment: []string{"dumbbells"}, SessionDurationMinutes: 45, Timezone: "UTC", Preferences: map[string]any{}}
 }
 
-// applyCapture records what the service asks the DAO to apply.
+// applyCapture records what the service asks the DAO to apply. Once a start
+// is applied it remembers the operation key, as the idempotency ledger does.
 type applyCapture struct {
-	applied []dao.PlanTransitionApply
+	applied  []dao.PlanTransitionApply
+	replayed map[string]dao.PlanTransitionApply
+	stored   []model.ScheduledWorkout
+}
+
+func (c *applyCapture) Replayed(_ context.Context, _ uuid.UUID, operationKey, requestHash, _, _ string) (*dao.PlanTransitionResult, bool, error) {
+	prior, ok := c.replayed[operationKey]
+	if !ok {
+		return nil, false, nil
+	}
+	if prior.RequestHash != requestHash {
+		return nil, false, &model.ConflictError{Message: "idempotency key was already used with a different payload"}
+	}
+	return &dao.PlanTransitionResult{ProgramID: prior.Target.ID, Workouts: c.stored, Replay: true}, true, nil
 }
 
 func (c *applyCapture) Apply(_ context.Context, _ uuid.UUID, apply dao.PlanTransitionApply) (*dao.PlanTransitionResult, error) {
 	c.applied = append(c.applied, apply)
+	if c.replayed == nil {
+		c.replayed = map[string]dao.PlanTransitionApply{}
+	}
+	c.replayed[apply.OperationKey] = apply
 	return &dao.PlanTransitionResult{ProgramID: apply.Target.ID, Workouts: []model.ScheduledWorkout{}}, nil
 }
 
@@ -412,5 +430,73 @@ func TestRemoveProgramDelegatesAndPassesTheConflictThrough(t *testing.T) {
 	without := NewProgramService(&coverageStarterRepo{}, newCoverageProgramRepo(), nil, newCoverageIdempotencyRepo(), validator.New())
 	if err := without.Delete(ctx, userID, programID); !errors.Is(err, errTrainingMutationsUnavailable) {
 		t.Fatalf("Delete() without mutations error = %v, want the unavailable error", err)
+	}
+}
+
+// A start whose response was lost is retried with the same key. It must be
+// answered from its record even though the first attempt changed which
+// program is active and the date has moved on.
+func TestRetriedStartIsReplayedNotJudgedStale(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	active, saved := customProgram(true), customProgram(false)
+	stored := coverageProfileFixture()
+	programs, profiles := newCoverageProgramRepo(active, saved), &trainingProfileRepoStub{profile: &stored}
+	capture := &applyCapture{stored: []model.ScheduledWorkout{{ID: uuid.New(), Date: "2026-11-18", Name: "Pull"}}}
+
+	req := model.PreviewPlanTransitionRequest{ProgramID: &saved.ID, From: "2026-11-16"}
+	first := newTransitionServiceAt("2026-11-16", &coverageStarterRepo{}, programs, profiles, capture)
+	preview, err := first.Preview(ctx, userID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := model.ApplyPlanTransitionRequest{PreviewPlanTransitionRequest: req, PreviewToken: preview.PreviewToken, OperationKey: "start-once"}
+	if _, err := first.Apply(ctx, userID, apply); err != nil {
+		t.Fatalf("first Apply() error = %v", err)
+	}
+
+	// The retry arrives after midnight, when a fresh preview would differ.
+	retry := newTransitionServiceAt("2026-11-17", &coverageStarterRepo{}, programs, profiles, capture)
+	replayed, err := retry.Apply(ctx, userID, apply)
+	if err != nil {
+		t.Fatalf("retried Apply() error = %v, want the stored result", err)
+	}
+	if len(capture.applied) != 1 {
+		t.Fatalf("the start was applied %d times, want once", len(capture.applied))
+	}
+	if replayed.TargetProgram.ID != saved.ID || len(replayed.ScheduledWorkouts) != 1 || replayed.ScheduledWorkouts[0].ID == uuid.Nil {
+		t.Fatalf("replay = %+v, want the started program and its stored sessions", replayed)
+	}
+	if replayed.OffAvailability == nil {
+		t.Fatal("off_availability must be an array on a replay too")
+	}
+
+	// The same key with another payload is a conflict, not a replay.
+	other := apply
+	other.From = "2026-11-18"
+	var conflict *model.ConflictError
+	if _, err := retry.Apply(ctx, userID, other); !errors.As(err, &conflict) {
+		t.Fatalf("reusing the key with another payload error = %v, want a conflict", err)
+	}
+}
+
+func TestStartPreviewGoesStaleWhenTheProgramIsEdited(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	saved := customProgram(false)
+	stored := coverageProfileFixture()
+	programs := newCoverageProgramRepo(saved)
+	svc := newTransitionServiceAt("2026-11-16", &coverageStarterRepo{}, programs, &trainingProfileRepoStub{profile: &stored}, &applyCapture{})
+	req := model.PreviewPlanTransitionRequest{ProgramID: &saved.ID, From: "2026-11-16"}
+	preview, err := svc.Preview(ctx, userID, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := saved
+	edited.Revision++
+	edited.Workouts = []model.ProgramWorkout{placedUnit("Push", 1, 2)}
+	programs.programs[saved.ID] = edited
+	var conflict *model.ConflictError
+	_, err = svc.Apply(ctx, userID, model.ApplyPlanTransitionRequest{PreviewPlanTransitionRequest: req, PreviewToken: preview.PreviewToken, OperationKey: "after-edit"})
+	if !errors.As(err, &conflict) {
+		t.Fatalf("Apply() after the program changed error = %v, want a stale-preview conflict", err)
 	}
 }

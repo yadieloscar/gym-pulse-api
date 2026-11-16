@@ -44,9 +44,11 @@ func localToday(now time.Time, timezone string) string {
 type transitionPlan struct {
 	preview *model.PlanTransitionPreview
 	profile model.TrainingProfile
-	// through is the last date the start fills.
+	// through is the last date the start fills; today is the athlete's
+	// local date.
 	through string
 	to      string
+	today   string
 }
 
 func (s *planTransitionService) Preview(ctx context.Context, userID uuid.UUID, req model.PreviewPlanTransitionRequest) (*model.PlanTransitionPreview, error) {
@@ -175,8 +177,9 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 		Request         model.PreviewPlanTransitionRequest
 		TargetStarterID *uuid.UUID
 		TargetID        uuid.UUID
+		TargetRevision  int64
 		StartDate       string
-	}{userID, req, target.StarterProgramID, target.ID, start})
+	}{userID, req, target.StarterProgramID, target.ID, target.Revision, start})
 	if err != nil {
 		return nil, err
 	}
@@ -197,7 +200,7 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 		horizon = parsed
 	}
 	through := max(horizon.AddDate(0, 0, model.ScheduleHorizonDays).Format(time.DateOnly), to)
-	return &transitionPlan{preview: preview, profile: profile, through: through, to: to}, nil
+	return &transitionPlan{preview: preview, profile: profile, through: through, to: to, today: today}, nil
 }
 
 func programFromStarter(starter *model.StarterProgram) *model.Program {
@@ -209,6 +212,17 @@ func (s *planTransitionService) Apply(ctx context.Context, userID uuid.UUID, req
 	if err := s.validator.Struct(req); err != nil {
 		return nil, &model.ValidationError{Message: "invalid plan transition apply", Field: "body"}
 	}
+	hash, err := hashPayload(req)
+	if err != nil {
+		return nil, err
+	}
+	// A retry of a start that already committed is answered from its record
+	// before anything is recomputed. The preview would otherwise look stale:
+	// the first attempt changed which program is active, and the date may
+	// have changed since.
+	if replayed, err := s.replay(ctx, userID, req, hash); err != nil || replayed != nil {
+		return replayed, err
+	}
 	plan, err := s.resolve(ctx, userID, req.PreviewPlanTransitionRequest)
 	if err != nil {
 		return nil, err
@@ -217,14 +231,10 @@ func (s *planTransitionService) Apply(ctx context.Context, userID uuid.UUID, req
 	if preview.PreviewToken != req.PreviewToken {
 		return nil, &model.ConflictError{Message: "plan transition preview is stale"}
 	}
-	hash, err := hashPayload(req)
-	if err != nil {
-		return nil, err
-	}
 	apply := dao.PlanTransitionApply{
 		ExpectedProfileRevision: req.ExpectedProfileRevision, Target: &preview.TargetProgram,
 		AvailableDays: plan.profile.AvailableDays, Start: preview.StartDate, Through: plan.through,
-		From: preview.StartDate, To: plan.to, OperationKey: req.OperationKey, RequestHash: hash,
+		From: preview.StartDate, To: plan.to, Today: plan.today, OperationKey: req.OperationKey, RequestHash: hash,
 	}
 	if req.ProposedProfile != nil {
 		profile := plan.profile
@@ -239,8 +249,39 @@ func (s *planTransitionService) Apply(ctx context.Context, userID uuid.UUID, req
 		return nil, err
 	}
 	preview.TargetProgram = *program
-	if !result.Replay {
+	if result.Workouts != nil {
 		preview.ScheduledWorkouts = result.Workouts
 	}
 	return preview, nil
+}
+
+// replay answers a retried start from its stored record. It returns nil when
+// the operation key has not been used. The response names the program the
+// first attempt started, with its stored sessions.
+func (s *planTransitionService) replay(ctx context.Context, userID uuid.UUID, req model.ApplyPlanTransitionRequest, hash string) (*model.PlanTransitionPreview, error) {
+	to := req.To
+	if from, err := model.ParseDate(req.From); err == nil && to == "" {
+		to = from.AddDate(0, 0, model.DefaultTransitionPreviewDays-1).Format(time.DateOnly)
+	}
+	result, found, err := s.transitions.Replayed(ctx, userID, req.OperationKey, hash, req.From, to)
+	if err != nil || !found {
+		return nil, err
+	}
+	program, err := s.programs.Get(ctx, userID, result.ProgramID)
+	if err != nil {
+		return nil, err
+	}
+	start := req.From
+	if len(result.Workouts) > 0 {
+		start = result.Workouts[0].Date
+	}
+	replayed := &model.PlanTransitionPreview{
+		PreviewToken: req.PreviewToken, ProposedProfile: req.ProposedProfile, TargetProgram: *program,
+		ScheduledWorkouts: result.Workouts, StartDate: start, OffAvailability: []model.OffAvailabilityUnit{},
+	}
+	if len(result.Workouts) > 0 {
+		first := result.Workouts[0].Date
+		replayed.FirstAffectedDate = &first
+	}
+	return replayed, nil
 }

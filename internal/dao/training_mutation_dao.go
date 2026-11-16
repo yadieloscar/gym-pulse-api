@@ -19,9 +19,9 @@ import (
 type TrainingMutationDAO interface {
 	AdoptLegacy(ctx context.Context, userID uuid.UUID, now time.Time, record model.IdempotencyRecord) (*model.AdoptLegacyProgramResponse, bool, error)
 	PutTrainingProfile(ctx context.Context, userID uuid.UUID, profile *model.TrainingProfile, expectedRevision int64, record model.IdempotencyRecord) (*model.TrainingProfile, bool, error)
-	CreateProgram(ctx context.Context, userID uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error)
+	CreateProgram(ctx context.Context, userID uuid.UUID, program *model.Program, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error)
 	ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error)
-	DeleteProgram(ctx context.Context, userID, programID uuid.UUID) error
+	DeleteProgram(ctx context.Context, userID, programID uuid.UUID, now time.Time) error
 	ReplaceScheduledWorkout(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	UpdateScheduledSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, request model.SetMutationRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
@@ -101,7 +101,13 @@ func (r *trainingMutationDAO) PutTrainingProfile(ctx context.Context, userID uui
 	return profile, false, nil
 }
 
-func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error) {
+// CreateProgram saves a program. An inactive program touches nothing else.
+// An active one (the default for clients older than contract 1.10.0) becomes
+// the only active program, and the programs it replaces lose their planned
+// unstarted sessions from tomorrow on, so two programs never share the
+// future. The new program is not placed or filled here: the client's
+// follow-up schedule call, or the next schedule read, does that.
+func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUID, program *model.Program, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("beginning custom program create: %w", err)
@@ -110,16 +116,24 @@ func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUI
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return nil, false, err
 	}
+	if program.Active {
+		if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+			return nil, false, err
+		}
+	}
 	var replay model.Program
 	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
 		return nil, false, err
 	} else if found {
 		return &replay, true, nil
 	}
+	replaced := false
 	if program.Active {
-		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+		tag, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID)
+		if err != nil {
 			return nil, false, fmt.Errorf("deactivating prior program: %w", err)
 		}
+		replaced = tag.RowsAffected() > 0
 	}
 	err = tx.QueryRow(ctx, `
 		INSERT INTO programs (user_id, starter_program_id, starter_version, name, primary_goal, roadmap, active)
@@ -132,6 +146,11 @@ func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUI
 	}
 	if err := insertProgramWorkouts(ctx, tx, program.ID, program.Workouts); err != nil {
 		return nil, false, err
+	}
+	if replaced {
+		if err := takeOverFromTomorrow(ctx, tx, userID, program.ID, now); err != nil {
+			return nil, false, err
+		}
 	}
 	record.ResourceID = &program.ID
 	record.ResourceRevision = &program.Revision
@@ -194,33 +213,25 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 	}
 	program.StarterProgramID, program.StarterVersion, program.ScheduledThrough = stored.StarterProgramID, stored.StarterVersion, stored.ScheduledThrough
 
-	today := now.UTC().Format(time.DateOnly)
-	var availableDays []int
-	profile, err := loadTrainingProfile(ctx, tx, userID)
-	var noProfile *model.NotFoundError
-	switch {
-	case err == nil:
-		availableDays = profile.AvailableDays
-		location, locationErr := time.LoadLocation(profile.Timezone)
-		if locationErr != nil {
-			location = time.UTC
-		}
-		today = now.In(location).Format(time.DateOnly)
-	case errors.As(err, &noProfile):
-		// Without a profile there is no timezone; the UTC date stands.
-	default:
+	today, availableDays, err := athleteToday(ctx, tx, userID, now)
+	if err != nil {
 		return nil, false, err
 	}
 	tomorrow, err := shiftDate(today, 1)
 	if err != nil {
 		return nil, false, err
 	}
+	horizon, err := scheduleHorizon(today)
+	if err != nil {
+		return nil, false, err
+	}
 
+	keepStoredWeekdays(stored.Workouts, program.Workouts)
 	diff := model.DiffUnits(stored.Workouts, program.Workouts)
 	if err := replaceProgramUnits(ctx, tx, userID, program, diff, tomorrow); err != nil {
 		return nil, false, err
 	}
-	if err := syncProgramSessions(ctx, tx, userID, stored, program, diff, availableDays, tomorrow); err != nil {
+	if err := syncProgramSessions(ctx, tx, userID, stored, program, diff, availableDays, tomorrow, horizon); err != nil {
 		return nil, false, err
 	}
 	record.ResourceID = &program.ID
@@ -232,6 +243,56 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 		return nil, false, fmt.Errorf("committing custom program update: %w", err)
 	}
 	return program, false, nil
+}
+
+// takeOverFromTomorrow is what creating an active program does to the
+// schedule: the programs it replaced lose their planned unstarted sessions
+// from tomorrow on, and the new program's fill mark is set to today so the
+// next schedule read starts it tomorrow, beside nothing.
+func takeOverFromTomorrow(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID, now time.Time) error {
+	today, _, err := athleteToday(ctx, tx, userID, now)
+	if err != nil {
+		return err
+	}
+	tomorrow, err := shiftDate(today, 1)
+	if err != nil {
+		return err
+	}
+	if err := retireOtherPrograms(ctx, tx, userID, programID, tomorrow); err != nil {
+		return err
+	}
+	return advanceScheduledThrough(ctx, tx, programID, today)
+}
+
+// keepStoredWeekdays handles a save from a client older than weekdays that
+// echoes unit IDs: every unit of such a request arrives without weekdays. A
+// unit the program already has keeps the weekdays the athlete chose, so the
+// save does not re-deal a placed week. If that leaves the program part placed
+// (the client added a unit), every unit is left unplaced and the whole week is
+// dealt again, which is what that client expects.
+func keepStoredWeekdays(stored, saved []model.ProgramWorkout) {
+	for i := range saved {
+		if saved[i].Weekdays != nil {
+			return // a client that sends weekdays owns them
+		}
+	}
+	byID := make(map[uuid.UUID]*model.ProgramWorkout, len(stored))
+	for i := range stored {
+		byID[stored[i].ID] = &stored[i]
+	}
+	kept := make([]model.WeekdayList, len(saved))
+	for i := range saved {
+		prior, ok := byID[saved[i].ID]
+		if !ok || len(prior.Weekdays) == 0 {
+			return
+		}
+		kept[i] = prior.Weekdays
+	}
+	for i := range saved {
+		saved[i].Weekdays = append(model.WeekdayList(nil), kept[i]...)
+		first := kept[i][0]
+		saved[i].PreferredWeekday = &first
+	}
 }
 
 // replaceProgramUnits brings the stored units in line with the saved program.
@@ -316,20 +377,25 @@ func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, progr
 
 // syncProgramSessions makes the planned unstarted sessions dated from
 // tomorrow on match the saved program.
-func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, stored, program *model.Program, diff model.UnitDiff, availableDays []int, tomorrow string) error {
+func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, stored, program *model.Program, diff model.UnitDiff, availableDays []int, tomorrow, horizon string) error {
 	if !program.Active {
 		if stored.Active {
 			// The save stopped the program: its future goes with it.
 			if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, program.ID, tomorrow); err != nil {
 				return fmt.Errorf("deleting sessions of a stopped program: %w", err)
 			}
+			// Its future is gone; a later start must fill it afresh.
+			if _, err := tx.Exec(ctx, `UPDATE programs SET scheduled_through=NULL WHERE id=$1`, program.ID); err != nil {
+				return fmt.Errorf("clearing the stopped program's schedule watermark: %w", err)
+			}
+			program.ScheduledThrough = nil
 		}
 		return nil
 	}
 	if !stored.Active {
 		// The save started the program: no other program keeps a future.
-		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id IS DISTINCT FROM $2 AND sw.date >= $3 AND `+unstartedPlanned, userID, program.ID, tomorrow); err != nil {
-			return fmt.Errorf("deleting sessions of the replaced program: %w", err)
+		if err := retireOtherPrograms(ctx, tx, userID, program.ID, tomorrow); err != nil {
+			return err
 		}
 	}
 	if len(program.Workouts) > 0 && !program.Placed() {
@@ -345,14 +411,23 @@ func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, store
 			return err
 		}
 	}
-	through := tomorrow
-	if program.ScheduledThrough != nil {
-		through = max(through, *program.ScheduledThrough)
+	if !stored.Active {
+		// Started by this save: lay the whole program out from tomorrow, the
+		// day the replaced program's sessions end, so today is not doubled and
+		// a stale fill mark from an earlier run cannot leave a gap.
+		if !program.Placed() {
+			return nil
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, program.ID, tomorrow); err != nil {
+			return fmt.Errorf("clearing the started program's old sessions: %w", err)
+		}
+		return fillProgram(ctx, tx, userID, program, tomorrow, horizon)
 	}
-	if !stored.Active || program.ScheduledThrough == nil {
+	if program.ScheduledThrough == nil {
 		// Nothing was laid out for this program yet; the next read fills it.
 		return nil
 	}
+	through := max(tomorrow, *program.ScheduledThrough)
 	relaid := append(append([]int{}, diff.Replaced...), diff.Added...)
 	for _, index := range relaid {
 		unit := &program.Workouts[index]
@@ -413,7 +488,7 @@ func resnapshotUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, un
 // DeleteProgram removes a saved program and its planned unstarted sessions.
 // The active program cannot be removed. Finished sessions keep their
 // snapshots; their program reference becomes null through the foreign key.
-func (r *trainingMutationDAO) DeleteProgram(ctx context.Context, userID, programID uuid.UUID) error {
+func (r *trainingMutationDAO) DeleteProgram(ctx context.Context, userID, programID uuid.UUID, now time.Time) error {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return fmt.Errorf("beginning program delete: %w", err)
@@ -432,7 +507,13 @@ func (r *trainingMutationDAO) DeleteProgram(ctx context.Context, userID, program
 	if program.Active {
 		return &model.ConflictError{Message: "the active program cannot be removed", Authoritative: program}
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND `+unstartedPlanned, userID, programID); err != nil {
+	// Only today's and future sessions go. A past session that is still
+	// planned has simply not been finalized yet; it stays and becomes missed.
+	today, _, err := athleteToday(ctx, tx, userID, now)
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, programID, today); err != nil {
 		return fmt.Errorf("deleting sessions of the removed program: %w", err)
 	}
 	if _, err := tx.Exec(ctx, `DELETE FROM programs WHERE id=$1 AND user_id=$2`, programID, userID); err != nil {

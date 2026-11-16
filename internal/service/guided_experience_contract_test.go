@@ -45,6 +45,10 @@ type transitionApplyStub struct {
 	workouts []model.ScheduledWorkout
 }
 
+func (*transitionApplyStub) Replayed(context.Context, uuid.UUID, string, string, string, string) (*dao.PlanTransitionResult, bool, error) {
+	return nil, false, nil
+}
+
 func (s *transitionApplyStub) Apply(_ context.Context, _ uuid.UUID, apply dao.PlanTransitionApply) (*dao.PlanTransitionResult, error) {
 	s.calls++
 	return &dao.PlanTransitionResult{ProgramID: apply.Target.ID, Workouts: s.workouts}, nil

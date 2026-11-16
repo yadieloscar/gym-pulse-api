@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -326,10 +327,16 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return err
 	}
+	replaced := false
 	if p.Active {
-		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+		if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID)
+		if err != nil {
 			return fmt.Errorf("deactivating prior program: %w", err)
 		}
+		replaced = tag.RowsAffected() > 0
 	}
 
 	err = tx.QueryRow(ctx, `
@@ -343,6 +350,11 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 	}
 	if err := insertProgramWorkouts(ctx, tx, p.ID, p.Workouts); err != nil {
 		return err
+	}
+	if replaced {
+		if err := takeOverFromTomorrow(ctx, tx, userID, p.ID, time.Now()); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing program create: %w", err)
@@ -359,16 +371,24 @@ func (r *programDAO) CreateIdempotent(ctx context.Context, userID uuid.UUID, p *
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return nil, false, err
 	}
+	if p.Active {
+		if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+			return nil, false, err
+		}
+	}
 	var replay model.Program
 	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
 		return nil, false, err
 	} else if found {
 		return &replay, true, nil
 	}
+	replaced := false
 	if p.Active {
-		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+		tag, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID)
+		if err != nil {
 			return nil, false, fmt.Errorf("deactivating prior program: %w", err)
 		}
+		replaced = tag.RowsAffected() > 0
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO programs (user_id, starter_program_id, starter_version, name, primary_goal, roadmap, active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, revision, created_at, updated_at`, userID, p.StarterProgramID, p.StarterVersion, p.Name, p.PrimaryGoal, p.Roadmap, p.Active).Scan(&p.ID, &p.Revision, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
@@ -376,6 +396,11 @@ func (r *programDAO) CreateIdempotent(ctx context.Context, userID uuid.UUID, p *
 	}
 	if err := insertProgramWorkouts(ctx, tx, p.ID, p.Workouts); err != nil {
 		return nil, false, err
+	}
+	if replaced {
+		if err := takeOverFromTomorrow(ctx, tx, userID, p.ID, time.Now()); err != nil {
+			return nil, false, err
+		}
 	}
 	record.ResourceID, record.ResourceRevision = &p.ID, &p.Revision
 	if err := insertIdempotency(ctx, tx, userID, record, p); err != nil {

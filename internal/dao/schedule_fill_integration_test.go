@@ -178,6 +178,10 @@ func TestEnsureFilledContinuesAfterSessionsFromBeforeTheWatermark(t *testing.T) 
 	assertMondaysAndWednesdays(t, dates[1:], "2026-11-27", horizon)
 }
 
+// Concurrent reads serialize on the athlete's advisory locks, so this proves
+// the fill is safe when called concurrently, not that the unique slot index
+// arbitrates a race. TestSlotIndexRejectsASecondSessionForTheSameSlot proves
+// the index itself, which is the backstop for a path that forgets the lock.
 func TestConcurrentFillsCreateEachSlotOnce(t *testing.T) {
 	f := newReleaseFixture(t)
 	const readers = 6

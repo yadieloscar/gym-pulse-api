@@ -221,7 +221,7 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 		if err != nil {
 			return nil, err
 		}
-		result, _, err := s.mutations.CreateProgram(ctx, userID, p, model.IdempotencyRecord{
+		result, _, err := s.mutations.CreateProgram(ctx, userID, p, s.now(), model.IdempotencyRecord{
 			Scope: "programs/create", OperationKey: req.OperationKey, RequestHash: hash,
 			ResponseStatus: 201, ResourceType: "program",
 		})
@@ -350,7 +350,7 @@ func (s *programService) Delete(ctx context.Context, userID, programID uuid.UUID
 	if s.mutations == nil {
 		return errTrainingMutationsUnavailable
 	}
-	return s.mutations.DeleteProgram(ctx, userID, programID)
+	return s.mutations.DeleteProgram(ctx, userID, programID, s.now())
 }
 
 func cloneStarterWorkouts(src []model.ProgramWorkout) []model.ProgramWorkout {

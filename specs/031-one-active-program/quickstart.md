@@ -14,7 +14,7 @@
 go test ./...
 GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
 GYMPULSE_TEST_RUNTIME_DATABASE_URL='postgres://gym_pulse_api:gym_pulse_api@127.0.0.1:15432/gympulse?sslmode=disable' \
-  go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
+  go test -p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
 ./scripts/validate-database-design.sh
 ./scripts/smoke-toggle.sh
 govulncheck ./...

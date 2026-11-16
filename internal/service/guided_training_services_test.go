@@ -299,6 +299,14 @@ func (r *coverageTransitionRepo) Apply(context.Context, uuid.UUID, dao.PlanTrans
 	return &dao.PlanTransitionResult{ProgramID: r.programID, Workouts: r.workouts, Replay: r.replay}, nil
 }
 
+// Replayed reports a stored start when the double is configured as a replay.
+func (r *coverageTransitionRepo) Replayed(context.Context, uuid.UUID, string, string, string, string) (*dao.PlanTransitionResult, bool, error) {
+	if !r.replay {
+		return nil, false, nil
+	}
+	return &dao.PlanTransitionResult{ProgramID: r.programID, Workouts: r.workouts, Replay: true}, true, nil
+}
+
 func coverageProgramFixture() model.Program {
 	weekday, reps := 1, 5
 	return model.Program{
@@ -524,8 +532,10 @@ func TestGuidedPlanTransitionStarterReplay(t *testing.T) {
 	if err != nil || applied.TargetProgram.ID != existing.ID {
 		t.Fatalf("transition replay failed: %+v %v", applied, err)
 	}
+	// A start that has not committed yet is still judged against its preview.
+	fresh := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, &coverageTransitionRepo{programID: existing.ID})
 	apply.PreviewToken = "stale"
-	if _, err := service.Apply(ctx, userID, apply); err == nil {
+	if _, err := fresh.Apply(ctx, userID, apply); err == nil {
 		t.Fatal("stale transition preview was accepted")
 	}
 }

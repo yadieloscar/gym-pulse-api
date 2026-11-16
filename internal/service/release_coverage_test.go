@@ -675,6 +675,10 @@ func (r *releaseTransitionRepo) Apply(context.Context, uuid.UUID, dao.PlanTransi
 	return &dao.PlanTransitionResult{ProgramID: r.programID, Workouts: r.workouts, Replay: r.replay}, nil
 }
 
+func (r *releaseTransitionRepo) Replayed(context.Context, uuid.UUID, string, string, string, string) (*dao.PlanTransitionResult, bool, error) {
+	return nil, false, nil
+}
+
 func TestPlanTransitionReleaseBranches(t *testing.T) {
 	ctx, userID := context.Background(), uuid.New()
 	program := coverageProgramFixture()

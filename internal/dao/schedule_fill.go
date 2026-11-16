@@ -133,6 +133,39 @@ func fillProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID, p *model.Prog
 	return advanceScheduledThrough(ctx, tx, p.ID, through)
 }
 
+// athleteToday returns today's date in the athlete's training-profile
+// timezone, with their available days. Without a profile there is no
+// timezone, so the UTC date stands and there are no days.
+func athleteToday(ctx context.Context, tx pgx.Tx, userID uuid.UUID, now time.Time) (today string, availableDays []int, err error) {
+	profile, err := loadTrainingProfile(ctx, tx, userID)
+	var noProfile *model.NotFoundError
+	if errors.As(err, &noProfile) {
+		return now.UTC().Format(time.DateOnly), nil, nil
+	}
+	if err != nil {
+		return "", nil, err
+	}
+	location, err := time.LoadLocation(profile.Timezone)
+	if err != nil {
+		location = time.UTC
+	}
+	return now.In(location).Format(time.DateOnly), profile.AvailableDays, nil
+}
+
+// retireOtherPrograms gives the future to one program. It deletes the planned
+// unstarted sessions dated from from on that belong to any other program, and
+// clears those programs' fill watermark so a program started again later is
+// filled afresh instead of from a stale mark.
+func retireOtherPrograms(ctx context.Context, tx pgx.Tx, userID, keepID uuid.UUID, from string) error {
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id IS DISTINCT FROM $2 AND sw.date >= $3 AND `+unstartedPlanned, userID, keepID, from); err != nil {
+		return fmt.Errorf("deleting sessions of replaced programs: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE programs SET scheduled_through=NULL WHERE user_id=$1 AND id<>$2 AND scheduled_through IS NOT NULL`, userID, keepID); err != nil {
+		return fmt.Errorf("clearing schedule watermarks of replaced programs: %w", err)
+	}
+	return nil
+}
+
 // insertPlacedSessions serves the materialize and regenerate operations of a
 // released app. It stores a pending placement, inserts the layout sessions
 // while keeping any slot that already holds one, replaces skipped entries of

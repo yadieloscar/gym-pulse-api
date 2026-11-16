@@ -21,8 +21,12 @@ go tool cover -func=coverage.out
 # GYMPULSE_TEST_RUNTIME_DATABASE_URL is the gym_pulse_api login (scripts/ci/runtime-role.sql).
 GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
 GYMPULSE_TEST_RUNTIME_DATABASE_URL='postgres://gym_pulse_api:gym_pulse_api@127.0.0.1:15432/gympulse?sslmode=disable' \
-  go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
+  go test -p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
 ```
+
+`-p 1` runs the two packages one after the other. The migration tests re-run each strict migration
+on the shared test database, and a migration that alters a table (045 does) can deadlock with a DAO
+test running at the same moment. CI runs the two packages as separate steps.
 
 `go test ./...` covers unit, handler, router, and static DAO source-inspection tests only. The
 DAO's transactional behavior is verified by the integration suite above, which CI runs in the
