@@ -183,7 +183,7 @@ specs/031-one-active-program/
 ├── quickstart.md
 ├── contracts/one-active-program.openapi.yaml
 ├── checklists/requirements.md
-└── tasks.md             # next stage (/speckit-tasks)
+└── tasks.md
 ```
 
 ### Source Code (repository root)
@@ -194,7 +194,7 @@ docs/DATABASE_DESIGN.md
 internal/
 ├── dao/program_dao.go, plan_transition_dao.go, schedule_dao.go (+ tests)
 ├── dao/schedule_fill.go (new, + integration test)
-├── handler/program.go, schedule.go, plan_transition.go (+ tests)
+├── handler/training.go, plan_transition.go (+ tests)
 ├── model/training.go, training_materialization.go (+ tests)
 ├── router/router.go (+ test)
 └── service/training_svc.go, plan_transition_svc.go, schedule_svc.go (+ tests)
