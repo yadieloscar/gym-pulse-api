@@ -11,9 +11,7 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -26,15 +24,12 @@ import (
 	_ "time/tzdata"
 
 	"github.com/go-playground/validator/v10"
-	"github.com/golang-migrate/migrate/v4"
-	"github.com/golang-migrate/migrate/v4/database/postgres"
-	_ "github.com/golang-migrate/migrate/v4/source/file"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
 
 	_ "github.com/gym-pulse/gym-pulse-api/docs"
 	"github.com/gym-pulse/gym-pulse-api/internal/config"
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
+	"github.com/gym-pulse/gym-pulse-api/internal/dbmigrate"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
 	"github.com/gym-pulse/gym-pulse-api/internal/router"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
@@ -74,14 +69,21 @@ func main() {
 	logger := slog.New(slogHandler)
 	slog.SetDefault(logger)
 
-	// Run migrations as the schema owner before any request pool opens. The
-	// request pools below may connect as the least-privilege runtime role,
-	// which cannot run DDL.
-	if err := runMigrations(cfg.DatabaseMigrateURL); err != nil {
-		logger.Error("failed to run migrations", "error", err)
-		os.Exit(1)
+	// Development and test migrate as the schema owner before any request
+	// pool opens; the request pools below may connect as the least-privilege
+	// runtime role, which cannot run DDL. Staging and production never migrate
+	// here: ./migrate (cmd/migrate) runs as the pre-deploy step and a failure
+	// there aborts the deploy before this server starts.
+	if !cfg.MigrateOnStart {
+		logger.Info("skipping startup migrations; ./migrate owns them in this environment")
+	} else {
+		result, err := dbmigrate.Up(cfg.DatabaseMigrateURL, dbmigrate.DefaultSource)
+		if err != nil {
+			logger.Error("failed to run migrations", "error", err)
+			os.Exit(1)
+		}
+		logger.Info("migrations complete", "version", result.Version, "changed", result.Changed)
 	}
-	logger.Info("migrations complete")
 
 	// Connect to database.
 	poolConfig, err := pgxpool.ParseConfig(cfg.DatabaseURL)
@@ -294,28 +296,4 @@ func main() {
 		os.Exit(1)
 	}
 	logger.Info("server stopped")
-}
-
-func runMigrations(databaseURL string) error {
-	db, err := sql.Open("pgx", databaseURL)
-	if err != nil {
-		return fmt.Errorf("opening migration db: %w", err)
-	}
-	defer db.Close()
-
-	driver, err := postgres.WithInstance(db, &postgres.Config{})
-	if err != nil {
-		return fmt.Errorf("creating migration driver: %w", err)
-	}
-
-	m, err := migrate.NewWithDatabaseInstance("file://migrations", "postgres", driver)
-	if err != nil {
-		return fmt.Errorf("creating migrator: %w", err)
-	}
-
-	if err := m.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("running migrations: %w", err)
-	}
-
-	return nil
 }

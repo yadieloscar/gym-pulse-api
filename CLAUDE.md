@@ -18,8 +18,10 @@ go tool cover -func=coverage.out
 # test that needs PostgreSQL is behind the `integration` build tag. Point the URL
 # at a disposable database with the migrations applied (the API applies them on
 # boot; see docker-compose.yml in the parent workspace).
+# GYMPULSE_TEST_RUNTIME_DATABASE_URL is the gym_pulse_api login (scripts/ci/runtime-role.sql).
 GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
-  go test -race -tags=integration ./internal/dao -count=1 -timeout=5m
+GYMPULSE_TEST_RUNTIME_DATABASE_URL='postgres://gym_pulse_api:gym_pulse_api@127.0.0.1:15432/gympulse?sslmode=disable' \
+  go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
 ```
 
 `go test ./...` covers unit, handler, router, and static DAO source-inspection tests only. The

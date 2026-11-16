@@ -1881,7 +1881,7 @@ subject before attaching identity to the request.
 
 | Role | Status | Privileges |
 |---|---|---|
-| Schema owner (`postgres` on Supabase, `DATABASE_MIGRATE_URL`) | Current | Owns every table; runs `cmd/server` startup migrations only. No request traffic |
+| Schema owner (`postgres` on Supabase, `DATABASE_MIGRATE_URL`) | Current | Owns every table and the private `gym_pulse_private` schema; used only by `./migrate` (`cmd/migrate`, the release pre-deploy step) and by development/test server startup. No request traffic |
 | `gym_pulse_api` (`DATABASE_URL`, `DATABASE_LOCK_URL`) | Current (026) | `USAGE` on `public` and `auth`; `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the 30 application tables; `SELECT` on `auth.users`; one permissive RLS policy per table. No superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB`, ownership, `CREATE` on `public`, or access to `schema_migrations` |
 | `gym_pulse_readonly` | Target | Explicit read access for approved operational diagnostics; audited |
 | Supabase `anon`/`authenticated` | Current (016) | No application-table privileges because clients do not use the Data API |
@@ -1910,11 +1910,22 @@ API. Two alternatives were rejected:
 
 Operational rules:
 
-- Every migration that creates a table adds `GRANT SELECT, INSERT, UPDATE, DELETE ... TO
-  gym_pulse_api` (default privileges cover tables the owner creates, but say it explicitly) and a
-  `gym_pulse_api_access` policy. `internal/dao/supabase_security_migration_test.go` fails when a
-  table is neither listed in 026 nor given its own policy; migration 026 itself raises when any
-  existing table is left unprovisioned.
+- Every migration that creates a table ends with
+  `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 043). The helper enables
+  RLS, revokes `anon`, `authenticated`, and `service_role`, and grants `gym_pulse_api` DML plus the
+  `gym_pulse_api_access` policy. It lives in a private schema no client role can use and runs as
+  the caller. Tables from 033 and earlier carry the same SQL inline.
+  `internal/dao/supabase_security_migration_test.go` fails when a table is neither listed in 026,
+  given its own policy, nor passed to the helper; migration 026 itself raises when any existing
+  table is left unprovisioned.
+- Migrations from 043 on are re-runnable and single-transaction (`ON CONFLICT`, `IF [NOT] EXISTS`,
+  `CREATE OR REPLACE`, drop-before-create for policies and constraints, no `BEGIN`/`COMMIT` or
+  `CONCURRENTLY`). `internal/dbmigrate/lint_test.go` enforces it; the CI round-trip job applies,
+  fully rolls back, and re-applies every migration and compares the catalog. The authoring rules
+  live in `docs/RELEASE_RUNBOOK.md` "Writing a migration".
+- `internal/dao/runtime_role_integration_test.go` connects as `gym_pulse_api` and proves it can
+  read every application table and `auth.users.id` and is denied DDL, `TRUNCATE`, the ledger, and
+  the helper.
 - Migration 026 creates the role `NOLOGIN` when absent so local and CI databases need no operator
   step. Production creates it ahead of time with `LOGIN` and a credential; the migration never
   alters an existing role or contains a credential.

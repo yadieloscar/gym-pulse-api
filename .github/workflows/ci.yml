@@ -151,6 +151,18 @@ jobs:
                 # Creates the gym_pulse_api login ahead of migration 026, the
                 # way production does, so smoke runs as the restricted role.
                 - ./scripts/ci/runtime-role.sql:/docker-entrypoint-initdb.d/runtime-role.sql:ro
+            # Mirrors the release pre-deploy step: the image's ./migrate binary
+            # applies migrations as the owner and must exit 0 before the API
+            # starts.
+            migrate:
+              build: .
+              command: ["./migrate"]
+              environment:
+                DATABASE_MIGRATE_URL: postgres://gympulse:gympulse@db:5432/gympulse
+                ENVIRONMENT: test
+              depends_on:
+                db:
+                  condition: service_healthy
             api:
               build: .
               environment:
@@ -172,6 +184,8 @@ jobs:
               depends_on:
                 db:
                   condition: service_healthy
+                migrate:
+                  condition: service_completed_successfully
               ports: ["8080:8080"]
           YAML
           docker compose -f docker-compose.ci.yml up -d --build
@@ -180,7 +194,7 @@ jobs:
             [ "$code" = "200" ] && break
             sleep 2
           done
-          [ "$code" = "200" ] || { docker compose -f docker-compose.ci.yml logs api; exit 1; }
+          [ "$code" = "200" ] || { docker compose -f docker-compose.ci.yml logs migrate api; exit 1; }
 
       - name: Seed smoke auth user
         run: |
@@ -208,12 +222,25 @@ jobs:
       - name: PostgreSQL DAO integration suite
         env:
           GYMPULSE_TEST_DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
+          # The runtime-role tests connect as the login created by
+          # scripts/ci/runtime-role.sql to prove the request role's reach.
+          GYMPULSE_TEST_RUNTIME_DATABASE_URL: postgres://gym_pulse_api:gym_pulse_api@127.0.0.1:15432/gympulse?sslmode=disable
         run: |
           # Every DB-backed DAO test lives behind the `integration` build tag
           # and runs here against the migrated smoke database. No -run filter:
           # a new integration test must not need a `TestRelease` prefix to be
           # executed in CI.
           go test -race -tags=integration ./internal/dao -count=1 -timeout=5m
+
+      - name: Migration round-trip and re-run checks
+        env:
+          GYMPULSE_TEST_DATABASE_URL: postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable
+        run: |
+          # Applies every migration to a scratch database, rolls all back,
+          # re-applies, and compares the schema; then re-runs each strict
+          # (043+) migration against the migrated smoke database in a
+          # rolled-back transaction.
+          go test -tags=integration ./internal/dbmigrate -count=1 -timeout=5m
 
       - name: Tear down
         if: always()
