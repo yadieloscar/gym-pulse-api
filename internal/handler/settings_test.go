@@ -7,10 +7,142 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
+	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
+
+// memorySettingsDAO stores one account's settings in memory and applies a
+// partial update the way the SQL patch does, so handler tests can run the
+// real settings service and its validation.
+type memorySettingsDAO struct {
+	stored *model.UserSettings
+}
+
+func (d *memorySettingsDAO) Get(context.Context, uuid.UUID) (*model.UserSettings, error) {
+	if d.stored == nil {
+		defaults := model.DefaultUserSettings()
+		return &defaults, nil
+	}
+	got := *d.stored
+	return &got, nil
+}
+
+func (d *memorySettingsDAO) Upsert(_ context.Context, _ uuid.UUID, s *model.UserSettings) error {
+	stored := *s
+	d.stored = &stored
+	return nil
+}
+
+func (d *memorySettingsDAO) Patch(_ context.Context, _ uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+	if d.stored == nil {
+		defaults := model.DefaultUserSettings()
+		d.stored = &defaults
+	}
+	if req.WeightUnit != nil {
+		d.stored.WeightUnit = *req.WeightUnit
+	}
+	if req.WeeklyGoal != nil {
+		d.stored.WeeklyGoal = *req.WeeklyGoal
+	}
+	if req.Palette != nil {
+		d.stored.Palette = *req.Palette
+	}
+	got := *d.stored
+	return &got, nil
+}
+
+// TestSettingsHandler_Palettes runs the handler over the real service, so the
+// statuses come from the request validator rather than from a stub.
+func TestSettingsHandler_Palettes(t *testing.T) {
+	uid := uuid.New()
+	newHandler := func() *SettingsHandler {
+		return NewSettingsHandler(service.NewSettingsService(&memorySettingsDAO{}, validator.New()))
+	}
+
+	t.Run("no stored settings reads the voltLime default", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		newHandler().Get(rec, newReq(t, "GET", "/", nil, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got model.UserSettings
+		decodeBody(t, rec, &got)
+		want := model.UserSettings{WeightUnit: "lb", WeeklyGoal: 5, Palette: "voltLime"}
+		if got != want {
+			t.Errorf("defaults = %+v, want %+v", got, want)
+		}
+	})
+
+	t.Run("first write without a palette stores voltLime", func(t *testing.T) {
+		h := newHandler()
+		rec := httptest.NewRecorder()
+		h.Update(rec, newReq(t, "PUT", "/", map[string]any{"weekly_goal": 3}, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		var got model.UserSettings
+		decodeBody(t, rec, &got)
+		if got.Palette != "voltLime" || got.WeeklyGoal != 3 {
+			t.Errorf("got %+v, want palette voltLime and weekly_goal 3", got)
+		}
+	})
+
+	// irisViolet is new in contract 1.9.0. The other six must keep working for
+	// older app builds, including the three the current app no longer offers.
+	accepted := []string{"irisViolet", "voltLime", "obsidianEmber", "abyssCerulean", "mossChartreuse", "oliveCitrine", "slateMint"}
+	for _, palette := range accepted {
+		t.Run("PUT "+palette+" -> 200", func(t *testing.T) {
+			h := newHandler()
+			seed := httptest.NewRecorder()
+			h.Update(seed, newReq(t, "PUT", "/", map[string]any{"weight_unit": "kg", "weekly_goal": 4}, uid))
+			if seed.Code != http.StatusOK {
+				t.Fatalf("seed status=%d body=%s", seed.Code, seed.Body.String())
+			}
+
+			rec := httptest.NewRecorder()
+			h.Update(rec, newReq(t, "PUT", "/", map[string]any{"palette": palette}, uid))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var got model.UserSettings
+			decodeBody(t, rec, &got)
+			want := model.UserSettings{WeightUnit: "kg", WeeklyGoal: 4, Palette: palette}
+			if got != want {
+				t.Errorf("PUT response = %+v, want %+v", got, want)
+			}
+
+			read := httptest.NewRecorder()
+			h.Get(read, newReq(t, "GET", "/", nil, uid))
+			var stored model.UserSettings
+			decodeBody(t, read, &stored)
+			if stored != want {
+				t.Errorf("GET after PUT = %+v, want %+v", stored, want)
+			}
+		})
+	}
+
+	for _, palette := range []string{"neonGrape", "irisviolet", "IrisViolet", ""} {
+		t.Run("PUT unknown palette "+palette+" -> 422", func(t *testing.T) {
+			h := newHandler()
+			rec := httptest.NewRecorder()
+			h.Update(rec, newReq(t, "PUT", "/", map[string]any{"palette": palette}, uid))
+			if rec.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+			}
+			var got struct {
+				Code    string            `json:"code"`
+				Details map[string]string `json:"details"`
+			}
+			decodeBody(t, rec, &got)
+			if got.Code != "VALIDATION_ERROR" || got.Details["field"] != "body" {
+				t.Errorf("got code=%q details=%+v", got.Code, got.Details)
+			}
+		})
+	}
+}
 
 func TestSettingsHandler_Get(t *testing.T) {
 	uid := uuid.New()

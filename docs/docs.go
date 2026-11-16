@@ -7712,7 +7712,8 @@ const docTemplate = `{
                         "mossChartreuse",
                         "voltLime",
                         "oliveCitrine",
-                        "slateMint"
+                        "slateMint",
+                        "irisViolet"
                     ]
                 },
                 "weekly_goal": {
@@ -7765,7 +7766,8 @@ const docTemplate = `{
                         "mossChartreuse",
                         "voltLime",
                         "oliveCitrine",
-                        "slateMint"
+                        "slateMint",
+                        "irisViolet"
                     ]
                 },
                 "weekly_goal": {

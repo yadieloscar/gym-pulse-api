@@ -222,16 +222,16 @@ account deletion leaves this row to the Supabase Admin API, after application an
 | `weekly_goal` | `integer` | not null; `5` | Weekly workout goal | Health |
 | `created_at` | `timestamptz` | not null; `now()` | First persistence instant | Private |
 | `updated_at` | `timestamptz` | not null; `now()` | Last settings mutation | Private |
-| `palette` | `text` | not null; `'obsidianEmber'` | App color palette | Private |
+| `palette` | `text` | not null; `'voltLime'` | App color palette | Private |
 
 **Current constraints and indexes**
 
 - Primary key: `user_id`.
-- Check: `palette IN ('obsidianEmber', 'abyssCerulean', 'mossChartreuse', 'voltLime', 'oliveCitrine', 'slateMint')`.
+- Check: `palette IN ('obsidianEmber', 'abyssCerulean', 'mossChartreuse', 'voltLime', 'oliveCitrine', 'slateMint', 'irisViolet')`.
 - **Gap**: `weight_unit` and `weekly_goal` are service-validated but not database-checked.
 - Validated FK `user_settings_user_auth_fk`: `user_id → auth.users(id) ON DELETE CASCADE` (017).
 
-**Migration sources**: `005_create_user_settings`, `015_add_settings_palette`, `023_add_settings_palette_moss`, `024_add_settings_palette_directions`.
+**Migration sources**: `005_create_user_settings`, `015_add_settings_palette`, `023_add_settings_palette_moss`, `024_add_settings_palette_directions`, `042_add_settings_palette_iris`.
 
 ### Table: `public.training_profiles`
 
@@ -2312,6 +2312,7 @@ Report one of:
 | 038 | `workout_imports` CSV import batches (write-once, row-level operation key), `day_logs.import_id` with cascade and partial index, RLS and role revocation, runtime-role grant and policy |
 | 040 | `saved_meals` and `saved_meal_items` (athlete-saved lists of foods; no stored values), unique name and item indexes, RLS and role revocation, runtime-role grants and policies |
 | 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
+| 042 | Settings palette gains `irisViolet`; column default becomes `voltLime`; no stored row changes |
 
 ## 19. Decision summary
 

@@ -82,17 +82,31 @@ responds within the bounded readiness timeout. Otherwise returns
 ### `GET /api/v1/settings`
 Response 200:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" | "irisViolet" }
 ```
+An account that has never saved settings reads the defaults
+`{ "weight_unit": "lb", "weekly_goal": 5, "palette": "voltLime" }`.
+
+Contract 1.9.0 (additive) adds the palette value `irisViolet` and changes the
+default palette from `obsidianEmber` to `voltLime`. Stored palettes are not
+rewritten: an account that already saved any setting keeps the palette it has.
+All seven values stay valid, including `mossChartreuse`, `oliveCitrine`, and
+`slateMint`, which current app builds no longer offer. A client must tolerate
+a palette name it does not know (a newer build may have stored it) and fall
+back to its own default for display.
 
 ### `PUT /api/v1/settings`
 Body is partial; omitted fields preserve their current values:
 ```json
-{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" }
+{ "weight_unit": "lb" | "kg", "weekly_goal": 1..7, "palette": "obsidianEmber" | "abyssCerulean" | "mossChartreuse" | "voltLime" | "oliveCitrine" | "slateMint" | "irisViolet" }
 ```
 Old two-field clients remain compatible and preserve the server palette.
 Palette-only updates preserve weight unit and weekly goal. Response 200 is the
 full authoritative settings object.
+
+`irisViolet` is accepted since contract 1.9.0. A first write that omits a
+field stores that field's default (`lb`, `5`, `voltLime`). Any other palette
+name is `422 VALIDATION_ERROR` with `details.field = "body"`.
 
 ---
 
