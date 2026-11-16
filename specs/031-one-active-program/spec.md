@@ -10,7 +10,7 @@
 [Planned sport sessions](../013-planned-sport-sessions/spec.md) where it describes how a program is
 placed on dates. See "Changes to approved specs and contracts" below.
 
-**Created**: 2026-11-16
+**Created**: 2026-11-16 · **Revised**: 2026-11-16 (planning: placement of existing programs)
 
 **Status**: Approved (owner answered D1 to D6 and accepted every drafting default on 2026-11-16;
 see Clarifications)
@@ -63,6 +63,14 @@ Verified in code on `main` on 2026-11-16:
   program's own weekdays decide the schedule.
 - Q: How does a released app keep working? → A: Every change is additive. A request that carries no
   weekdays is placed by the server exactly once, in sequence across the available days, as today.
+
+### Session 2026-11-16 (planning)
+
+- Q: How do existing programs get weekdays? → A: Not in the migration. They are placed by the same
+  one-time rule as any unplaced program, the first time a session would be created for them
+  (research R5). FR-001 and FR-021 are amended to match.
+- Q: How does the app detect support? → A: Every program unit carries `weekdays` as an array
+  (research R10).
 
 ### Session 2026-11-16 (owner accepted the defaults)
 
@@ -302,9 +310,10 @@ the program list, the sessions remain with their names, and removing the active 
 
 **Weekdays**
 
-- **FR-001**: Every program unit (workout or sport session) MUST carry one or more unique ISO
-  weekdays, returned on every program read. The existing single `preferred_weekday` MUST remain in
-  responses as the unit's first weekday.
+- **FR-001**: Every placed program unit (workout or sport session) MUST carry one or more unique
+  ISO weekdays. Every program read MUST return each unit's `weekdays` as an array, empty while the
+  unit is unplaced, so its presence signals support. The existing single `preferred_weekday` MUST
+  remain in responses as a placed unit's first weekday.
 - **FR-002**: A unit saved without weekdays MUST be accepted. The server MUST place such a program
   once, in sequence across the athlete's available days, when it is first started or filled, and
   MUST store and return the result.
@@ -368,8 +377,9 @@ the program list, the sessions remain with their names, and removing the active 
 - **FR-020**: `docs/CONTRACTS.md` MUST document the new fields, mutations, and rules as the next
   free minor contract version at plan time, and MUST state how a client detects support.
 - **FR-021**: The migration MUST be additive and re-runnable under the strict migration rules, MUST
-  give every existing program unit weekdays from its current placement without rewriting any
-  session, and its down migration MUST remove only what it added.
+  NOT rewrite any session, and its down migration MUST remove only what it added. Existing
+  programs MUST be placed by the FR-002 rule on first use (amended 2026-11-16 in planning, research
+  R5: one placement rule, in one place).
 - **FR-022**: Fill, move, and edit queries MUST be index-backed, bounded, and owner-scoped.
 
 ### Key Entities
