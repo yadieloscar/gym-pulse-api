@@ -20,7 +20,8 @@ type TrainingMutationDAO interface {
 	AdoptLegacy(ctx context.Context, userID uuid.UUID, now time.Time, record model.IdempotencyRecord) (*model.AdoptLegacyProgramResponse, bool, error)
 	PutTrainingProfile(ctx context.Context, userID uuid.UUID, profile *model.TrainingProfile, expectedRevision int64, record model.IdempotencyRecord) (*model.TrainingProfile, bool, error)
 	CreateProgram(ctx context.Context, userID uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error)
-	ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, record model.IdempotencyRecord) (*model.Program, bool, error)
+	ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error)
+	DeleteProgram(ctx context.Context, userID, programID uuid.UUID) error
 	ReplaceScheduledWorkout(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	UpdateScheduledSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, request model.SetMutationRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
@@ -143,7 +144,15 @@ func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUI
 	return program, false, nil
 }
 
-func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, record model.IdempotencyRecord) (*model.Program, bool, error) {
+// ReplaceProgram saves a program. Units the request names by ID are updated in
+// place, so their sessions and one-off moves keep their unit; units without a
+// known ID are inserted and units the request omits are deleted. When the
+// program is active, its planned unstarted sessions dated after today follow
+// the save in this same transaction: a removed unit's sessions go, a unit with
+// new weekdays is laid out again, a unit with new content has its sessions
+// re-snapshotted, and an unchanged unit is left alone. Sessions that are
+// started, finished, missed, or dated today or earlier never change.
+func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("beginning custom program update: %w", err)
@@ -152,11 +161,21 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return nil, false, err
 	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return nil, false, err
+	}
 	var replay model.Program
 	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
 		return nil, false, err
 	} else if found {
 		return &replay, true, nil
+	}
+	stored, err := loadProgram(ctx, tx, userID, program.ID)
+	if err != nil {
+		return nil, false, err
+	}
+	if stored.Revision != expectedRevision {
+		return nil, false, &model.ConflictError{Message: "program revision conflict", Expected: expectedRevision, Actual: stored.Revision, Authoritative: stored}
 	}
 	if program.Active {
 		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true AND id<>$2`, userID, program.ID); err != nil {
@@ -166,24 +185,42 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 	err = tx.QueryRow(ctx, `
 		UPDATE programs SET name=$3, primary_goal=$4, roadmap=$5, active=$6,
 		       revision=revision+1, updated_at=now()
-		WHERE id=$1 AND user_id=$2 AND revision=$7
+		WHERE id=$1 AND user_id=$2
 		RETURNING revision, created_at, updated_at`, program.ID, userID, program.Name,
-		program.PrimaryGoal, program.Roadmap, program.Active, expectedRevision,
+		program.PrimaryGoal, program.Roadmap, program.Active,
 	).Scan(&program.Revision, &program.CreatedAt, &program.UpdatedAt)
-	if errors.Is(err, pgx.ErrNoRows) {
-		current, getErr := loadProgram(ctx, tx, userID, program.ID)
-		if getErr != nil {
-			return nil, false, getErr
-		}
-		return nil, false, &model.ConflictError{Message: "program revision conflict", Expected: expectedRevision, Actual: current.Revision, Authoritative: current}
-	}
 	if err != nil {
 		return nil, false, fmt.Errorf("updating custom program: %w", err)
 	}
-	if _, err := tx.Exec(ctx, `DELETE FROM program_workouts WHERE program_id=$1`, program.ID); err != nil {
-		return nil, false, fmt.Errorf("replacing custom program workouts: %w", err)
+	program.StarterProgramID, program.StarterVersion, program.ScheduledThrough = stored.StarterProgramID, stored.StarterVersion, stored.ScheduledThrough
+
+	today := now.UTC().Format(time.DateOnly)
+	var availableDays []int
+	profile, err := loadTrainingProfile(ctx, tx, userID)
+	var noProfile *model.NotFoundError
+	switch {
+	case err == nil:
+		availableDays = profile.AvailableDays
+		location, locationErr := time.LoadLocation(profile.Timezone)
+		if locationErr != nil {
+			location = time.UTC
+		}
+		today = now.In(location).Format(time.DateOnly)
+	case errors.As(err, &noProfile):
+		// Without a profile there is no timezone; the UTC date stands.
+	default:
+		return nil, false, err
 	}
-	if err := insertProgramWorkouts(ctx, tx, program.ID, program.Workouts); err != nil {
+	tomorrow, err := shiftDate(today, 1)
+	if err != nil {
+		return nil, false, err
+	}
+
+	diff := model.DiffUnits(stored.Workouts, program.Workouts)
+	if err := replaceProgramUnits(ctx, tx, userID, program, diff, tomorrow); err != nil {
+		return nil, false, err
+	}
+	if err := syncProgramSessions(ctx, tx, userID, stored, program, diff, availableDays, tomorrow); err != nil {
 		return nil, false, err
 	}
 	record.ResourceID = &program.ID
@@ -195,6 +232,216 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 		return nil, false, fmt.Errorf("committing custom program update: %w", err)
 	}
 	return program, false, nil
+}
+
+// replaceProgramUnits brings the stored units in line with the saved program.
+// It first removes the sessions of removed units, because deleting a unit
+// clears the unit reference on its sessions.
+func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, program *model.Program, diff model.UnitDiff, tomorrow string) error {
+	if len(diff.Removed) > 0 {
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id = ANY($2) AND sw.date >= $3 AND `+unstartedPlanned, userID, diff.Removed, tomorrow); err != nil {
+			return fmt.Errorf("deleting sessions of removed units: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM program_workouts WHERE program_id=$1 AND id = ANY($2)`, program.ID, diff.Removed); err != nil {
+			return fmt.Errorf("deleting removed program units: %w", err)
+		}
+	}
+	// Kept units move out of the way first so renumbering in place cannot
+	// collide with the unique (program_id, sequence_position) constraint.
+	if _, err := tx.Exec(ctx, `UPDATE program_workouts SET sequence_position=sequence_position+1000 WHERE program_id=$1`, program.ID); err != nil {
+		return fmt.Errorf("parking program unit order: %w", err)
+	}
+	rewrite := make(map[int]bool, len(diff.Replaced)+len(diff.Resnapshot))
+	for _, index := range diff.Replaced {
+		rewrite[index] = true
+	}
+	for _, index := range diff.Resnapshot {
+		rewrite[index] = true
+	}
+	added := make(map[int]bool, len(diff.Added))
+	for _, index := range diff.Added {
+		added[index] = true
+	}
+	for index := range program.Workouts {
+		unit := &program.Workouts[index]
+		if added[index] {
+			continue
+		}
+		unit.Kind = model.NormalizeUnitKind(unit.Kind)
+		sport := sportColumns(unit.Sport)
+		if _, err := tx.Exec(ctx, `
+			UPDATE program_workouts SET name=$3, preferred_weekday=$4, sequence_position=$5,
+			       kind=$6, sport_id=$7, sport_name=$8, target_duration_minutes=$9,
+			       target_distance_meters=$10, sport_notes=$11, weekdays=$12
+			WHERE id=$1 AND program_id=$2`, unit.ID, program.ID, unit.Name, unit.PreferredWeekday, unit.SequencePosition,
+			unit.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes, weekdayColumn(unit.Weekdays)); err != nil {
+			return fmt.Errorf("updating program unit: %w", err)
+		}
+		if !rewrite[index] {
+			// An unchanged unit keeps its exercise rows, so the sessions that
+			// reference them keep their provenance.
+			continue
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM program_exercises WHERE program_workout_id=$1`, unit.ID); err != nil {
+			return fmt.Errorf("replacing program unit exercises: %w", err)
+		}
+		if err := insertProgramExercises(ctx, tx, unit); err != nil {
+			return err
+		}
+	}
+	for _, index := range diff.Added {
+		// An ID the program does not own names nothing here; the unit is new.
+		program.Workouts[index].ID = uuid.Nil
+		if err := insertProgramWorkouts(ctx, tx, program.ID, program.Workouts[index:index+1]); err != nil {
+			return err
+		}
+	}
+	// Unchanged units were not re-read; give them their stored exercise IDs
+	// back so the response matches the rows.
+	stored, err := loadProgramWorkouts(ctx, tx, userID, program.ID)
+	if err != nil {
+		return err
+	}
+	byID := make(map[uuid.UUID]*model.ProgramWorkout, len(stored))
+	for i := range stored {
+		byID[stored[i].ID] = &stored[i]
+	}
+	for index := range program.Workouts {
+		if current, ok := byID[program.Workouts[index].ID]; ok {
+			program.Workouts[index].Exercises = current.Exercises
+		}
+	}
+	return nil
+}
+
+// syncProgramSessions makes the planned unstarted sessions dated from
+// tomorrow on match the saved program.
+func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, stored, program *model.Program, diff model.UnitDiff, availableDays []int, tomorrow string) error {
+	if !program.Active {
+		if stored.Active {
+			// The save stopped the program: its future goes with it.
+			if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, program.ID, tomorrow); err != nil {
+				return fmt.Errorf("deleting sessions of a stopped program: %w", err)
+			}
+		}
+		return nil
+	}
+	if !stored.Active {
+		// The save started the program: no other program keeps a future.
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id IS DISTINCT FROM $2 AND sw.date >= $3 AND `+unstartedPlanned, userID, program.ID, tomorrow); err != nil {
+			return fmt.Errorf("deleting sessions of the replaced program: %w", err)
+		}
+	}
+	if len(program.Workouts) > 0 && !program.Placed() {
+		// A client older than weekdays saved the program. Place it now, the
+		// way its follow-up regenerate would, so the week is never left empty.
+		if len(availableDays) == 0 {
+			return nil
+		}
+		if err := model.PlaceProgram(program, availableDays, tomorrow); err != nil {
+			return err
+		}
+		if err := storePlacement(ctx, tx, program.ID, program.Workouts); err != nil {
+			return err
+		}
+	}
+	through := tomorrow
+	if program.ScheduledThrough != nil {
+		through = max(through, *program.ScheduledThrough)
+	}
+	if !stored.Active || program.ScheduledThrough == nil {
+		// Nothing was laid out for this program yet; the next read fills it.
+		return nil
+	}
+	relaid := append(append([]int{}, diff.Replaced...), diff.Added...)
+	for _, index := range relaid {
+		unit := &program.Workouts[index]
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, unit.ID, tomorrow); err != nil {
+			return fmt.Errorf("deleting sessions of a moved unit: %w", err)
+		}
+		sessions, err := model.UnitSessions(program.ID, unit, tomorrow, through)
+		if err != nil {
+			return err
+		}
+		if err := insertLayoutSessions(ctx, tx, userID, sessions, false); err != nil {
+			return err
+		}
+	}
+	for _, index := range diff.Resnapshot {
+		if err := resnapshotUnitSessions(ctx, tx, userID, &program.Workouts[index], tomorrow); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// resnapshotUnitSessions rewrites what the unit's planned unstarted sessions
+// snapshot: name, order, sport target, and required sets. Their dates stay,
+// so a session the athlete moved keeps its date.
+func resnapshotUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, unit *model.ProgramWorkout, from string) error {
+	rows, err := tx.Query(ctx, `SELECT sw.id FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, unit.ID, from)
+	if err != nil {
+		return fmt.Errorf("finding sessions to re-snapshot: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return fmt.Errorf("reading sessions to re-snapshot: %w", err)
+	}
+	sport := sportColumns(unit.Sport)
+	for _, id := range ids {
+		if _, err := tx.Exec(ctx, `
+			UPDATE scheduled_workouts SET name=$2, sequence_position=$3, kind=$4, sport_id=$5, sport_name=$6,
+			       target_duration_minutes=$7, target_distance_meters=$8, sport_notes=$9,
+			       revision=revision+1, updated_at=now()
+			WHERE id=$1`, id, unit.Name, unit.SequencePosition, model.NormalizeUnitKind(unit.Kind),
+			sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes); err != nil {
+			return fmt.Errorf("re-snapshotting session: %w", err)
+		}
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_sets WHERE scheduled_workout_id=$1`, id); err != nil {
+			return fmt.Errorf("replacing session sets: %w", err)
+		}
+		if unit.IsSport() {
+			continue
+		}
+		if err := insertScheduledSets(ctx, tx, id, model.SnapshotScheduledSets(unit.Exercises)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// DeleteProgram removes a saved program and its planned unstarted sessions.
+// The active program cannot be removed. Finished sessions keep their
+// snapshots; their program reference becomes null through the foreign key.
+func (r *trainingMutationDAO) DeleteProgram(ctx context.Context, userID, programID uuid.UUID) error {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning program delete: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
+		return err
+	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return err
+	}
+	program, err := loadProgram(ctx, tx, userID, programID)
+	if err != nil {
+		return err
+	}
+	if program.Active {
+		return &model.ConflictError{Message: "the active program cannot be removed", Authoritative: program}
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND `+unstartedPlanned, userID, programID); err != nil {
+		return fmt.Errorf("deleting sessions of the removed program: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM programs WHERE id=$1 AND user_id=$2`, programID, userID); err != nil {
+		return fmt.Errorf("deleting program: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing program delete: %w", err)
+	}
+	return nil
 }
 
 func loadTrainingProfile(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (*model.TrainingProfile, error) {

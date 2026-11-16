@@ -111,6 +111,9 @@ type adoptionMutationStub struct {
 	records  []model.IdempotencyRecord
 	now      time.Time
 	calls    int
+	// deleted records DeleteProgram calls; deleteErr is what they return.
+	deleted   []uuid.UUID
+	deleteErr error
 }
 
 func (s *adoptionMutationStub) AdoptLegacy(_ context.Context, _ uuid.UUID, now time.Time, record model.IdempotencyRecord) (*model.AdoptLegacyProgramResponse, bool, error) {
@@ -133,10 +136,15 @@ func (s *adoptionMutationStub) CreateProgram(_ context.Context, _ uuid.UUID, pro
 	return program, false, nil
 }
 
-func (s *adoptionMutationStub) ReplaceProgram(_ context.Context, _ uuid.UUID, program *model.Program, expected int64, record model.IdempotencyRecord) (*model.Program, bool, error) {
+func (s *adoptionMutationStub) ReplaceProgram(_ context.Context, _ uuid.UUID, program *model.Program, expected int64, _ time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	s.records = append(s.records, record)
 	program.Revision = expected + 1
 	return program, false, nil
+}
+
+func (s *adoptionMutationStub) DeleteProgram(_ context.Context, _, programID uuid.UUID) error {
+	s.deleted = append(s.deleted, programID)
+	return s.deleteErr
 }
 
 func (*adoptionMutationStub) ReplaceScheduledWorkout(context.Context, uuid.UUID, *model.ScheduledWorkout, int64, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {

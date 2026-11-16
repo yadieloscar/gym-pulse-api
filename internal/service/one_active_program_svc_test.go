@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -266,5 +267,144 @@ func TestStartNeedsAProfileForAnUnplacedProgram(t *testing.T) {
 	var validation *model.ValidationError
 	if !errors.As(err, &validation) || validation.Field != "available_days" {
 		t.Fatalf("Preview() without any profile error = %v, want available_days validation error", err)
+	}
+}
+
+// rollingScheduleRepo is a schedule repository that can fill and move, and
+// records what the service asked of it.
+type rollingScheduleRepo struct {
+	*coverageScheduleRepo
+	fills    []string
+	fillDays []int
+	moves    []string
+	moveErr  error
+}
+
+func (r *rollingScheduleRepo) EnsureFilled(_ context.Context, _ uuid.UUID, today string, availableDays []int) error {
+	r.fills = append(r.fills, today)
+	r.fillDays = availableDays
+	return nil
+}
+
+func (r *rollingScheduleRepo) MoveIdempotent(_ context.Context, _, workoutID uuid.UUID, date, today string, expected int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	r.moves = append(r.moves, date+" today="+today+" scope="+record.Scope)
+	if r.moveErr != nil {
+		return nil, false, r.moveErr
+	}
+	return &model.ScheduledWorkout{ID: workoutID, Date: date, Revision: expected + 1}, false, nil
+}
+
+func newRollingScheduleService(t *testing.T, profile *model.TrainingProfile, now string) (*scheduleService, *rollingScheduleRepo) {
+	t.Helper()
+	repo := &rollingScheduleRepo{coverageScheduleRepo: newCoverageScheduleRepo()}
+	sessions := newCoverageSessionRepo()
+	contract := NewScheduleService(repo, newCoverageProgramRepo(), &trainingProfileRepoStub{profile: profile}, sessions,
+		&coverageSetRepo{schedules: repo.coverageScheduleRepo, sessions: sessions}, &coverageParticipationRepo{}, nil, newCoverageIdempotencyRepo(), validator.New())
+	svc := contract.(*scheduleService)
+	fixed, err := time.Parse(time.RFC3339, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	svc.now = func() time.Time { return fixed }
+	return svc, repo
+}
+
+func TestScheduleReadKeepsTheActiveProgramFilled(t *testing.T) {
+	ctx, userID := context.Background(), uuid.New()
+	profile := coverageProfileFixture()
+	profile.Timezone, profile.AvailableDays = "America/New_York", []int{1, 3, 5}
+	// 02:30 UTC on the 17th is still the 16th in New York.
+	svc, repo := newRollingScheduleService(t, &profile, "2026-11-17T02:30:00Z")
+
+	if _, err := svc.List(ctx, userID, "2026-11-16", "2026-11-22"); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if !slices.Equal(repo.fills, []string{"2026-11-16"}) || !slices.Equal(repo.fillDays, []int{1, 3, 5}) {
+		t.Fatalf("fills = %v days = %v, want one fill for the athlete's local today with their available days", repo.fills, repo.fillDays)
+	}
+	// A read that ends before today is history; it fills nothing.
+	if _, err := svc.List(ctx, userID, "2026-10-01", "2026-10-31"); err != nil {
+		t.Fatalf("List(history) error = %v", err)
+	}
+	if len(repo.fills) != 1 {
+		t.Fatalf("a history read triggered a fill: %v", repo.fills)
+	}
+}
+
+func TestScheduleReadWithoutAProfileFillsNothing(t *testing.T) {
+	svc, repo := newRollingScheduleService(t, nil, "2026-11-16T12:00:00Z")
+	if _, err := svc.List(context.Background(), uuid.New(), "2026-11-16", "2026-11-22"); err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(repo.fills) != 0 {
+		t.Fatalf("fills = %v, want none without a training profile", repo.fills)
+	}
+}
+
+func TestMoveValidatesTheDateAgainstTheAthletesToday(t *testing.T) {
+	ctx, userID, workoutID := context.Background(), uuid.New(), uuid.New()
+	profile := coverageProfileFixture()
+	svc, repo := newRollingScheduleService(t, &profile, "2026-11-16T12:00:00Z")
+	request := func(date string) model.MoveScheduledWorkoutRequest {
+		return model.MoveScheduledWorkoutRequest{Date: date, ExpectedRevision: 2, OperationKey: "move-" + date}
+	}
+
+	for _, date := range []string{"2026-11-15", "2027-01-12", "next friday"} {
+		_, err := svc.Move(ctx, userID, workoutID, request(date))
+		var validation *model.ValidationError
+		if !errors.As(err, &validation) || validation.Field != "date" {
+			t.Fatalf("Move(%q) error = %v, want date validation error", date, err)
+		}
+	}
+	if _, err := svc.Move(ctx, userID, workoutID, model.MoveScheduledWorkoutRequest{Date: "2026-11-17"}); err == nil {
+		t.Fatal("Move() without a revision and key was accepted")
+	}
+	if len(repo.moves) != 0 {
+		t.Fatalf("invalid moves reached the repository: %v", repo.moves)
+	}
+
+	for _, date := range []string{"2026-11-16", "2027-01-11"} { // today and today + 56
+		moved, err := svc.Move(ctx, userID, workoutID, request(date))
+		if err != nil || moved.Date != date || moved.Revision != 3 {
+			t.Fatalf("Move(%q) = %+v, %v", date, moved, err)
+		}
+	}
+	want := []string{"2026-11-16 today=2026-11-16 scope=scheduled-workouts/move", "2027-01-11 today=2026-11-16 scope=scheduled-workouts/move"}
+	if !slices.Equal(repo.moves, want) {
+		t.Fatalf("moves = %v, want %v", repo.moves, want)
+	}
+
+	repo.moveErr = &model.ConflictError{Message: "only a planned workout that has not started can be moved"}
+	var conflict *model.ConflictError
+	if _, err := svc.Move(ctx, userID, workoutID, request("2026-11-18")); !errors.As(err, &conflict) {
+		t.Fatalf("Move() of a started workout error = %v, want the repository's conflict", err)
+	}
+}
+
+func TestMoveNeedsARepositoryThatCanMove(t *testing.T) {
+	sessions := newCoverageSessionRepo()
+	plain := newCoverageScheduleRepo()
+	svc := NewScheduleService(plain, newCoverageProgramRepo(), &trainingProfileRepoStub{}, sessions, &coverageSetRepo{schedules: plain, sessions: sessions}, &coverageParticipationRepo{}, nil, newCoverageIdempotencyRepo(), validator.New())
+	today := time.Now().UTC().Format(time.DateOnly)
+	if _, err := svc.Move(context.Background(), uuid.New(), uuid.New(), model.MoveScheduledWorkoutRequest{Date: today, ExpectedRevision: 1, OperationKey: "k"}); !errors.Is(err, errTrainingMutationsUnavailable) {
+		t.Fatalf("Move() error = %v, want the unavailable error", err)
+	}
+}
+
+func TestRemoveProgramDelegatesAndPassesTheConflictThrough(t *testing.T) {
+	ctx, userID, programID := context.Background(), uuid.New(), uuid.New()
+	mutations := &adoptionMutationStub{}
+	svc := NewProgramService(&coverageStarterRepo{}, newCoverageProgramRepo(), mutations, newCoverageIdempotencyRepo(), validator.New())
+	if err := svc.Delete(ctx, userID, programID); err != nil || !slices.Equal(mutations.deleted, []uuid.UUID{programID}) {
+		t.Fatalf("Delete() err=%v deleted=%v", err, mutations.deleted)
+	}
+	mutations.deleteErr = &model.ConflictError{Message: "the active program cannot be removed"}
+	var conflict *model.ConflictError
+	if err := svc.Delete(ctx, userID, programID); !errors.As(err, &conflict) {
+		t.Fatalf("Delete(active) error = %v, want conflict", err)
+	}
+	without := NewProgramService(&coverageStarterRepo{}, newCoverageProgramRepo(), nil, newCoverageIdempotencyRepo(), validator.New())
+	if err := without.Delete(ctx, userID, programID); !errors.Is(err, errTrainingMutationsUnavailable) {
+		t.Fatalf("Delete() without mutations error = %v, want the unavailable error", err)
 	}
 }

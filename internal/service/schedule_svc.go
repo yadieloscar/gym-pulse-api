@@ -29,6 +29,7 @@ type ScheduleService interface {
 	Skip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 	Unskip(ctx context.Context, userID, workoutID uuid.UUID, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 	Delete(ctx context.Context, userID, workoutID uuid.UUID) error
+	Move(ctx context.Context, userID, workoutID uuid.UUID, req model.MoveScheduledWorkoutRequest) (*model.ScheduledWorkout, error)
 }
 
 type WorkoutSessionService interface {
@@ -85,6 +86,9 @@ func NewParticipationService(schedule ScheduleService, participation dao.Partici
 
 func (s *scheduleService) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.ScheduledWorkout, error) {
 	if err := model.ValidateDateRange(from, to); err != nil {
+		return nil, err
+	}
+	if err := s.ensureFilled(ctx, userID, to); err != nil {
 		return nil, err
 	}
 	workouts, err := s.schedules.List(ctx, userID, from, to)
@@ -524,6 +528,69 @@ func (s *scheduleService) resolve(ctx context.Context, userID, workoutID uuid.UU
 		return result, err
 	}
 	result, _, err := s.mutations.UnskipScheduledWorkout(ctx, userID, workoutID, req.ExpectedRevision, record)
+	return result, err
+}
+
+// ensureFilled keeps the active program scheduled ahead of today before a
+// read that reaches today or later. The schedule rolls forward on its own:
+// the athlete never has to change something to get next week.
+func (s *scheduleService) ensureFilled(ctx context.Context, userID uuid.UUID, to string) error {
+	repo, ok := s.schedules.(dao.RollingScheduleDAO)
+	if !ok {
+		return nil
+	}
+	profile, err := s.profiles.Get(ctx, userID)
+	if isNotFound(err) {
+		// No profile means no timezone and no days to place on yet.
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	today := localToday(s.now(), profile.Timezone)
+	if to < today {
+		return nil
+	}
+	return repo.EnsureFilled(ctx, userID, today, profile.AvailableDays)
+}
+
+// Move changes the date of one planned, unstarted session to a date from
+// today through the filled range. Only that session changes; next week the
+// program is back on its own weekdays.
+func (s *scheduleService) Move(ctx context.Context, userID, workoutID uuid.UUID, req model.MoveScheduledWorkoutRequest) (*model.ScheduledWorkout, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "invalid move request", Field: "body"}
+	}
+	repo, ok := s.schedules.(dao.RollingScheduleDAO)
+	if !ok {
+		return nil, errTrainingMutationsUnavailable
+	}
+	target, err := model.ParseDate(req.Date)
+	if err != nil {
+		return nil, &model.ValidationError{Field: "date", Message: "date must be YYYY-MM-DD"}
+	}
+	timezone := "UTC"
+	if profile, err := s.profiles.Get(ctx, userID); err == nil {
+		timezone = profile.Timezone
+	} else if !isNotFound(err) {
+		return nil, err
+	}
+	today := localToday(s.now(), timezone)
+	first, _ := model.ParseDate(today)
+	if target.Before(first) || target.After(first.AddDate(0, 0, model.ScheduleHorizonDays)) {
+		return nil, &model.ValidationError{Field: "date", Message: "date must be from today through the next eight weeks"}
+	}
+	hash, err := hashPayload(struct {
+		WorkoutID uuid.UUID
+		Request   model.MoveScheduledWorkoutRequest
+	}{workoutID, req})
+	if err != nil {
+		return nil, err
+	}
+	result, _, err := repo.MoveIdempotent(ctx, userID, workoutID, req.Date, today, req.ExpectedRevision, model.IdempotencyRecord{
+		Scope: "scheduled-workouts/move", OperationKey: req.OperationKey, RequestHash: hash,
+		ResponseStatus: 200, ResourceType: "scheduled_workout",
+	})
 	return result, err
 }
 

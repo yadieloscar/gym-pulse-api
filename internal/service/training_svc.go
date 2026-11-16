@@ -33,6 +33,7 @@ type ProgramService interface {
 	CloneStarter(ctx context.Context, userID uuid.UUID, req model.CloneStarterProgramRequest) (*model.Program, error)
 	AdoptLegacy(ctx context.Context, userID uuid.UUID, req model.AdoptLegacyProgramRequest) (*model.AdoptLegacyProgramResponse, error)
 	Update(ctx context.Context, userID, programID uuid.UUID, req model.UpdateProgramRequest) (*model.Program, error)
+	Delete(ctx context.Context, userID, programID uuid.UUID) error
 }
 
 type trainingProfileService struct {
@@ -323,7 +324,7 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		if err != nil {
 			return nil, err
 		}
-		result, _, err := s.mutations.ReplaceProgram(ctx, userID, p, req.ExpectedRevision, model.IdempotencyRecord{
+		result, _, err := s.mutations.ReplaceProgram(ctx, userID, p, req.ExpectedRevision, s.now(), model.IdempotencyRecord{
 			Scope: "programs/update", OperationKey: req.OperationKey, RequestHash: hash,
 			ResponseStatus: 200, ResourceType: "program", ResourceID: &programID,
 		})
@@ -333,6 +334,15 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		return nil, err
 	}
 	return p, nil
+}
+
+// Delete removes a saved program the athlete is not following, together with
+// its planned unstarted sessions. Finished workouts stay in history.
+func (s *programService) Delete(ctx context.Context, userID, programID uuid.UUID) error {
+	if s.mutations == nil {
+		return errTrainingMutationsUnavailable
+	}
+	return s.mutations.DeleteProgram(ctx, userID, programID)
 }
 
 func cloneStarterWorkouts(src []model.ProgramWorkout) []model.ProgramWorkout {

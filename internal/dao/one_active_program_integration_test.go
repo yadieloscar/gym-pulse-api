@@ -368,3 +368,358 @@ func TestStartOfAnotherAthletesProgramIsNotFound(t *testing.T) {
 		t.Fatal("a refused start changed the other athlete's active program")
 	}
 }
+
+// saveNoon is midday UTC on fillToday; the fixture athlete's timezone is UTC.
+var saveNoon = time.Date(2026, 11, 16, 12, 0, 0, 0, time.UTC)
+
+// startOwnWeek replaces the fixture program with the push/pull/legs week,
+// started today, and returns it as stored.
+func (f *releaseFixture) startOwnWeek(t *testing.T) *model.Program {
+	t.Helper()
+	saved := f.saveProgram(t, "Push pull legs", pushPullLegsWeek())
+	f.start(t, saved, fillToday, nil, 0)
+	program, err := (&programDAO{pool: f.pool}).Get(f.ctx, f.userID, saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return program
+}
+
+func (f *releaseFixture) sessionOn(t *testing.T, programID uuid.UUID, date, name string) *model.ScheduledWorkout {
+	t.Helper()
+	var id uuid.UUID
+	if err := f.pool.QueryRow(f.ctx, `SELECT id FROM scheduled_workouts WHERE user_id=$1 AND program_id=$2 AND date=$3 AND name=$4`, f.userID, programID, date, name).Scan(&id); err != nil {
+		t.Fatalf("no %s session on %s: %v", name, date, err)
+	}
+	return f.load(t, id)
+}
+
+func (f *releaseFixture) move(t *testing.T, workout *model.ScheduledWorkout, date string, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	t.Helper()
+	return f.schedules.MoveIdempotent(f.ctx, f.userID, workout.ID, date, fillToday, workout.Revision, record)
+}
+
+// Q7: one planned session moves; nothing else does, and its slot stays empty.
+func TestMoveChangesOneSessionOnly(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	legs := f.sessionOn(t, program.ID, "2026-11-20", "Legs")
+	ride := f.sessionOn(t, program.ID, "2026-11-19", "Bike ride")
+	before := f.sessionsOf(t, program.ID, fillToday)
+
+	record := releaseRecord("scheduled-workouts/move")
+	moved, replay, err := f.move(t, legs, "2026-11-21", record)
+	if err != nil || replay {
+		t.Fatalf("move error = %v replay = %v", err, replay)
+	}
+	if moved.Date != "2026-11-21" || moved.Revision != legs.Revision+1 || len(moved.RequiredSets) != len(legs.RequiredSets) {
+		t.Fatalf("moved = %+v, want Saturday at revision %d with its sets", moved, legs.Revision+1)
+	}
+	again, replay, err := f.move(t, legs, "2026-11-21", record)
+	if err != nil || !replay || again.Revision != moved.Revision {
+		t.Fatalf("replay = %+v replay=%v err=%v, want the stored response", again, replay, err)
+	}
+
+	after := f.sessionsOf(t, program.ID, fillToday)
+	want := slices.Clone(before)
+	index := slices.Index(want, "2026-11-20 Legs")
+	want = slices.Delete(want, index, index+1)
+	want = slices.Insert(want, slices.Index(want, "2026-11-21 Volleyball"), "2026-11-21 Legs")
+	if !slices.Equal(after, want) {
+		t.Fatalf("after the move the schedule is %v, want only Legs moved to Saturday", after[:8])
+	}
+
+	// A sport session moves the same way.
+	if movedRide, _, err := f.move(t, ride, "2026-11-22", releaseRecord("scheduled-workouts/move")); err != nil || movedRide.Date != "2026-11-22" || movedRide.Sport == nil {
+		t.Fatalf("moving a sport session: %+v %v", movedRide, err)
+	}
+
+	// The vacated Friday is not refilled when the schedule rolls forward.
+	f.fill(t, "2026-11-18")
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND date='2026-11-20'`, f.userID); n != 0 {
+		t.Fatalf("%d sessions on the vacated Friday, want none", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND date='2026-11-27' AND name='Legs'`, f.userID); n != 1 {
+		t.Fatalf("next Friday holds %d Legs sessions, want the regular one", n)
+	}
+}
+
+func TestMoveRefusesStaleStartedFinishedAndPastSessions(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	var conflict *model.ConflictError
+
+	pull := f.sessionOn(t, program.ID, "2026-11-18", "Pull")
+	stale := *pull
+	stale.Revision = pull.Revision + 5
+	if _, _, err := f.move(t, &stale, "2026-11-19", releaseRecord("scheduled-workouts/move")); !errors.As(err, &conflict) || conflict.Actual != pull.Revision {
+		t.Fatalf("stale revision error = %v, want a revision conflict", err)
+	}
+
+	f.exec(t, `UPDATE scheduled_workouts SET status='completed', finalized_at=now() WHERE id=$1`, pull.ID)
+	finished := f.load(t, pull.ID)
+	_, _, err := f.move(t, finished, "2026-11-19", releaseRecord("scheduled-workouts/move"))
+	if !errors.As(err, &conflict) {
+		t.Fatalf("moving a finished workout error = %v, want a conflict", err)
+	}
+	if authoritative, ok := conflict.Authoritative.(*model.ScheduledWorkout); !ok || authoritative.ID != pull.ID || authoritative.Date != "2026-11-18" {
+		t.Fatalf("conflict resource = %+v, want the unmoved workout", conflict.Authoritative)
+	}
+
+	legs := f.sessionOn(t, program.ID, "2026-11-20", "Legs")
+	f.exec(t, `INSERT INTO workout_sessions (user_id,date,name,status,scheduled_workout_id) VALUES ($1,'2026-11-20','Legs','active',$2)`, f.userID, legs.ID)
+	if _, _, err := f.move(t, legs, "2026-11-21", releaseRecord("scheduled-workouts/move")); !errors.As(err, &conflict) {
+		t.Fatalf("moving a started workout error = %v, want a conflict", err)
+	}
+
+	// The fixture's 2026-10-12 workout is in the past.
+	past := f.load(t, f.workout.ID)
+	if _, _, err := f.move(t, past, "2026-11-19", releaseRecord("scheduled-workouts/move")); !errors.As(err, &conflict) {
+		t.Fatalf("moving a past workout error = %v, want a conflict", err)
+	}
+}
+
+// Q8: saving the active program updates its future per unit, in one save.
+func TestSavingTheActiveProgramUpdatesItsFuturePerUnit(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	legsMoved, _, err := f.move(t, f.sessionOn(t, program.ID, "2026-11-20", "Legs"), "2026-11-21", releaseRecord("scheduled-workouts/move"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	unitID := map[string]uuid.UUID{}
+	for _, unit := range program.Workouts {
+		unitID[unit.Name] = unit.ID
+	}
+
+	edited := &model.Program{ID: program.ID, Name: program.Name, PrimaryGoal: program.PrimaryGoal, Roadmap: program.Roadmap, Active: true}
+	for _, unit := range program.Workouts {
+		switch unit.Name {
+		case "Push":
+			unit.Weekdays = model.WeekdayList{2} // Monday to Tuesday
+		case "Pull":
+			unit.Exercises[0].TargetSets = 3 // one more set
+		case "Volleyball":
+			continue // removed
+		}
+		edited.Workouts = append(edited.Workouts, unit)
+	}
+	core := weekUnit("Core", 9, 7)
+	edited.Workouts = append(edited.Workouts, core)
+	for index := range edited.Workouts {
+		edited.Workouts[index].SequencePosition = index + 1
+	}
+
+	saved, replay, err := f.mutations.ReplaceProgram(f.ctx, f.userID, edited, program.Revision, saveNoon, releaseRecord("programs/update"))
+	if err != nil || replay {
+		t.Fatalf("ReplaceProgram() error = %v replay = %v", err, replay)
+	}
+	if saved.Revision != program.Revision+1 {
+		t.Fatalf("revision = %d, want %d", saved.Revision, program.Revision+1)
+	}
+	for _, unit := range saved.Workouts {
+		if want, kept := unitID[unit.Name]; kept && unit.ID != want {
+			t.Fatalf("unit %s changed identity on save", unit.Name)
+		}
+	}
+
+	got := f.sessionsOf(t, program.ID, fillToday)
+	week := []string{
+		"2026-11-16 Push",      // today is never changed
+		"2026-11-17 Push",      // Push now on Tuesdays
+		"2026-11-18 Pull",      // kept, re-snapshotted
+		"2026-11-19 Bike ride", // unchanged
+		"2026-11-21 Legs",      // the one-off move survives
+		"2026-11-22 Core",      // the new unit
+		"2026-11-24 Push",
+		"2026-11-25 Pull",
+		"2026-11-26 Bike ride",
+		"2026-11-27 Legs",
+		"2026-11-29 Core",
+	}
+	if !slices.Equal(got[:len(week)], week) {
+		t.Fatalf("schedule after the save =\n%v\nwant\n%v", got[:len(week)], week)
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND name='Volleyball' AND date > $2`, f.userID, fillToday); n != 0 {
+		t.Fatalf("%d sessions of the removed unit remain", n)
+	}
+	if moved := f.load(t, legsMoved.ID); moved.Date != "2026-11-21" || moved.Revision != legsMoved.Revision {
+		t.Fatalf("the moved session changed: %+v", moved)
+	}
+	if pull := f.sessionOn(t, program.ID, "2026-11-18", "Pull"); len(pull.RequiredSets) != 3 {
+		t.Fatalf("future Pull has %d required sets, want the saved 3", len(pull.RequiredSets))
+	}
+	// An unchanged unit keeps its exercise rows, so its sessions keep provenance.
+	if n := f.count(t, `SELECT count(*) FROM scheduled_sets ss JOIN scheduled_workouts sw ON sw.id=ss.scheduled_workout_id WHERE sw.user_id=$1 AND sw.name='Legs' AND ss.program_exercise_id IS NULL`, f.userID); n != 0 {
+		t.Fatalf("%d sets of the unchanged unit lost their exercise reference", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM (SELECT program_workout_id, date FROM scheduled_workouts WHERE user_id=$1 AND date >= $2 GROUP BY 1, 2 HAVING count(*) > 1) d`, f.userID, fillToday); n != 0 {
+		t.Fatalf("%d unit-days hold more than one session", n)
+	}
+
+	// The same save again is a replay; a stale revision is refused untouched.
+	before := f.snapshot(t)
+	var conflict *model.ConflictError
+	if _, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, edited, program.Revision, saveNoon, releaseRecord("programs/update")); !errors.As(err, &conflict) {
+		t.Fatalf("a save at the old revision error = %v, want a conflict", err)
+	}
+	if after := f.snapshot(t); after != before {
+		t.Fatal("a refused save changed the database")
+	}
+}
+
+func TestSavingAnInactiveProgramChangesNoSession(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.fill(t, fillToday)
+	saved := f.saveProgram(t, "Later", pushPullLegsWeek())
+	before := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1`, f.userID)
+	saved.Workouts[0].Weekdays = model.WeekdayList{2}
+	if _, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, saved, saved.Revision, saveNoon, releaseRecord("programs/update")); err != nil {
+		t.Fatal(err)
+	}
+	if after := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1`, f.userID); after != before {
+		t.Fatalf("session rows = %d, want unchanged %d", after, before)
+	}
+	if active := f.activeProgramIDs(t); len(active) != 1 || active[0] != f.program.ID {
+		t.Fatal("saving an inactive program changed which program is active")
+	}
+}
+
+// Q11: a client older than weekdays saves without unit IDs or weekdays and
+// then regenerates. The result is one schedule with no duplicates.
+func TestReleasedClientSaveThenRegenerateGivesOneSchedule(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	legacy := &model.Program{ID: program.ID, Name: program.Name, PrimaryGoal: program.PrimaryGoal, Roadmap: program.Roadmap, Active: true,
+		Workouts: []model.ProgramWorkout{weekUnit("Upper", 1), weekUnit("Lower", 2)}}
+	for i := range legacy.Workouts {
+		legacy.Workouts[i].Weekdays = nil
+	}
+	saved, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, legacy, program.Revision, saveNoon, releaseRecord("programs/update"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The save already placed the units on the athlete's days (Mon, Wed),
+	// dealing from tomorrow: Wednesday first.
+	if !saved.Placed() {
+		t.Fatal("a save by an older client left the active program without weekdays")
+	}
+	afterSave := f.sessionsOf(t, program.ID, startTomorrow)
+	if want := []string{"2026-11-18 Upper", "2026-11-23 Lower", "2026-11-25 Upper"}; !slices.Equal(afterSave[:3], want) {
+		t.Fatalf("after the save = %v, want %v", afterSave[:3], want)
+	}
+	if today := f.sessionOn(t, program.ID, fillToday, "Push"); today.Status != model.WorkoutStatusPlanned {
+		t.Fatalf("today's session changed: %+v", today)
+	}
+
+	sessions, err := model.LayoutSessions(saved, startTomorrow, "2026-12-14")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := f.schedules.RegenerateIdempotent(f.ctx, f.userID, program.ID, saved.Revision, startTomorrow, "2026-12-14", nil, sessions, &model.RegenerateScheduleResponse{}, releaseRecord("schedule/regenerate")); err != nil {
+		t.Fatalf("RegenerateIdempotent() error = %v", err)
+	}
+	if afterRegenerate := f.sessionsOf(t, program.ID, startTomorrow); !slices.Equal(afterRegenerate, afterSave) {
+		t.Fatalf("regenerate changed the schedule:\n%v\nwant\n%v", afterRegenerate[:6], afterSave[:6])
+	}
+
+	// Materialize twice over the same range, as a retry would.
+	for range 2 {
+		again, err := model.LayoutSessions(saved, startTomorrow, "2026-11-30")
+		if err != nil {
+			t.Fatal(err)
+		}
+		returned, _, err := f.schedules.MaterializeIdempotent(f.ctx, f.userID, program.ID, saved.Revision, "2026-11-30", nil, again, releaseRecord("schedule/materialize"))
+		if err != nil {
+			t.Fatalf("MaterializeIdempotent() error = %v", err)
+		}
+		for _, session := range returned {
+			if session.ID == uuid.Nil {
+				t.Fatalf("materialize returned a session without its stored ID: %+v", session)
+			}
+		}
+	}
+	if n := f.count(t, `SELECT count(*) FROM (SELECT program_workout_id, date FROM scheduled_workouts WHERE user_id=$1 AND date >= $2 GROUP BY 1, 2 HAVING count(*) > 1) d`, f.userID, fillToday); n != 0 {
+		t.Fatalf("%d unit-days hold more than one session after regenerate and materialize", n)
+	}
+}
+
+// Q9: a saved program can be removed; the active one cannot; history stays.
+func TestRemoveProgramKeepsHistoryAndRefusesTheActiveProgram(t *testing.T) {
+	f := newReleaseFixture(t)
+	f.fill(t, fillToday)
+	f.performWorkout(t, f.workout, model.WorkoutStatusCompleted, true)
+	blockID := uuid.New()
+	f.exec(t, `INSERT INTO criteria_training_blocks (id, user_id, program_id, name) VALUES ($1,$2,$3,'Block')`, blockID, f.userID, f.program.ID)
+
+	var conflict *model.ConflictError
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); !errors.As(err, &conflict) {
+		t.Fatalf("removing the active program error = %v, want a conflict", err)
+	}
+	if authoritative, ok := conflict.Authoritative.(*model.Program); !ok || authoritative.ID != f.program.ID {
+		t.Fatalf("conflict resource = %+v, want the active program", conflict.Authoritative)
+	}
+
+	current := f.startOwnWeek(t)
+	// The replaced program keeps one planned session for today; removal takes it.
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); err != nil {
+		t.Fatalf("DeleteProgram() error = %v", err)
+	}
+	if n := f.count(t, `SELECT count(*) FROM programs WHERE id=$1`, f.program.ID); n != 0 {
+		t.Fatal("the removed program still exists")
+	}
+	finished := f.load(t, f.workout.ID)
+	if finished.Status != model.WorkoutStatusCompleted || finished.Name != "A" || finished.ProgramID != nil || len(finished.RequiredSets) != 1 {
+		t.Fatalf("the finished workout lost its snapshot: %+v", finished)
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND program_id IS NULL AND status='planned'`, f.userID); n != 0 {
+		t.Fatalf("%d planned sessions of the removed program remain", n)
+	}
+	if n := f.count(t, `SELECT count(*) FROM criteria_training_blocks WHERE id=$1 AND program_id IS NULL`, blockID); n != 1 {
+		t.Fatal("the training block must stay, with its program link cleared")
+	}
+	if got := len(f.sessionsOf(t, current.ID, fillToday)); got == 0 {
+		t.Fatal("removing a saved program touched the active program's sessions")
+	}
+	var notFound *model.NotFoundError
+	if err := f.mutations.DeleteProgram(f.ctx, f.userID, f.program.ID); !errors.As(err, &notFound) {
+		t.Fatalf("removing it again error = %v, want not found", err)
+	}
+}
+
+// Q10: another athlete's programs and sessions are not found.
+func TestNewMutationsRefuseAnotherAthletesResources(t *testing.T) {
+	owner := newReleaseFixture(t)
+	other := newReleaseFixture(t)
+	program := owner.startOwnWeek(t)
+	session := owner.sessionOn(t, program.ID, "2026-11-18", "Pull")
+	before := owner.snapshot(t)
+	var notFound *model.NotFoundError
+
+	if _, _, err := other.schedules.MoveIdempotent(other.ctx, other.userID, session.ID, "2026-11-19", fillToday, session.Revision, releaseRecord("scheduled-workouts/move")); !errors.As(err, &notFound) {
+		t.Fatalf("moving a foreign session error = %v, want not found", err)
+	}
+	if err := other.mutations.DeleteProgram(other.ctx, other.userID, program.ID); !errors.As(err, &notFound) {
+		t.Fatalf("removing a foreign program error = %v, want not found", err)
+	}
+	foreign := *program
+	if _, _, err := other.mutations.ReplaceProgram(other.ctx, other.userID, &foreign, program.Revision, saveNoon, releaseRecord("programs/update")); !errors.As(err, &notFound) {
+		t.Fatalf("saving a foreign program error = %v, want not found", err)
+	}
+	// A unit ID that belongs to another athlete's program names nothing in
+	// the caller's own program: it becomes a new unit and the owner's stays.
+	own := other.saveProgram(t, "Mine", []model.ProgramWorkout{weekUnit("Mine", 1, 1)})
+	borrowed := weekUnit("Borrowed", 2, 3)
+	borrowed.ID = program.Workouts[0].ID
+	own.Workouts = append(own.Workouts, borrowed)
+	saved, _, err := other.mutations.ReplaceProgram(other.ctx, other.userID, own, own.Revision, saveNoon, releaseRecord("programs/update"))
+	if err != nil {
+		t.Fatalf("saving with a foreign unit ID error = %v", err)
+	}
+	if saved.Workouts[1].ID == program.Workouts[0].ID {
+		t.Fatal("a foreign unit ID was adopted")
+	}
+	if after := owner.snapshot(t); after != before {
+		t.Fatal("another athlete's requests changed the owner's data")
+	}
+}

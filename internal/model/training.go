@@ -660,6 +660,14 @@ type PatchScheduledSetTargetRequest struct {
 	ExpectedRevision      int64    `json:"expected_revision" validate:"required,min=1"`
 }
 
+// MoveScheduledWorkoutRequest moves one planned, unstarted session to another
+// date. The program's weekdays do not change.
+type MoveScheduledWorkoutRequest struct {
+	Date             string `json:"date" validate:"required"`
+	OperationKey     string `json:"operation_key" validate:"required"`
+	ExpectedRevision int64  `json:"expected_revision" validate:"required,min=1"`
+}
+
 type RecoverScheduledWorkoutRequest struct {
 	Date         string `json:"date" validate:"required"`
 	OperationKey string `json:"operation_key" validate:"required"`
