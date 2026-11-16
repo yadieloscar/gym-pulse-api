@@ -224,6 +224,27 @@ Observe the production service before app promotion:
 Logs must include a request identifier but not request bodies, tokens, email addresses, workout
 notes, or service credentials.
 
+## Recovering a failed migration
+
+A failed migration leaves `schema_migrations` marked dirty, and every later start logs
+`Dirty database version N. Fix and force version.` Each migration file runs as one implicit
+transaction, so a failure applies nothing from that file. To recover:
+
+1. Read the first error in the log; it names the statement and `SQLSTATE`. Fix its cause in a new
+   release (or in the database, for a missing privilege).
+2. In the SQL editor, as the owner, confirm the state and step back one version:
+
+   ```sql
+   SELECT version, dirty FROM schema_migrations;   -- expect N, true
+   UPDATE schema_migrations SET version = N - 1, dirty = false;   -- write the number, e.g. 5
+   ```
+
+3. Redeploy the fixed release; it re-runs migration N and everything after it.
+
+Before 2026-11-16, migration 006 failed on hosted Supabase with `42501 permission denied for schema
+auth` (dirty version 6), because it created a local `auth.users` stub. It now creates the stub only
+when `auth.users` is missing.
+
 ## Rollback and roll-forward
 
 - Prefer roll-forward for database security and contract fixes.
