@@ -683,6 +683,20 @@ sport_bad_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/ap
   "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-sport-program-bad" \
   -d "{\"name\":\"Bad\",\"primary_goal\":\"strength\",\"roadmap\":{},\"operation_key\":\"smoke-sport-program-bad\",\"workouts\":[{\"kind\":\"sport\",\"name\":\"Spike\",\"sequence_position\":1,\"sport\":{\"sport_id\":\"volleyball\",\"sport_name\":\"Volleyball\",\"target_duration_minutes\":60,\"target_distance_meters\":5000}}]}")
 sport_bad_body=$(cat /tmp/smoke.body)
+# The list carries full programs: the app's Plan screen reads `workouts` from it,
+# and a null there crashed the first hosted build.
+programs_list_ok=$(curl -s "$API/api/v1/programs" "${auth[@]}" | python3 -c "
+import json,sys
+programs=json.load(sys.stdin)['programs']
+mine=[p for p in programs if p['id']==sys.argv[1]]
+assert mine and all(isinstance(p.get('workouts'), list) for p in programs)
+assert len(mine[0]['workouts'])==2 and mine[0]['workouts'][0]['exercises']
+print('yes')" "$sport_program_id" 2>/dev/null || true)
+if [ "$programs_list_ok" = "yes" ]; then
+  ok "GET /programs lists each program with its workouts (never null)"
+else
+  bad "GET /programs did not return workouts for every program" "$(curl -s "$API/api/v1/programs" "${auth[@]}" | head -c 280)"
+fi
 if [ "$sport_program_status" = "201" ] && [ "$sport_unit_ok" = "yes" ] && [ "$sport_bad_status" = "422" ] && [ -n "$sport_program_id" ]; then
   sport_materialize_op="smoke-sport-materialize-v1"
   sm_status=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X POST "$API/api/v1/schedule/materialize" \
