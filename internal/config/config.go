@@ -20,7 +20,8 @@ var (
 	ErrProductionDatabaseLock    = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
 	ErrProductionDatabaseMigrate = errors.New("staging and production require a direct or session-mode DATABASE_MIGRATE_URL for the schema owner")
 	ErrProductionDatabaseTLS     = errors.New("staging and production require sslmode=require, verify-ca, or verify-full on DATABASE_URL, DATABASE_LOCK_URL, and DATABASE_MIGRATE_URL")
-	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
+	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS without wildcards")
+	ErrProductionOwnerConnection = errors.New("staging and production require DATABASE_URL to use the least-privilege runtime role, not the schema owner; set ALLOW_OWNER_DATABASE_URL=true only while bootstrapping or rolling back the role")
 	ErrInvalidEnvironment        = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
 	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
 )
@@ -140,6 +141,7 @@ func Load() (*Config, error) {
 
 	isReleaseEnvironment := env == "staging" || env == "production"
 	lockURL := strings.TrimSpace(os.Getenv("DATABASE_LOCK_URL"))
+	allowOwnerDatabaseURL := strings.TrimSpace(os.Getenv("ALLOW_OWNER_DATABASE_URL")) == "true"
 	migrateURL := strings.TrimSpace(os.Getenv("DATABASE_MIGRATE_URL"))
 	if isReleaseEnvironment {
 		canonicalSupabaseURL, err := canonicalHTTPSBaseURL(supabaseURL)
@@ -171,13 +173,16 @@ func Load() (*Config, error) {
 				return nil, err
 			}
 		}
+		if !allowOwnerDatabaseURL && connectsAsOwner(dbURL, migrateURL) {
+			return nil, ErrProductionOwnerConnection
+		}
 
 		if len(origins) == 0 {
 			return nil, ErrProductionCORS
 		}
 		for _, origin := range origins {
 			parsed, parseErr := url.ParseRequestURI(origin)
-			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.Contains(parsed.Host, "*") || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
 				return nil, ErrProductionCORS
 			}
 		}
@@ -353,6 +358,27 @@ func isSessionCapablePostgresURL(raw string) bool {
 		return false
 	}
 	return true
+}
+
+// connectsAsOwner reports whether the request connection uses the schema
+// owner. Supavisor usernames carry a ".<project-ref>" suffix, so the role name
+// is the part before the first dot. A URL without a username is not judged
+// here; pgx would fall back to PGUSER, which this package cannot see.
+func connectsAsOwner(requestURL, migrateURL string) bool {
+	requestRole := urlRole(requestURL)
+	if requestRole == "" {
+		return false
+	}
+	return requestRole == urlRole(migrateURL) || requestRole == "postgres" || requestRole == "supabase_admin"
+}
+
+func urlRole(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.User == nil {
+		return ""
+	}
+	role, _, _ := strings.Cut(parsed.User.Username(), ".")
+	return role
 }
 
 // validateProductionDatabaseTLS rejects release database URLs that would let

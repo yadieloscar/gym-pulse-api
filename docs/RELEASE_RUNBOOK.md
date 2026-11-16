@@ -31,9 +31,17 @@ logs, commits, or release notes.
       connection (normally port 5432), never transaction mode on port 6543.
 - [ ] `DATABASE_MIGRATE_URL` is the schema-owner connection (`postgres` on Supabase),
       direct or session-mode, with TLS. `DATABASE_URL` and `DATABASE_LOCK_URL` connect
-      as `gym_pulse_api`, never as the owner.
-- [ ] `./scripts/validate-supabase-security.sh` passes against staging with the owner
-      connection, proving `gym_pulse_api` holds only DML plus policies.
+      as `gym_pulse_api`, never as the owner. Staging and production refuse to start
+      when `DATABASE_URL` uses the same role as `DATABASE_MIGRATE_URL`, `postgres`, or
+      `supabase_admin`, unless `ALLOW_OWNER_DATABASE_URL=true`. That override exists only
+      for the role bootstrap and rollback below; `ALLOW_OWNER_DATABASE_URL` is unset in
+      steady state.
+- [ ] `ALLOWED_ORIGINS` lists exact HTTPS origins. Wildcards such as `https://*.example.com`
+      are refused at startup.
+- [ ] `REQUIRE_SUPABASE_DATA_API_ROLES=true ./scripts/validate-supabase-security.sh` passes
+      against staging with the owner connection, proving `gym_pulse_api` holds only DML plus
+      policies and that `anon`, `authenticated`, and `service_role` exist and hold nothing.
+      Without the variable the Data API checks silently cover only roles that exist.
 - [ ] Database capacity accounts for both the main query pool and the separate
       `DATABASE_LOCK_MAX_CONNS` advisory-lock pool.
 - [ ] `golangci-lint run` passes.
@@ -60,7 +68,10 @@ every release, and record the values in the release notes:
 - [ ] **Confirm email** is enabled, so an unverified address never receives a session.
 - [ ] **Email OTP / link expiry** is 3600 seconds or less.
 - [ ] **JWT expiry** is 3600 seconds or less. A shorter value bounds how long a signed-out
-      or compromised access token stays usable; the app refreshes silently.
+      or compromised access token stays usable; the app refreshes silently. The API checks
+      only that the token's user still exists in `auth.users`, not `banned_until`, so a
+      **banned** user keeps API access until their current access token expires. To cut a
+      user off immediately, delete them in Supabase Auth; the next request is `401`.
 - [ ] **Refresh token rotation** is on with **reuse detection**; reuse interval at the default
       10 seconds.
 - [ ] **Auth rate limits** for sign-in, sign-up, password reset, and token refresh are at or
@@ -88,7 +99,9 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
    If the role already exists because migration 026 created it `NOLOGIN`, add `LOGIN` and a
    credential with `ALTER ROLE`.
 2. **Grant** by deploying the release that contains migration 026 with the current configuration
-   (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL). The
+   (`DATABASE_URL` still the owner, `DATABASE_MIGRATE_URL` set to the same owner URL, and
+   `ALLOW_OWNER_DATABASE_URL=true` because release environments otherwise refuse an owner
+   request connection). The
    migration grants schema usage, table DML, default DML for future tables, and creates the
    `gym_pulse_api_access` policy on every application table. Migrations 026 and 039 together
    leave the role with `SELECT` on `auth.users.id` only, never the emails or password hashes
@@ -98,17 +111,18 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
    as a role that owns `auth.users` (`supabase_auth_admin` or the dashboard owner). If
    `auth.users` has row-level security enabled in the hosted project, add a read policy for
    `gym_pulse_api` or the identity check denies every request.
-3. **Verify the grants** with `./scripts/validate-supabase-security.sh` using the owner URL.
+3. **Verify the grants** with `REQUIRE_SUPABASE_DATA_API_ROLES=true
+   ./scripts/validate-supabase-security.sh` using the owner URL.
 4. **Switch the request connections**: set `DATABASE_URL` and `DATABASE_LOCK_URL` to
    `gym_pulse_api` credentials (same hosts and `sslmode`), keep `DATABASE_MIGRATE_URL` on the
-   owner, and redeploy the same image.
+   owner, remove `ALLOW_OWNER_DATABASE_URL`, and redeploy the same image.
 5. **Verify**: `/health`, `/ready`, an authenticated read and write, account deletion, and no
    `permission denied` or `42501` in the logs. `SELECT usename, count(*) FROM pg_stat_activity
    GROUP BY 1` must show request traffic as `gym_pulse_api` and no idle owner connections after
    startup.
 
 Rollback is a configuration change: point `DATABASE_URL` and `DATABASE_LOCK_URL` back at the
-owner. Do not roll the migration down while any deployment still connects as `gym_pulse_api`.
+owner and set `ALLOW_OWNER_DATABASE_URL=true`. Do not roll the migration down while any deployment still connects as `gym_pulse_api`.
 
 ## Deployment order
 

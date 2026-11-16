@@ -35,7 +35,9 @@
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
 - Browser preflight accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and
   `OPTIONS`, including `Authorization`, `Content-Type`, and `Idempotency-Key`.
-  `X-Request-ID` is exposed to browser clients for support correlation.
+  `X-Request-ID` is exposed to browser clients for support correlation. The
+  server generates it for every request as 32 lowercase hex characters; a
+  client-supplied `X-Request-ID` is ignored.
 - JSON bodies are limited to 1 MiB and exactly one JSON value. Oversized bodies
   return `413 REQUEST_TOO_LARGE` with `details.max_bytes: 1048576`; malformed or
   trailing JSON returns `400 BAD_REQUEST`.
@@ -43,7 +45,7 @@
   and `Referrer-Policy: no-referrer`; `/api/v1/*` responses add
   `Cache-Control: no-store`. Staging and production also send
   `Strict-Transport-Security: max-age=31536000; includeSubDomains`. The Swagger UI at `/docs/*` is not served in
-  production; this document is the contract.
+  staging or production; this document is the contract.
 - Every authenticated route is rate limited **per authenticated user** and
   returns `429 { "error": "too many requests, retry shortly", "code": "RATE_LIMITED" }`
   when exceeded. All authenticated requests share 600 per minute. The costliest
@@ -333,7 +335,9 @@ custom name), `target_duration_minutes` is 1–1,440, optional
 Program size limits: a program has at most 14 workouts, an `exercises` unit at
 most 50 exercises, and `target_sets` is 1–20. `POST /api/v1/programs` and
 `PUT /api/v1/programs/{id}` reject anything larger with `422 VALIDATION_ERROR`
-and `details.field = "workouts"`. `adopt-legacy` clamps a legacy template's
+and `details.field = "workouts"`. `roadmap` is limited to 16,384 bytes of
+compact JSON; a larger one is `422 VALIDATION_ERROR` with
+`details.field = "roadmap"`. `adopt-legacy` clamps a legacy template's
 set count to 20.
 
 #### `GET /api/v1/programs/{id}`
