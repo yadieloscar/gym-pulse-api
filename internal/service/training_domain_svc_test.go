@@ -399,3 +399,34 @@ func TestMaterializeSportUnitSnapshotsTargetWithoutSets(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestProgramServiceBoundsRoadmapSize(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+	program := coverageProgramFixture()
+	svc := NewProgramService(&coverageStarterRepo{}, newCoverageProgramRepo(program), nil, newCoverageIdempotencyRepo(), validator.New())
+
+	// {"note":"..."} is 11 bytes of JSON around the string.
+	atLimit := map[string]any{"note": strings.Repeat("r", model.MaxProgramRoadmapBytes-11)}
+	overLimit := map[string]any{"note": strings.Repeat("r", model.MaxProgramRoadmapBytes-10)}
+
+	if _, err := svc.Create(ctx, userID, model.CreateProgramRequest{Name: "Fits", PrimaryGoal: model.GoalStrength, Roadmap: atLimit, Workouts: program.Workouts, OperationKey: "roadmap-fits"}); err != nil {
+		t.Fatalf("create at the limit: %v", err)
+	}
+
+	assertRoadmapRejected := func(t *testing.T, err error) {
+		t.Helper()
+		var validation *model.ValidationError
+		if !errors.As(err, &validation) || validation.Field != "roadmap" {
+			t.Fatalf("error = %v, want a roadmap validation error", err)
+		}
+	}
+	t.Run("create", func(t *testing.T) {
+		_, err := svc.Create(ctx, userID, model.CreateProgramRequest{Name: "Too big", PrimaryGoal: model.GoalStrength, Roadmap: overLimit, Workouts: program.Workouts, OperationKey: "roadmap-too-big"})
+		assertRoadmapRejected(t, err)
+	})
+	t.Run("update", func(t *testing.T) {
+		_, err := svc.Update(ctx, userID, program.ID, model.UpdateProgramRequest{Name: "Too big", PrimaryGoal: model.GoalStrength, Active: true, Roadmap: overLimit, Workouts: program.Workouts, ExpectedRevision: program.Revision, OperationKey: "roadmap-update-too-big"})
+		assertRoadmapRejected(t, err)
+	})
+}

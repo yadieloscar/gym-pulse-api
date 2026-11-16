@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -200,6 +201,9 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
 		return nil, err
 	}
+	if err := validateRoadmap(req.Roadmap); err != nil {
+		return nil, err
+	}
 	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: true, Workouts: req.Workouts}
 	if s.mutations != nil {
 		hash, err := hashPayload(req)
@@ -298,6 +302,9 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
 		return nil, err
 	}
+	if err := validateRoadmap(req.Roadmap); err != nil {
+		return nil, err
+	}
 	p := &model.Program{ID: programID, Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: req.Active, Workouts: req.Workouts}
 	if s.mutations != nil {
 		hash, err := hashPayload(struct {
@@ -333,6 +340,16 @@ func cloneStarterWorkouts(src []model.ProgramWorkout) []model.ProgramWorkout {
 		}
 	}
 	return out
+}
+
+// validateRoadmap bounds the free-form roadmap so one request cannot store
+// close to the 1 MiB body limit in a single JSONB value.
+func validateRoadmap(roadmap map[string]any) error {
+	encoded, err := json.Marshal(roadmap)
+	if err != nil || len(encoded) > model.MaxProgramRoadmapBytes {
+		return &model.ValidationError{Message: fmt.Sprintf("roadmap is limited to %d bytes", model.MaxProgramRoadmapBytes), Field: "roadmap"}
+	}
+	return nil
 }
 
 // validateProgramShape normalizes unit kinds in place and checks each unit.

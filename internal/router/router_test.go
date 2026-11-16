@@ -165,14 +165,18 @@ var (
 	_ dao.PlanDAO            = fakePlanDAO{}
 )
 
-func TestRouter_HidesSwaggerInProduction(t *testing.T) {
-	cfg := &config.Config{Environment: "production", AllowedOrigins: []string{"https://app.example.com"}}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for swagger in production, got %d", rec.Code)
+func TestRouter_HidesSwaggerInReleaseEnvironments(t *testing.T) {
+	for _, environment := range []string{"staging", "production"} {
+		t.Run(environment, func(t *testing.T) {
+			cfg := &config.Config{Environment: environment, AllowedOrigins: []string{"https://app.example.com"}}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected 404 for swagger in %s, got %d", environment, rec.Code)
+			}
+		})
 	}
 }
 
@@ -402,11 +406,11 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("swagger served outside production", func(t *testing.T) {
+	t.Run("swagger served outside release environments", func(t *testing.T) {
 		resp := do(httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			t.Errorf("expected 200 for docs in non-production, got %d", resp.StatusCode)
+			t.Errorf("expected 200 for docs outside release environments, got %d", resp.StatusCode)
 		}
 	})
 
