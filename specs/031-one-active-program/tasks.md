@@ -64,7 +64,7 @@ tests first and see them fail for the intended gap before implementing.
 **Independent test**: quickstart Q2, Q3, Q4.
 
 - [ ] T015 [P] [US2] Service tests in `internal/service/training_domain_svc_test.go`: `active: false` saves without deactivating; omitted `active` behaves as today
-- [ ] T016 [P] [US2] Service tests for the transition in `internal/service/guided_training_services_test.go`: optional `proposed_profile` and `to`; `start_date` is `max(from, today)`; `replaces_program`; preview writes nothing; a stale token still conflicts
+- [ ] T016 [P] [US2] Service tests for the transition in `internal/service/guided_training_services_test.go`: optional `proposed_profile` and `to`; `start_date` is `max(from, today)`; `replaces_program`; preview writes nothing; a stale token still conflicts; an unplaced target with no training profile is 422 `available_days` (spec edge case)
 - [ ] T017 [US2] Add `Active *bool` to `CreateProgramRequest` in `internal/model/training.go` and honor it in `programService.Create` and the create DAO paths in `internal/dao/program_dao.go` and `internal/dao/training_mutation_dao.go`
 - [ ] T018 [US2] Make `ProposedProfile` a pointer and `To` and `ExpectedProfileRevision` optional in `internal/model/training.go`; in `internal/service/plan_transition_svc.go` load the current profile when none is proposed, compute `start_date` and `replaces_program`, and preview with `PlaceUnits` and `LayoutSessions`; inject the profile DAO and clock in `cmd/server/main.go`
 - [ ] T019 [US2] Rework `planTransitionDAO.Apply` in `internal/dao/plan_transition_dao.go`: profile write only when proposed; place and store weekdays for an unplaced target; activate; delete planned unstarted sessions dated on or after the start date with no upper bound; call `fillProgram`; integration tests Q3 and Q4 in `internal/dao/one_active_program_integration_test.go`
@@ -150,3 +150,14 @@ tests first and see them fail for the intended gap before implementing.
 ## Evidence
 
 Record command output, `EXPLAIN` plans, and review findings here as tasks complete.
+
+### Consistency analysis (2026-11-16, before implementation)
+
+Read-only pass over spec, plan, research, data model, contract draft, and tasks.
+
+| # | Finding | Severity | Resolution |
+| --- | --- | --- | --- |
+| A1 | Spec FR-019 and SC-006 named one behavior change for a released app; the plan's rollout names two (FR-009 and weeks no longer rotating). | Medium | Spec amended to name both. |
+| A2 | The spec edge case "unplaced program and no training profile → 422" had no task. | Low | Added to T016. |
+| A3 | A unit `id` that is not in the program returns 422 `workouts`, while FR-018 says foreign IDs share 404. | Low | Kept: the ID is a body field of an owned program, and 422 names the field. The contract draft states it. |
+| A4 | No requirement lacks a task; no task lacks a requirement; no constitution conflict. | None | None needed. |

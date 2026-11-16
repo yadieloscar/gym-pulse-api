@@ -372,8 +372,8 @@ the program list, the sessions remain with their names, and removing the active 
   revision, atomicity, and stable-error rules. Foreign and missing resources MUST return the same
   404.
 - **FR-019**: All changes MUST be additive. Requests a released app sends today MUST stay valid, and
-  materialize and regenerate MUST keep their contracts. The one intended behavior change for a
-  released app is FR-009.
+  materialize and regenerate MUST keep their contracts. The two intended behavior changes for a
+  released app are FR-009 and FR-003 (once a program is placed, its weeks no longer rotate).
 - **FR-020**: `docs/CONTRACTS.md` MUST document the new fields, mutations, and rules as the next
   free minor contract version at plan time, and MUST state how a client detects support.
 - **FR-021**: The migration MUST be additive and re-runnable under the strict migration rules, MUST
@@ -405,7 +405,7 @@ the program list, the sessions remain with their names, and removing the active 
 - **SC-005**: Five identical retries of any new or changed mutation produce one durable effect, and
   concurrent fills never produce two planned sessions of one unit on one date.
 - **SC-006**: Compatibility tests prove a released app's create, edit, regenerate, materialize, and
-  transition requests still succeed, and that the only changed outcome is FR-009.
+  transition requests still succeed, and that the only changed outcomes are FR-009 and FR-003.
 - **SC-007**: Ownership tests prove an athlete cannot read, start, move, edit, or remove another
   athlete's programs or sessions.
 
