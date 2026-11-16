@@ -146,7 +146,24 @@ func (r *programDAO) List(ctx context.Context, userID uuid.UUID) ([]model.Progra
 		}
 		programs = append(programs, p)
 	}
-	return programs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating programs: %w", err)
+	}
+	// The cursor must be closed before the pool is queried again.
+	rows.Close()
+	// docs/CONTRACTS.md promises full Program objects here. Without this the
+	// list carried "workouts": null and the app's Plan screen crashed on it.
+	for i := range programs {
+		workouts, err := loadProgramWorkouts(ctx, r.pool, userID, programs[i].ID)
+		if err != nil {
+			return nil, err
+		}
+		if workouts == nil {
+			workouts = []model.ProgramWorkout{}
+		}
+		programs[i].Workouts = workouts
+	}
+	return programs, nil
 }
 
 func (r *programDAO) Get(ctx context.Context, userID, programID uuid.UUID) (*model.Program, error) {
