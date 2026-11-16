@@ -34,6 +34,9 @@ func (e *NotFoundError) Error() string { return e.Message }
 type ValidationError struct {
 	Message string
 	Field   string
+	// Index is the zero-based position of the list item at fault, when one
+	// item of a list field is the cause.
+	Index *int
 }
 
 func (e *ValidationError) Error() string { return e.Message }
@@ -77,21 +80,22 @@ func (e *SportSessionConflictError) Error() string { return e.Message }
 type UserSettings struct {
 	WeightUnit string `json:"weight_unit" validate:"required,oneof=lb kg"`
 	WeeklyGoal int    `json:"weekly_goal" validate:"required,min=1,max=7"`
-	Palette    string `json:"palette" validate:"required,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint"`
+	Palette    string `json:"palette" validate:"required,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint irisViolet"`
 }
 
 type UpdateUserSettingsRequest struct {
 	WeightUnit *string `json:"weight_unit,omitempty" validate:"omitempty,oneof=lb kg"`
 	WeeklyGoal *int    `json:"weekly_goal,omitempty" validate:"omitempty,min=1,max=7"`
-	Palette    *string `json:"palette,omitempty" validate:"omitempty,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint"`
+	Palette    *string `json:"palette,omitempty" validate:"omitempty,oneof=obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint irisViolet"`
 }
 
-// DefaultUserSettings returns the default settings for new users.
+// DefaultUserSettings returns the settings an account reads before it has
+// stored any, and the values a first partial write fills in for omitted fields.
 func DefaultUserSettings() UserSettings {
 	return UserSettings{
 		WeightUnit: "lb",
 		WeeklyGoal: 5,
-		Palette:    "obsidianEmber",
+		Palette:    "voltLime",
 	}
 }
 

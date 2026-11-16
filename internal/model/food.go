@@ -71,6 +71,30 @@ type FoodSummary struct {
 	Brand  *string    `json:"brand"`
 }
 
+// MealSection is one of the four fixed headings a day's foods may be grouped
+// under. It is a label only: it changes no value and no total, carries no
+// time or target, and the service never infers it.
+type MealSection string
+
+const (
+	MealSectionBreakfast MealSection = "breakfast"
+	MealSectionLunch     MealSection = "lunch"
+	MealSectionDinner    MealSection = "dinner"
+	MealSectionSnacks    MealSection = "snacks"
+)
+
+// ValidMealSection accepts no heading or one of the four.
+func ValidMealSection(section *MealSection) bool {
+	if section == nil {
+		return true
+	}
+	switch *section {
+	case MealSectionBreakfast, MealSectionLunch, MealSectionDinner, MealSectionSnacks:
+		return true
+	}
+	return false
+}
+
 // FoodEntryKind separates logged foods from raw quick-add totals.
 type FoodEntryKind string
 
@@ -93,6 +117,7 @@ type FoodEntry struct {
 	ProteinG   *float64      `json:"protein_g,omitempty"`
 	CarbsG     *float64      `json:"carbs_g,omitempty"`
 	FatG       *float64      `json:"fat_g,omitempty"`
+	Section    *MealSection  `json:"section"`
 	Revision   int64         `json:"revision"`
 	LoggedAt   time.Time     `json:"logged_at"`
 	CreatedAt  time.Time     `json:"created_at"`
@@ -170,12 +195,15 @@ func (q QuickAdd) HasValue() bool {
 
 // CreateFoodEntryRequest logs a food (food, serving, amount) or a quick add.
 type CreateFoodEntryRequest struct {
-	Food         *FoodRef   `json:"food,omitempty"`
-	Serving      *Serving   `json:"serving,omitempty"`
-	Amount       *float64   `json:"amount,omitempty"`
-	QuickAdd     *QuickAdd  `json:"quick_add,omitempty"`
-	LoggedAt     *time.Time `json:"logged_at,omitempty"`
-	OperationKey string     `json:"operation_key"`
+	Food     *FoodRef  `json:"food,omitempty"`
+	Serving  *Serving  `json:"serving,omitempty"`
+	Amount   *float64  `json:"amount,omitempty"`
+	QuickAdd *QuickAdd `json:"quick_add,omitempty"`
+	// Section is optional; omitted from the hashed payload when absent so a
+	// request from a client that knows no headings hashes as it always did.
+	Section      *MealSection `json:"section,omitempty"`
+	LoggedAt     *time.Time   `json:"logged_at,omitempty"`
+	OperationKey string       `json:"operation_key"`
 }
 
 // UpdateFoodEntryRequest changes an entry's serving and amount, or its
@@ -186,6 +214,14 @@ type UpdateFoodEntryRequest struct {
 	QuickAdd         *QuickAdd `json:"quick_add,omitempty"`
 	ExpectedRevision int64     `json:"expected_revision"`
 	OperationKey     string    `json:"operation_key"`
+}
+
+// MoveFoodEntryRequest puts an entry under another heading, or under none
+// when Section is null. Nothing else about the entry changes.
+type MoveFoodEntryRequest struct {
+	Section          *MealSection `json:"section"`
+	ExpectedRevision int64        `json:"expected_revision"`
+	OperationKey     string       `json:"operation_key"`
 }
 
 // SaveUserFoodRequest creates or replaces a private food typed per serving.
@@ -210,6 +246,7 @@ const (
 	FoodEntryCreatedOutcome  FoodEntryOutcome = "created"
 	FoodEntryReplacedOutcome FoodEntryOutcome = "replaced"
 	FoodEntryRemovedOutcome  FoodEntryOutcome = "removed"
+	FoodEntryMovedOutcome    FoodEntryOutcome = "moved"
 )
 
 type UserFoodOutcome string

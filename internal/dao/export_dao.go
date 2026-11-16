@@ -52,6 +52,7 @@ func (r *exportDAO) Export(ctx context.Context, userID uuid.UUID, exportedAt tim
 		readExportNutritionTargets,
 		readExportFoodEntries,
 		readExportOwnFoods,
+		readExportSavedMeals,
 		readExportKneeKitDays,
 	}
 	for _, read := range readers {
@@ -383,7 +384,7 @@ func readExportNutritionTargets(ctx context.Context, tx pgx.Tx, userID uuid.UUID
 func readExportFoodEntries(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
 	rows, err := tx.Query(ctx, `
 		SELECT fe.date::text, fe.kind, COALESCE(uf.name, fc.name), fe.serving_label, fe.serving_g, fe.amount,
-		       fe.energy_kcal, fe.protein_g, fe.carbs_g, fe.fat_g, fe.logged_at
+		       fe.energy_kcal, fe.protein_g, fe.carbs_g, fe.fat_g, fe.section, fe.logged_at
 		FROM food_entries fe
 		LEFT JOIN user_foods uf ON uf.id = fe.user_food_id AND uf.user_id = fe.user_id
 		LEFT JOIN food_catalog fc ON fc.id = fe.catalog_food_id
@@ -395,7 +396,7 @@ func readExportFoodEntries(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out
 	entries, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.ExportFoodEntry, error) {
 		var e model.ExportFoodEntry
 		err := row.Scan(&e.Date, &e.Kind, &e.FoodName, &e.ServingLabel, &e.ServingG, &e.Amount,
-			&e.EnergyKcal, &e.ProteinG, &e.CarbsG, &e.FatG, &e.LoggedAt)
+			&e.EnergyKcal, &e.ProteinG, &e.CarbsG, &e.FatG, &e.Section, &e.LoggedAt)
 		return e, err
 	})
 	if err != nil {
@@ -421,6 +422,46 @@ func readExportOwnFoods(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *m
 		return fmt.Errorf("scanning export own foods: %w", err)
 	}
 	out.Nutrition.OwnFoods = append(out.Nutrition.OwnFoods, foods...)
+	return nil
+}
+
+func readExportSavedMeals(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
+	rows, err := tx.Query(ctx, `
+		SELECT sm.id, sm.name, sm.section, COALESCE(uf.name, fc.name), i.serving_label, i.serving_g, i.amount
+		FROM saved_meals sm
+		JOIN saved_meal_items i ON i.meal_id = sm.id
+		LEFT JOIN user_foods uf ON uf.id = i.user_food_id AND uf.user_id = sm.user_id
+		LEFT JOIN food_catalog fc ON fc.id = i.catalog_food_id
+		WHERE sm.user_id=$1
+		ORDER BY sm.created_at, sm.id, i.position`, userID)
+	if err != nil {
+		return fmt.Errorf("querying export saved meals: %w", err)
+	}
+	defer rows.Close()
+	var current uuid.UUID
+	for rows.Next() {
+		var mealID uuid.UUID
+		var mealName string
+		var mealSection, foodName *string
+		var item model.ExportSavedMealItem
+		if err := rows.Scan(&mealID, &mealName, &mealSection, &foodName, &item.ServingLabel, &item.ServingG, &item.Amount); err != nil {
+			return fmt.Errorf("scanning export saved meals: %w", err)
+		}
+		if foodName != nil {
+			item.FoodName = *foodName
+		}
+		meals := out.Nutrition.SavedMeals
+		if len(meals) == 0 || mealID != current {
+			meals = append(meals, model.ExportSavedMeal{Name: mealName, Section: mealSection, Items: []model.ExportSavedMealItem{}})
+			current = mealID
+		}
+		last := &meals[len(meals)-1]
+		last.Items = append(last.Items, item)
+		out.Nutrition.SavedMeals = meals
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("reading export saved meals: %w", err)
+	}
 	return nil
 }
 

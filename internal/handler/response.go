@@ -43,9 +43,17 @@ func handleServiceError(w http.ResponseWriter, err error) {
 
 	var validation *model.ValidationError
 	if errors.As(err, &validation) {
-		writeError(w, http.StatusUnprocessableEntity, validation.Message, "VALIDATION_ERROR", map[string]string{
-			"field": validation.Field,
-		})
+		details := map[string]any{"field": validation.Field}
+		if validation.Index != nil {
+			details["index"] = *validation.Index
+		}
+		writeError(w, http.StatusUnprocessableEntity, validation.Message, "VALIDATION_ERROR", details)
+		return
+	}
+
+	var mealLimit *model.SavedMealLimitError
+	if errors.As(err, &mealLimit) {
+		writeError(w, http.StatusConflict, mealLimit.Error(), "SAVED_MEAL_LIMIT_REACHED", map[string]int{"limit": mealLimit.Limit})
 		return
 	}
 

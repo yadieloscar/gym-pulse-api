@@ -43,12 +43,12 @@ func New(
 	mobilitySessionHandler *handler.MobilitySessionHandler,
 	kneeKitHandler *handler.KneeKitHandler,
 	workoutImportHandler *handler.WorkoutImportHandler,
+	savedMealHandler *handler.SavedMealHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
 	// Global middleware.
-	r.Use(chimiddleware.RequestID)
-	r.Use(middleware.RequestIDHeaderMiddleware)
+	r.Use(middleware.RequestIDMiddleware)
 	r.Use(middleware.LoggingMiddleware(logger))
 	// HSTS only where TLS is guaranteed; a local HTTP API must stay reachable.
 	r.Use(middleware.SecurityHeaders(cfg.IsReleaseEnvironment()))
@@ -59,14 +59,19 @@ func New(
 	r.Get("/health", handler.HealthCheck)
 	r.Get("/ready", readinessHandler.ServeHTTP)
 	// The Swagger UI is a development aid. docs/CONTRACTS.md is the client
-	// contract, so production has no reason to publish the route inventory.
-	if cfg.Environment != "production" {
+	// contract, so a publicly reachable environment has no reason to publish
+	// the route inventory.
+	if !cfg.IsReleaseEnvironment() {
 		r.Get("/docs/*", httpswagger.WrapHandler)
 	}
 
 	// Authenticated routes.
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddlewareWithConfig(middleware.AuthConfig{JWTSecret: cfg.SupabaseJWTSecret, JWKSURL: cfg.SupabaseJWKSURL, Issuer: cfg.SupabaseJWTIssuer, Audience: cfg.SupabaseJWTAudience}))
+
+		// ALLOWED_USER_IDS keeps a pre-launch deployment private: a verified
+		// token for anyone else gets 403 before any limiter or database work.
+		r.Use(middleware.RequireAllowedUser(cfg.AllowedUserIDs))
 
 		// Every authenticated route shares a per-user ceiling; costlier routes
 		// add tighter limits below. It runs before the active-user lookup so a
@@ -163,7 +168,13 @@ func New(
 					r.Get("/days/{date}/entries", foodHandler.ListDayEntries)
 					r.Post("/days/{date}/entries", foodHandler.CreateEntry)
 					r.Put("/entries/{id}", foodHandler.UpdateEntry)
+					r.Put("/entries/{id}/section", foodHandler.MoveEntry)
 					r.Delete("/entries/{id}", foodHandler.DeleteEntry)
+					r.Get("/meals", savedMealHandler.List)
+					r.Post("/meals", savedMealHandler.Create)
+					r.Put("/meals/{id}", savedMealHandler.Update)
+					r.Delete("/meals/{id}", savedMealHandler.Delete)
+					r.Post("/days/{date}/meal-logs", savedMealHandler.Log)
 				})
 				r.Route("/training-blocks", func(r chi.Router) {
 					r.Get("/", trainingBlockHandler.List)

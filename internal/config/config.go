@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -20,9 +22,11 @@ var (
 	ErrProductionDatabaseLock    = errors.New("staging and production require a direct or session-mode DATABASE_LOCK_URL")
 	ErrProductionDatabaseMigrate = errors.New("staging and production require a direct or session-mode DATABASE_MIGRATE_URL for the schema owner")
 	ErrProductionDatabaseTLS     = errors.New("staging and production require sslmode=require, verify-ca, or verify-full on DATABASE_URL, DATABASE_LOCK_URL, and DATABASE_MIGRATE_URL")
-	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
+	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS without wildcards")
+	ErrProductionOwnerConnection = errors.New("staging and production require DATABASE_URL to use the least-privilege runtime role, not the schema owner; set ALLOW_OWNER_DATABASE_URL=true only while bootstrapping or rolling back the role")
 	ErrInvalidEnvironment        = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
 	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
+	ErrInvalidAllowedUserIDs     = errors.New("ALLOWED_USER_IDS must be a comma-separated list of user UUIDs")
 )
 
 // Defaults for the food sources; see docs/CONTRACTS.md "Food logging".
@@ -87,14 +91,18 @@ type Config struct {
 	ProgramGenerationDailyLimit       int
 	ProgramGenerationTimeout          time.Duration
 	AllowedOrigins                    []string
-	Environment                       string
-	LogLevel                          string
-	DatabaseMaxConns                  int32
-	DatabaseMinConns                  int32
-	DatabaseLockMaxConns              int32
-	DatabaseMaxConnLifetime           time.Duration
-	DatabaseMaxConnIdleTime           time.Duration
-	DatabaseHealthCheckPeriod         time.Duration
+	// AllowedUserIDs, when non-empty, limits every authenticated route to
+	// these Supabase user ids; anyone else gets 403. Empty allows every
+	// verified user. It keeps a pre-launch deployment private to its owner.
+	AllowedUserIDs            []uuid.UUID
+	Environment               string
+	LogLevel                  string
+	DatabaseMaxConns          int32
+	DatabaseMinConns          int32
+	DatabaseLockMaxConns      int32
+	DatabaseMaxConnLifetime   time.Duration
+	DatabaseMaxConnIdleTime   time.Duration
+	DatabaseHealthCheckPeriod time.Duration
 	// MigrateOnStart lets development and test servers apply migrations at
 	// boot. Staging and production run them as a separate release step over
 	// DatabaseMigrateURL and only verify the schema at startup.
@@ -135,6 +143,11 @@ func Load() (*Config, error) {
 		logLevel = "info"
 	}
 
+	allowedUserIDs, err := parseAllowedUserIDs(os.Getenv("ALLOWED_USER_IDS"))
+	if err != nil {
+		return nil, err
+	}
+
 	var origins []string
 	if raw := os.Getenv("ALLOWED_ORIGINS"); raw != "" {
 		for o := range strings.SplitSeq(raw, ",") {
@@ -146,6 +159,7 @@ func Load() (*Config, error) {
 
 	isReleaseEnvironment := env == "staging" || env == "production"
 	lockURL := strings.TrimSpace(os.Getenv("DATABASE_LOCK_URL"))
+	allowOwnerDatabaseURL := strings.TrimSpace(os.Getenv("ALLOW_OWNER_DATABASE_URL")) == "true"
 	migrateURL := strings.TrimSpace(os.Getenv("DATABASE_MIGRATE_URL"))
 	if isReleaseEnvironment {
 		canonicalSupabaseURL, err := canonicalHTTPSBaseURL(supabaseURL)
@@ -177,13 +191,16 @@ func Load() (*Config, error) {
 				return nil, err
 			}
 		}
+		if !allowOwnerDatabaseURL && connectsAsOwner(dbURL, migrateURL) {
+			return nil, ErrProductionOwnerConnection
+		}
 
 		if len(origins) == 0 {
 			return nil, ErrProductionCORS
 		}
 		for _, origin := range origins {
 			parsed, parseErr := url.ParseRequestURI(origin)
-			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
+			if parseErr != nil || parsed.Scheme != "https" || parsed.Host == "" || strings.Contains(parsed.Host, "*") || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
 				return nil, ErrProductionCORS
 			}
 		}
@@ -296,6 +313,7 @@ func Load() (*Config, error) {
 		ProgramGenerationDailyLimit:       int(generationLimit),
 		ProgramGenerationTimeout:          generationTimeout,
 		AllowedOrigins:                    origins,
+		AllowedUserIDs:                    allowedUserIDs,
 		Environment:                       env,
 		LogLevel:                          logLevel,
 		DatabaseMaxConns:                  maxConns,
@@ -362,6 +380,27 @@ func isSessionCapablePostgresURL(raw string) bool {
 	return true
 }
 
+// connectsAsOwner reports whether the request connection uses the schema
+// owner. Supavisor usernames carry a ".<project-ref>" suffix, so the role name
+// is the part before the first dot. A URL without a username is not judged
+// here; pgx would fall back to PGUSER, which this package cannot see.
+func connectsAsOwner(requestURL, migrateURL string) bool {
+	requestRole := urlRole(requestURL)
+	if requestRole == "" {
+		return false
+	}
+	return requestRole == urlRole(migrateURL) || requestRole == "postgres" || requestRole == "supabase_admin"
+}
+
+func urlRole(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.User == nil {
+		return ""
+	}
+	role, _, _ := strings.Cut(parsed.User.Username(), ".")
+	return role
+}
+
 // validateProductionDatabaseTLS rejects release database URLs that would let
 // pgx negotiate down to plaintext. pgx defaults to sslmode=prefer, which
 // silently falls back to an unencrypted connection when TLS fails, so the
@@ -419,4 +458,23 @@ func positiveDurationEnv(name string, fallback time.Duration) (time.Duration, er
 // production, where TLS termination and HTTPS-only clients are guaranteed.
 func (c *Config) IsReleaseEnvironment() bool {
 	return c.Environment == "staging" || c.Environment == "production"
+}
+
+// parseAllowedUserIDs reads ALLOWED_USER_IDS. Blank entries are ignored; any
+// other entry that is not a UUID stops startup so a typo cannot silently lock
+// the owner out or open the deployment.
+func parseAllowedUserIDs(raw string) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	for entry := range strings.SplitSeq(raw, ",") {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		id, err := uuid.Parse(trimmed)
+		if err != nil || id == uuid.Nil {
+			return nil, ErrInvalidAllowedUserIDs
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

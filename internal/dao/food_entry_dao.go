@@ -21,6 +21,9 @@ type FoodEntryDAO interface {
 	CreateEntry(ctx context.Context, userID uuid.UUID, entry *model.FoodEntry, operationKey, requestHash string) (*model.FoodEntryCreated, model.FoodEntryOutcome, error)
 	UpdateEntry(ctx context.Context, userID, entryID uuid.UUID, change model.UpdateFoodEntryRequest, operationKey, requestHash string) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error)
 	DeleteEntry(ctx context.Context, userID, entryID uuid.UUID, expectedRevision int64, operationKey, requestHash string) (*model.FoodEntryDeleted, model.FoodEntryOutcome, error)
+	// MoveEntry puts an entry under another day heading, or under none. It
+	// writes nothing but the heading, the revision, and the change time.
+	MoveEntry(ctx context.Context, userID, entryID uuid.UUID, move model.MoveFoodEntryRequest, operationKey, requestHash string) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error)
 }
 
 type foodEntryDAO struct {
@@ -35,10 +38,11 @@ const (
 	foodEntryCreateScope = "food-entries/post"
 	foodEntryUpdateScope = "food-entries/put"
 	foodEntryDeleteScope = "food-entries/delete"
+	foodEntryMoveScope   = "food-entries/section"
 
 	foodEntryColumns = `e.id, to_char(e.date, 'YYYY-MM-DD'), e.kind, e.catalog_food_id, e.user_food_id, e.serving_label, e.serving_g, e.amount,
 		e.energy_kcal, e.protein_g, e.carbs_g, e.fat_g, e.revision, e.logged_at, e.created_at, e.updated_at,
-		c.source, c.name, c.brand, u.name, u.brand`
+		c.source, c.name, c.brand, u.name, u.brand, e.section`
 	foodEntryFrom = `FROM food_entries e
 		LEFT JOIN food_catalog c ON c.id = e.catalog_food_id
 		LEFT JOIN user_foods u ON u.id = e.user_food_id`
@@ -279,6 +283,57 @@ func foodRefID(entry *model.FoodEntry) uuid.UUID {
 	return uuid.Nil
 }
 
+// MoveEntry changes an entry's day heading and nothing else. Unlike
+// UpdateEntry it never re-reads the food or recomputes the snapshot: a move
+// is not a new logging decision, so the values the entry was logged with and
+// the day's totals and revision stay exactly as they were.
+func (r *foodEntryDAO) MoveEntry(ctx context.Context, userID, entryID uuid.UUID, move model.MoveFoodEntryRequest, operationKey, requestHash string) (*model.FoodEntryUpdated, model.FoodEntryOutcome, error) {
+	tx, err := r.pool.Begin(ctx)
+	if err != nil {
+		return nil, model.FoodEntryMovedOutcome, fmt.Errorf("beginning food entry move: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if err := lockUserDomain(ctx, tx, nutritionLockNamespace, userID); err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	var replay foodEntryLedger
+	if found, err := findIdempotency(ctx, tx, userID, foodEntryMoveScope, operationKey, requestHash, &replay); err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	} else if found {
+		return replay.Updated, replay.Outcome, nil
+	}
+	existing, err := lockFoodEntry(ctx, tx, userID, entryID)
+	if err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	if move.ExpectedRevision != existing.Revision {
+		return nil, model.FoodEntryMovedOutcome, &model.ConflictError{Message: "resource revision conflict", Expected: move.ExpectedRevision, Actual: existing.Revision, Authoritative: existing}
+	}
+	if _, err := tx.Exec(ctx, `
+		UPDATE food_entries
+		SET section=$3, revision=revision+1, updated_at=now()
+		WHERE user_id=$1 AND id=$2`, userID, entryID, move.Section); err != nil {
+		return nil, model.FoodEntryMovedOutcome, fmt.Errorf("moving food entry: %w", err)
+	}
+	saved, err := readFoodEntry(ctx, tx, userID, entryID)
+	if err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	// The day is returned as it stands; a heading changes no total.
+	day, err := lockNutritionDay(ctx, tx, userID, existing.Date)
+	if err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	response := &model.FoodEntryUpdated{Entry: *saved, Day: day}
+	if err := insertIdempotency(ctx, tx, userID, foodEntryRecord(foodEntryMoveScope, operationKey, requestHash, 200, saved), foodEntryLedger{Outcome: model.FoodEntryMovedOutcome, Updated: response}); err != nil {
+		return nil, model.FoodEntryMovedOutcome, err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return nil, model.FoodEntryMovedOutcome, fmt.Errorf("committing food entry move: %w", err)
+	}
+	return response, model.FoodEntryMovedOutcome, nil
+}
+
 // lockNutritionDay returns the locked day row, or nil when the date has none.
 func lockNutritionDay(ctx context.Context, tx pgx.Tx, userID uuid.UUID, date string) (*model.NutritionDay, error) {
 	day := &model.NutritionDay{}
@@ -320,10 +375,10 @@ func insertFoodEntry(ctx context.Context, tx pgx.Tx, userID uuid.UUID, entry *mo
 	}
 	if _, err := tx.Exec(ctx, `
 		INSERT INTO food_entries (id, user_id, date, kind, catalog_food_id, user_food_id, serving_label, serving_g, amount,
-			energy_kcal, protein_g, carbs_g, fat_g, logged_at)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+			energy_kcal, protein_g, carbs_g, fat_g, logged_at, section)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
 		entry.ID, userID, entry.Date, entry.Kind, entry.CatalogFoodID, entry.UserFoodID, servingLabel, servingG, entry.Amount,
-		entry.EnergyKcal, entry.ProteinG, entry.CarbsG, entry.FatG, entry.LoggedAt); err != nil {
+		entry.EnergyKcal, entry.ProteinG, entry.CarbsG, entry.FatG, entry.LoggedAt, entry.Section); err != nil {
 		return nil, fmt.Errorf("inserting food entry: %w", err)
 	}
 	return readFoodEntry(ctx, tx, userID, entry.ID)
@@ -402,7 +457,7 @@ func scanFoodEntry(row rowScanner, entry *model.FoodEntry) error {
 	var catalogSource, catalogName, catalogBrand, userName, userBrand *string
 	if err := row.Scan(&entry.ID, &entry.Date, &entry.Kind, &entry.CatalogFoodID, &entry.UserFoodID, &servingLabel, &servingG, &entry.Amount,
 		&entry.EnergyKcal, &entry.ProteinG, &entry.CarbsG, &entry.FatG, &entry.Revision, &entry.LoggedAt, &entry.CreatedAt, &entry.UpdatedAt,
-		&catalogSource, &catalogName, &catalogBrand, &userName, &userBrand); err != nil {
+		&catalogSource, &catalogName, &catalogBrand, &userName, &userBrand, &entry.Section); err != nil {
 		return err
 	}
 	if servingLabel != nil && servingG != nil {

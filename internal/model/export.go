@@ -154,6 +154,7 @@ type ExportNutrition struct {
 	Targets     []ExportNutritionTarget `json:"targets"`
 	FoodEntries []ExportFoodEntry       `json:"food_entries"`
 	OwnFoods    []ExportOwnFood         `json:"own_foods"`
+	SavedMeals  []ExportSavedMeal       `json:"saved_meals"`
 }
 
 // ExportNutritionDay is one day's totals.
@@ -187,6 +188,7 @@ type ExportFoodEntry struct {
 	ProteinG     *float64  `json:"protein_g"`
 	CarbsG       *float64  `json:"carbs_g"`
 	FatG         *float64  `json:"fat_g"`
+	Section      *string   `json:"section"`
 	LoggedAt     time.Time `json:"logged_at"`
 }
 
@@ -201,6 +203,22 @@ type ExportOwnFood struct {
 	CarbsG       float64 `json:"carbs_g"`
 	FatG         float64 `json:"fat_g"`
 	Archived     bool    `json:"archived"`
+}
+
+// ExportSavedMeal is a meal the athlete saved: a name and the foods to log.
+// It carries no values; a meal's values come from its foods when logged.
+type ExportSavedMeal struct {
+	Name    string                `json:"name"`
+	Section *string               `json:"section"`
+	Items   []ExportSavedMealItem `json:"items"`
+}
+
+// ExportSavedMealItem is one food in a saved meal with its serving and amount.
+type ExportSavedMealItem struct {
+	FoodName     string  `json:"food_name"`
+	ServingLabel string  `json:"serving_label"`
+	ServingG     float64 `json:"serving_g"`
+	Amount       float64 `json:"amount"`
 }
 
 // ExportKneeKitDay is one day's knee checklist items and pain log.
@@ -227,6 +245,7 @@ func NewDataExport(exportedAt time.Time) *DataExport {
 			Targets:     []ExportNutritionTarget{},
 			FoodEntries: []ExportFoodEntry{},
 			OwnFoods:    []ExportOwnFood{},
+			SavedMeals:  []ExportSavedMeal{},
 		},
 		KneeKitDays: []ExportKneeKitDay{},
 	}

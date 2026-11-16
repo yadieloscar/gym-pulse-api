@@ -165,14 +165,18 @@ var (
 	_ dao.PlanDAO            = fakePlanDAO{}
 )
 
-func TestRouter_HidesSwaggerInProduction(t *testing.T) {
-	cfg := &config.Config{Environment: "production", AllowedOrigins: []string{"https://app.example.com"}}
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	rec := httptest.NewRecorder()
-	r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
-	if rec.Code != http.StatusNotFound {
-		t.Fatalf("expected 404 for swagger in production, got %d", rec.Code)
+func TestRouter_HidesSwaggerInReleaseEnvironments(t *testing.T) {
+	for _, environment := range []string{"staging", "production"} {
+		t.Run(environment, func(t *testing.T) {
+			cfg := &config.Config{Environment: environment, AllowedOrigins: []string{"https://app.example.com"}}
+			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+			r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
+			if rec.Code != http.StatusNotFound {
+				t.Fatalf("expected 404 for swagger in %s, got %d", environment, rec.Code)
+			}
+		})
 	}
 }
 
@@ -198,7 +202,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 
-	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	do := func(req *http.Request) *http.Response {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -402,11 +406,11 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 		}
 	})
 
-	t.Run("swagger served outside production", func(t *testing.T) {
+	t.Run("swagger served outside release environments", func(t *testing.T) {
 		resp := do(httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusOK {
-			t.Errorf("expected 200 for docs in non-production, got %d", resp.StatusCode)
+			t.Errorf("expected 200 for docs outside release environments, got %d", resp.StatusCode)
 		}
 	})
 
@@ -446,7 +450,7 @@ func TestRouter_AuthenticatedRoutesShareDefaultUserLimit(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
-	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	get := func(sub string) int {
 		claims := jwt.MapClaims{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()}
@@ -476,5 +480,44 @@ func TestRouter_AuthenticatedRoutesShareDefaultUserLimit(t *testing.T) {
 	}
 	if code := get(bob); code != http.StatusOK {
 		t.Fatalf("GET /api/v1/settings for another user = %d, want 200", code)
+	}
+}
+
+func TestRouter_AllowedUserIDsRestrictAuthenticatedRoutes(t *testing.T) {
+	owner, stranger := uuid.New(), uuid.New()
+	cfg := &config.Config{SupabaseJWTSecret: "test-secret", AllowedOrigins: []string{"https://app.example.com"}, AllowedUserIDs: []uuid.UUID{owner}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	activeUsers := &fakeActiveUserChecker{exists: true}
+	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	send := func(method, path string, sub uuid.UUID) int {
+		claims := jwt.MapClaims{"sub": sub.String(), "exp": time.Now().Add(time.Hour).Unix()}
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.SupabaseJWTSecret))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := send(http.MethodGet, "/api/v1/settings", owner); code != http.StatusOK {
+		t.Fatalf("owner GET /api/v1/settings = %d, want 200", code)
+	}
+	callsBefore := activeUsers.calls
+	if code := send(http.MethodGet, "/api/v1/settings", stranger); code != http.StatusForbidden {
+		t.Fatalf("stranger GET /api/v1/settings = %d, want 403", code)
+	}
+	if code := send(http.MethodDelete, "/api/v1/account", stranger); code != http.StatusForbidden {
+		t.Fatalf("stranger DELETE /api/v1/account = %d, want 403", code)
+	}
+	if activeUsers.calls != callsBefore {
+		t.Error("a forbidden request still reached the active-user lookup")
+	}
+	if code := send(http.MethodGet, "/health", stranger); code != http.StatusOK {
+		t.Fatalf("GET /health = %d, want 200 regardless of the list", code)
 	}
 }

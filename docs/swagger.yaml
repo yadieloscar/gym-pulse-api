@@ -184,6 +184,12 @@ definitions:
         type: string
       quick_add:
         $ref: '#/definitions/model.QuickAdd'
+      section:
+        allOf:
+        - $ref: '#/definitions/model.MealSection'
+        description: |-
+          Section is optional; omitted from the hashed payload when absent so a
+          request from a client that knows no headings hashes as it always did.
       serving:
         $ref: '#/definitions/model.Serving'
     type: object
@@ -573,6 +579,8 @@ definitions:
         type: string
       protein_g:
         type: number
+      section:
+        type: string
       serving_g:
         type: number
       serving_label:
@@ -608,6 +616,10 @@ definitions:
       own_foods:
         items:
           $ref: '#/definitions/model.ExportOwnFood'
+        type: array
+      saved_meals:
+        items:
+          $ref: '#/definitions/model.ExportSavedMeal'
         type: array
       targets:
         items:
@@ -668,6 +680,28 @@ definitions:
       created_at:
         type: string
       display_name:
+        type: string
+    type: object
+  model.ExportSavedMeal:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.ExportSavedMealItem'
+        type: array
+      name:
+        type: string
+      section:
+        type: string
+    type: object
+  model.ExportSavedMealItem:
+    properties:
+      amount:
+        type: number
+      food_name:
+        type: string
+      serving_g:
+        type: number
+      serving_label:
         type: string
     type: object
   model.ExportSet:
@@ -914,6 +948,8 @@ definitions:
         type: number
       revision:
         type: integer
+      section:
+        $ref: '#/definitions/model.MealSection'
       serving:
         $ref: '#/definitions/model.Serving'
       updated_at:
@@ -1149,6 +1185,25 @@ definitions:
           $ref: '#/definitions/model.KneeKitDay'
         type: array
     type: object
+  model.LogMealRequest:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.MealItemInput'
+        type: array
+      logged_at:
+        type: string
+      meal:
+        $ref: '#/definitions/model.MealRef'
+      operation_key:
+        type: string
+      section:
+        allOf:
+        - $ref: '#/definitions/model.MealSection'
+        description: |-
+          Section is the heading for every entry of this log; nil uses the
+          meal's own.
+    type: object
   model.MaterializeScheduleRequest:
     properties:
       expected_revision:
@@ -1168,6 +1223,65 @@ definitions:
     - operation_key
     - program_id
     - to
+    type: object
+  model.MealItemInput:
+    properties:
+      amount:
+        type: number
+      food:
+        $ref: '#/definitions/model.FoodRef'
+      serving:
+        $ref: '#/definitions/model.Serving'
+    type: object
+  model.MealLogged:
+    properties:
+      converted:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
+      day:
+        $ref: '#/definitions/model.NutritionDay'
+      entries:
+        items:
+          $ref: '#/definitions/model.FoodEntry'
+        type: array
+    type: object
+  model.MealRef:
+    properties:
+      id:
+        type: string
+    type: object
+  model.MealSection:
+    enum:
+    - breakfast
+    - lunch
+    - dinner
+    - snacks
+    type: string
+    x-enum-varnames:
+    - MealSectionBreakfast
+    - MealSectionLunch
+    - MealSectionDinner
+    - MealSectionSnacks
+  model.MealTotals:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
+    type: object
+  model.MoveFoodEntryRequest:
+    properties:
+      expected_revision:
+        type: integer
+      operation_key:
+        type: string
+      section:
+        $ref: '#/definitions/model.MealSection'
     type: object
   model.NutritionDay:
     properties:
@@ -1599,6 +1713,21 @@ definitions:
       sharp_pain:
         type: boolean
     type: object
+  model.SaveMealRequest:
+    properties:
+      expected_revision:
+        type: integer
+      items:
+        items:
+          $ref: '#/definitions/model.MealItemInput'
+        type: array
+      name:
+        type: string
+      operation_key:
+        type: string
+      section:
+        $ref: '#/definitions/model.MealSection'
+    type: object
   model.SaveNutritionDayRequest:
     properties:
       carbs_g:
@@ -1655,6 +1784,55 @@ definitions:
         type: number
       serving:
         $ref: '#/definitions/model.Serving'
+    type: object
+  model.SavedMeal:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/model.SavedMealItem'
+        type: array
+      last_logged_at:
+        type: string
+      name:
+        type: string
+      revision:
+        type: integer
+      section:
+        $ref: '#/definitions/model.MealSection'
+      totals:
+        $ref: '#/definitions/model.MealTotals'
+      updated_at:
+        type: string
+    type: object
+  model.SavedMealItem:
+    properties:
+      amount:
+        type: number
+      available:
+        type: boolean
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      food:
+        $ref: '#/definitions/model.Food'
+      protein_g:
+        type: number
+      serving:
+        $ref: '#/definitions/model.Serving'
+    type: object
+  model.SavedMeals:
+    properties:
+      meals:
+        items:
+          $ref: '#/definitions/model.SavedMeal'
+        type: array
     type: object
   model.ScheduledSet:
     properties:
@@ -2076,6 +2254,7 @@ definitions:
         - voltLime
         - oliveCitrine
         - slateMint
+        - irisViolet
         type: string
       weekly_goal:
         maximum: 7
@@ -2110,6 +2289,7 @@ definitions:
         - voltLime
         - oliveCitrine
         - slateMint
+        - irisViolet
         type: string
       weekly_goal:
         maximum: 7
@@ -3092,6 +3272,55 @@ paths:
       summary: Log a food or a quick add; the day's totals become the sum of its entries
       tags:
       - nutrition
+  /api/v1/nutrition/days/{date}/meal-logs:
+    post:
+      description: Optional items replace the saved items for this log only. Typed
+        totals already on the day are converted into one quick_add entry (converted).
+      parameters:
+      - description: Local calendar date YYYY-MM-DD
+        in: path
+        name: date
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: meal, optional items
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.LogMealRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.MealLogged'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Log a saved meal to a day as one food entry per item, all or nothing
+      tags:
+      - nutrition
   /api/v1/nutrition/entries/{id}:
     delete:
       parameters:
@@ -3182,6 +3411,55 @@ paths:
       security:
       - BearerAuth: []
       summary: Change an entry's serving and amount, or its quick-add values
+      tags:
+      - nutrition
+  /api/v1/nutrition/entries/{id}/section:
+    put:
+      description: 'Changes only the heading: the entry''s serving, amount, and values,
+        and the day''s totals, stay as they were.'
+      parameters:
+      - description: Entry id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: section (breakfast, lunch, dinner, snacks, or null) with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.MoveFoodEntryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.FoodEntryUpdated'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Move an entry to another day heading, or to none
       tags:
       - nutrition
   /api/v1/nutrition/foods:
@@ -3394,6 +3672,145 @@ paths:
       security:
       - BearerAuth: []
       summary: Search foods by text
+      tags:
+      - nutrition
+  /api/v1/nutrition/meals:
+    get:
+      description: Item values and totals are computed from each food's current facts;
+        a meal stores none.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedMeals'
+      security:
+      - BearerAuth: []
+      summary: The athlete's saved meals, most recently logged first
+      tags:
+      - nutrition
+    post:
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Name and items
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveMealRequest'
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.SavedMeal'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: 'Save a meal: a name and 1 to 20 foods, each with a serving and amount'
+      tags:
+      - nutrition
+  /api/v1/nutrition/meals/{id}:
+    delete:
+      parameters:
+      - description: Saved meal id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Current revision
+        in: query
+        name: expected_revision
+        required: true
+        type: integer
+      - description: Operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete a saved meal; entries it logged stay on their days
+      tags:
+      - nutrition
+    put:
+      parameters:
+      - description: Saved meal id
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Name and items with expected_revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveMealRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedMeal'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Replace a saved meal's name and items; days already logged do not change
       tags:
       - nutrition
   /api/v1/nutrition/target:

@@ -17,7 +17,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_PROVIDER", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT"} {
+	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "ALLOW_OWNER_DATABASE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_PROVIDER", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT", "ALLOWED_USER_IDS"} {
 		t.Setenv(k, "")
 	}
 }
@@ -335,6 +335,8 @@ func TestLoad_ProductionRequiresExplicitHTTPSOrigins(t *testing.T) {
 		"https://user@app.example.com",
 		"https://app.example.com?redirect=other",
 		"https://app.example.com/#fragment",
+		"https://*.example.com",
+		"https://app.example.com,https://*.vercel.app",
 	} {
 		setEnv(t, "ALLOWED_ORIGINS", origin)
 		if _, err := Load(); !errors.Is(err, ErrProductionCORS) {
@@ -662,5 +664,93 @@ func TestLoad_ReleaseEnvironmentsStartWithoutProviderKey(t *testing.T) {
 	}
 	if cfg.ProgramGenerationUsesModel() || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules {
 		t.Fatalf("release environments serve drafts from the rules engine without a key: %+v", cfg)
+	}
+}
+
+func TestLoad_ReleaseRejectsOwnerRequestConnection(t *testing.T) {
+	tests := []struct {
+		name       string
+		requestURL string
+		migrateURL string
+		allow      string
+		wantErr    bool
+	}{
+		{name: "runtime role", requestURL: "postgres://gym_pulse_api.ref:secret@pooler.example.com:6543/postgres?sslmode=require", migrateURL: "postgres://postgres.ref:secret@pooler.example.com:5432/postgres?sslmode=require"},
+		{name: "same role as the migrator", requestURL: "postgres://owner:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://owner:other@db.example.com:5432/postgres?sslmode=require", wantErr: true},
+		{name: "Supabase owner through the pooler", requestURL: "postgres://postgres.ref:secret@pooler.example.com:6543/postgres?sslmode=require", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", wantErr: true},
+		{name: "supabase_admin", requestURL: "postgres://supabase_admin:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://owner:secret@db.example.com:5432/postgres?sslmode=require", wantErr: true},
+		{name: "explicit bootstrap override", requestURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", allow: "true"},
+		{name: "override needs the exact value", requestURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", migrateURL: "postgres://postgres:secret@db.example.com:5432/postgres?sslmode=require", allow: "yes", wantErr: true},
+	}
+	for _, environment := range []string{"staging", "production"} {
+		for _, tt := range tests {
+			t.Run(environment+"/"+tt.name, func(t *testing.T) {
+				clearAll(t)
+				setValidReleaseEnv(t, environment)
+				setEnv(t, "DATABASE_URL", tt.requestURL)
+				setEnv(t, "DATABASE_MIGRATE_URL", tt.migrateURL)
+				setEnv(t, "ALLOW_OWNER_DATABASE_URL", tt.allow)
+
+				_, err := Load()
+				if tt.wantErr != errors.Is(err, ErrProductionOwnerConnection) {
+					t.Fatalf("Load() error = %v, want ErrProductionOwnerConnection: %t", err, tt.wantErr)
+				}
+				if !tt.wantErr && err != nil {
+					t.Fatalf("Load() error = %v", err)
+				}
+			})
+		}
+	}
+}
+
+func TestLoad_DevelopmentAllowsOwnerRequestConnection(t *testing.T) {
+	clearAll(t)
+	setEnv(t, "ENVIRONMENT", "development")
+	setEnv(t, "SUPABASE_JWT_SECRET", "local-secret")
+	setEnv(t, "DATABASE_URL", "postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable")
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+}
+
+func TestLoad_AllowedUserIDs(t *testing.T) {
+	first := "11111111-1111-4111-8111-111111111111"
+	second := "22222222-2222-4222-8222-222222222222"
+
+	t.Run("unset allows everyone", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.AllowedUserIDs) != 0 {
+			t.Fatalf("AllowedUserIDs = %v, want empty", cfg.AllowedUserIDs)
+		}
+	})
+
+	t.Run("parses a trimmed list and skips blanks", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		setEnv(t, "ALLOWED_USER_IDS", " "+first+" ,, "+second+",")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.AllowedUserIDs) != 2 || cfg.AllowedUserIDs[0].String() != first || cfg.AllowedUserIDs[1].String() != second {
+			t.Fatalf("AllowedUserIDs = %v, want [%s %s]", cfg.AllowedUserIDs, first, second)
+		}
+	})
+
+	for _, bad := range []string{"not-a-uuid", first + ",owner@example.com", "00000000-0000-0000-0000-000000000000"} {
+		t.Run("rejects "+bad, func(t *testing.T) {
+			clearAll(t)
+			setValidDevelopmentEnv(t)
+			setEnv(t, "ALLOWED_USER_IDS", bad)
+			if _, err := Load(); !errors.Is(err, ErrInvalidAllowedUserIDs) {
+				t.Fatalf("Load() error = %v, want ErrInvalidAllowedUserIDs", err)
+			}
+		})
 	}
 }
