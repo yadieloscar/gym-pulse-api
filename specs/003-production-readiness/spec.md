@@ -67,3 +67,25 @@ container vulnerabilities. Contract documentation matches executable behavior.
 - API additions are backward-compatible and deploy before the linked app release.
 - Database changes are forward migrations. Rollback is roll-forward if reverting would re-expose
   tables.
+
+## Amendment A1: private pre-launch access (2026-11-16)
+
+**Why:** the owner will host the API on Railway before anyone else uses the app and asked how to
+make sure nobody else gets in. A public URL cannot be hidden (it ships inside the app), so access is
+closed at the identity layer instead.
+
+- **FR-A1-001:** Optional `ALLOWED_USER_IDS` (comma-separated Supabase user UUIDs). When set, every
+  `/api/v1/*` route, including `DELETE /api/v1/account`, returns
+  `403 ACCOUNT_NOT_ALLOWED` for a verified token whose subject is not listed. The check runs right
+  after token verification, before rate limiting and the active-user lookup.
+- **FR-A1-002:** Unset or blank means today's behaviour: every verified user is allowed.
+- **FR-A1-003:** A malformed or nil UUID in the list stops startup, so a typo cannot silently open
+  the deployment or lock the owner out.
+- **FR-A1-004:** `/health` and `/ready` are unaffected.
+- **FR-A1-005:** The release runbook pairs the list with turning off Supabase sign-up until launch.
+
+Acceptance: middleware table test (empty list, listed, unlisted, missing and malformed subject),
+router test (owner 200, stranger 403 on a data route and on account deletion without reaching the
+active-user lookup, `/health` 200), config tests (unset, trimmed list, malformed and nil ids).
+Contract 1.10.0, additive. The app does not yet show a dedicated message for this 403; it is only
+set on the owner's own deployments, so no app change ships with it.

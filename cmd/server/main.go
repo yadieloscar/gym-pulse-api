@@ -285,6 +285,9 @@ func main() {
 		}
 	}()
 
+	if len(cfg.AllowedUserIDs) > 0 {
+		logger.Info("access limited to ALLOWED_USER_IDS", "count", len(cfg.AllowedUserIDs))
+	}
 	logger.Info("server starting", "port", cfg.Port, "env", cfg.Environment)
 	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		logger.Error("server error", "error", err)

@@ -77,6 +77,7 @@ generated documentation are operational surfaces outside the authenticated appli
 | `SUPABASE_JWT_AUDIENCE` | Staging/production | — | Expected access-token audience, normally `authenticated` |
 | `PORT` | No | `8080` | Server port |
 | `ALLOWED_ORIGINS` | Staging/production | `*` in development/test | Explicit HTTPS CORS origins (comma-separated) |
+| `ALLOWED_USER_IDS` | No | — (everyone) | Comma-separated Supabase user ids allowed to use `/api/v1/*`; others get `403 ACCOUNT_NOT_ALLOWED`. Use it to keep a pre-launch deployment private |
 | `ENVIRONMENT` | Yes | Binary: —; production image: `production` | Explicitly select `development`, `test`, `staging`, or `production`; blank values fail startup |
 | `LOG_LEVEL` | No | `info` | `debug`, `info`, `warn`, `error` |
 | `USDA_FDC_API_KEY` | No (warned in staging/production) | — | USDA FoodData Central key for live food search and barcode lookup; empty means catalog-only search (`incomplete: true`) |

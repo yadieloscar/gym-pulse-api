@@ -81,6 +81,21 @@ every release, and record the values in the release notes:
 - [ ] **JWT signing keys**: the project uses an asymmetric key (ES256 or RS256) served from
       JWKS; the legacy HMAC secret is not used by any release environment.
 
+## Private pre-launch access
+
+Until the app opens to other people, keep each hosted environment private to its owner:
+
+- [ ] In Supabase **Authentication → Settings**, turn off **Allow new users to sign up** after
+      creating the owner's account.
+- [ ] Set `ALLOWED_USER_IDS` on the Railway service to the owner's Supabase user id (from
+      **Authentication → Users**). A wrong or malformed id stops startup; an unlisted account
+      gets `403 ACCOUNT_NOT_ALLOWED`.
+- [ ] After deploy, confirm the owner's app loads data, and that a token for any other test
+      user gets 403 on `GET /api/v1/settings`.
+
+Clearing `ALLOWED_USER_IDS` opens the API to every verified Supabase user; do that only together
+with re-enabling sign-up at launch.
+
 ## Runtime role rollout (migration 026)
 
 The API runs migrations as the schema owner and serves requests as `gym_pulse_api`, a role with
