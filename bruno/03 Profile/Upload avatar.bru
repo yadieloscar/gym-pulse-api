@@ -1,0 +1,31 @@
+meta {
+  name: DESTRUCTIVE Upload avatar
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/v1/profile/avatar
+  body: multipartForm
+  auth: inherit
+}
+
+body:multipart-form {
+  file: @file(fixtures/avatar.png)
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/profile/avatar`
+  
+  multipart/form-data with one JPEG or PNG part named file, max 5 MiB; 10/min Needs Supabase Storage with a public avatars bucket; the local stack answers 503.
+}

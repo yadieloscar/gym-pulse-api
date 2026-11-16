@@ -1,0 +1,33 @@
+meta {
+  name: Record health export
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/health-exports/day_log/{{dayLogId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "source": "apple_health",
+    "external_id": "B5D7E9C2-3F44-4B1A-9E0D-7C6A2F1B8D10",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/health-exports/{workout_kind}/{workout_id}`
+  
+  Records a finished workout's Apple Health export. Uses the day log from Logs / Log workout day; workout_kind can also be scheduled_workout with a finished scheduled workout id.
+}

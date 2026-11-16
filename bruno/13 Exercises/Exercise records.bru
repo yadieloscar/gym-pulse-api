@@ -1,0 +1,25 @@
+meta {
+  name: Exercise records
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/exercises/records?ids={{templateExerciseId}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ids: {{templateExerciseId}}
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/exercises/records`
+  
+  Comma-separated exercise UUIDs
+}

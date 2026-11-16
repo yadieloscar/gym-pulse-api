@@ -120,14 +120,13 @@ It has no DDL, owns nothing, and cannot bypass RLS. Roll it out in this order, i
    `ALLOW_OWNER_DATABASE_URL=true` because release environments otherwise refuse an owner
    request connection). The
    migration grants schema usage, table DML, default DML for future tables, and creates the
-   `gym_pulse_api_access` policy on every application table. Migrations 026 and 039 together
-   leave the role with `SELECT` on `auth.users.id` only, never the emails or password hashes
-   in the other columns. If the log shows a warning that either statement failed, run
-   `GRANT USAGE ON SCHEMA auth TO gym_pulse_api; REVOKE SELECT ON auth.users FROM gym_pulse_api;
-   GRANT SELECT (id) ON auth.users TO gym_pulse_api;`
-   as a role that owns `auth.users` (`supabase_auth_admin` or the dashboard owner). If
-   `auth.users` has row-level security enabled in the hosted project, add a read policy for
-   `gym_pulse_api` or the identity check denies every request.
+   `gym_pulse_api_access` policy on every application table. Migration 043 adds
+   `gym_pulse_private.auth_user_exists(uuid)`, a `SECURITY DEFINER` function owned by the
+   schema owner, which is the only way the role checks that a token's user still exists. The
+   role needs no access to the `auth` schema: hosted Supabase gives the owner no grant option
+   there, so `GRANT USAGE ON SCHEMA auth` silently grants nothing (found on the first hosted
+   deploy, 2026-11-16). Log warnings from migrations 026 and 039 about `auth.users` grants are
+   expected on hosted Supabase and need no action.
 3. **Verify the grants** with `REQUIRE_SUPABASE_DATA_API_ROLES=true
    ./scripts/validate-supabase-security.sh` using the owner URL.
 4. **Switch the request connections**: set `DATABASE_URL` and `DATABASE_LOCK_URL` to
@@ -173,7 +172,7 @@ migration 043 and later; 001–042 predate them and are never edited.
   `DROP ... IF EXISTS` of the same name before `CREATE POLICY` or `ADD CONSTRAINT`. Renames and
   types go inside a `DO` block that checks the catalog. CI re-executes each strict migration on the
   migrated database inside a rolled-back transaction.
-- A new table ends with `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 043),
+- A new table ends with `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 044),
   which enables RLS, revokes the Supabase Data API roles, and provisions `gym_pulse_api`.
 - Assert what the migration promises: when it backfills or transforms data, end with a `DO` block
   that `RAISE EXCEPTION`s if the postcondition does not hold (see 026), so a bad migration rolls

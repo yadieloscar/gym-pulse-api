@@ -1,0 +1,53 @@
+meta {
+  name: Sign in
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{supabaseUrl}}/auth/v1/token?grant_type=password
+  body: json
+  auth: none
+}
+
+params:query {
+  grant_type: password
+}
+
+headers {
+  apikey: {{supabasePublishableKey}}
+}
+
+body:json {
+  {
+    "email": "{{email}}",
+    "password": "{{password}}"
+  }
+}
+
+script:pre-request {
+  // Needs a Supabase project; skipped when no publishable key is set (for example the local stack).
+  if (!bru.getEnvVar("supabasePublishableKey")) {
+    bru.runner.skipRequest();
+  }
+}
+
+script:post-response {
+  if (res.status === 200) {
+    bru.setEnvVar("accessToken", res.body.access_token);
+    bru.setEnvVar("refreshToken", res.body.refresh_token);
+    bru.setEnvVar("userId", res.body.user.id);
+  }
+}
+
+tests {
+  test("signed in", () => expect(res.status).to.equal(200));
+  test("got an access token", () => expect(res.body.access_token).to.be.a("string"));
+}
+
+docs {
+  Signs in with Supabase Auth and stores `accessToken`, `refreshToken` and `userId` for this session.
+  Set `email`, `password` and `supabasePublishableKey` as secret values in the environment
+  (Supabase → Project Settings → API Keys; the publishable key is public).
+  Access tokens expire after about an hour; run **Refresh token** then.
+}

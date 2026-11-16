@@ -1,0 +1,41 @@
+meta {
+  name: Adopt legacy weekly plan
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/programs/adopt-legacy
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "operation_key": "{{operationKey}}",
+    "expected_revision": 0
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.program.id; if (v !== undefined && v !== null) bru.setVar("programId", v); } catch (e) {}
+    try { const v = body.program.revision; if (v !== undefined && v !== null) bru.setVar("programRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/programs/adopt-legacy`
+  
+  Needs a weekly plan with a template (PUT /plan/weekly); expected_revision must be 0; 404 if nothing to adopt
+}

@@ -1,0 +1,44 @@
+meta {
+  name: Log sport activity
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/sport-activities
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "date": "2026-11-15",
+    "sport_id": "basketball",
+    "sport_name": "Basketball",
+    "duration_minutes": 60,
+    "notes": "Pickup game",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("sportActivityId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/sport-activities`
+  
+  Add scheduled_workout_id to complete a planned sport session; 201
+}

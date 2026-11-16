@@ -56,7 +56,7 @@ description: "Implementation tasks for the least-privilege runtime database role
 
 - [x] T014 [A1] `internal/dbmigrate` runner shared by `cmd/migrate` and dev/test server startup; `cmd/migrate` binary in the image
 - [x] T015 [A1] `internal/config`: `LoadMigrate`, release `DATABASE_MIGRATE_URL` optional, `MigrateOnStart` dev/test only; tests
-- [x] T016 [A1] Migration 043 `gym_pulse_private.secure_table`; security migration test accepts the helper
+- [x] T016 [A1] Migration 044 `gym_pulse_private.secure_table`; security migration test accepts the helper
 - [x] T017 [A1] `internal/dbmigrate/lint_test.go`: pairing, contiguous versions, one transaction per file, re-runnable rules from 043
 - [x] T018 [A1] Integration: `internal/dao/runtime_role_integration_test.go`, `internal/dbmigrate/dbmigrate_integration_test.go` (round trip, strict re-run)
 - [x] T019 [A1] CI: `migrate` service gates the API; runtime URL for the DAO suite; round-trip step

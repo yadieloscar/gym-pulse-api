@@ -1,0 +1,40 @@
+meta {
+  name: Save knee kit day
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/knee-kit/days/{{today}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "completed_items": [
+      "morning-check",
+      "isometric-hold"
+    ],
+    "morning_pain": 3,
+    "activity_pain": null,
+    "sharp_pain": false,
+    "limping": false,
+    "expected_revision": 0,
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/knee-kit/days/{date}`
+  
+  Needs a training profile; date not after local today; expected_revision 0 first, then current; full replacement
+}

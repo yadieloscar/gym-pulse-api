@@ -1,0 +1,49 @@
+meta {
+  name: Log food entry
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{baseUrl}}/api/v1/nutrition/days/{{today}}/entries
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "food": {
+      "id": "{{foodId}}"
+    },
+    "serving": {
+      "label": "30 g",
+      "grams": 30
+    },
+    "amount": 2,
+    "section": "breakfast",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.entry.id; if (v !== undefined && v !== null) bru.setVar("entryId", v); } catch (e) {}
+    try { const v = body.entry.revision; if (v !== undefined && v !== null) bru.setVar("entryRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/nutrition/days/{date}/entries`
+  
+  Needs a food; or send quick_add {protein_g, energy_kcal} instead of food/serving/amount; 201
+}

@@ -1,0 +1,46 @@
+meta {
+  name: DESTRUCTIVE Finish workout
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{baseUrl}}/api/v1/scheduled-workouts/{{scheduledWorkoutId}}/complete
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{scheduledWorkoutRevision}}
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/scheduled-workouts/{id}/complete`
+  
+  Finalizes the outcome and day participation; cannot be undone
+}

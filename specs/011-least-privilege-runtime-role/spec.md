@@ -138,7 +138,7 @@ of grant and policy SQL.
 - **FR-A1-004:** An integration test connected as the runtime role reads every public application
   table and `auth.users.id`, and is denied `CREATE TABLE`, `TRUNCATE`, and `schema_migrations`.
   CI runs it.
-- **FR-A1-005:** Migration 043 adds `gym_pulse_private.secure_table(regclass)`: enable RLS, revoke
+- **FR-A1-005:** Migration 044 adds `gym_pulse_private.secure_table(regclass)`: enable RLS, revoke
   every Data API role, grant DML and the `gym_pulse_api_access` policy to the runtime role.
   `EXECUTE` is revoked from `PUBLIC`. New table migrations call it instead of copying the blocks,
   and the repository test accepts the call as provisioning.

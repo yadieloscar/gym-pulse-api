@@ -1,0 +1,27 @@
+meta {
+  name: DESTRUCTIVE Delete body weight
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/body/weight/{{bodyWeightId}}
+  body: none
+  auth: inherit
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `DELETE /api/v1/body/weight/{id}`
+  
+  204
+}

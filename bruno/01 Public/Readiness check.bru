@@ -1,0 +1,21 @@
+meta {
+  name: Readiness check
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/ready
+  body: none
+  auth: none
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /ready`
+  
+  No auth; checks dependencies
+}

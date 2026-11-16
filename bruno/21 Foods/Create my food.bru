@@ -1,0 +1,51 @@
+meta {
+  name: Create my food
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/nutrition/foods
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Whey protein",
+    "brand": "Generic",
+    "barcode": "096619123452",
+    "serving": {
+      "label": "1 scoop",
+      "grams": 30
+    },
+    "energy_kcal": 120,
+    "protein_g": 24,
+    "carbs_g": 3,
+    "fat_g": 1.5,
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("foodId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("foodRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/nutrition/foods`
+  
+  201
+}

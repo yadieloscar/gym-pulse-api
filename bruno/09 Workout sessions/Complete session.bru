@@ -1,0 +1,47 @@
+meta {
+  name: DESTRUCTIVE Complete session
+  type: http
+  seq: 4
+}
+
+patch {
+  url: {{baseUrl}}/api/v1/workout-sessions/{{sessionId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "status": "completed",
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{sessionRevision}}
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("sessionRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PATCH /api/v1/workout-sessions/{id}`
+  
+  Completing counts toward participation
+}

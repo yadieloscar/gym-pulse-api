@@ -1,0 +1,70 @@
+meta {
+  name: Create program
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/programs
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Mixed strength week",
+    "primary_goal": "strength",
+    "roadmap": {},
+    "operation_key": "{{operationKey}}",
+    "workouts": [
+      {
+        "name": "Lower A",
+        "sequence_position": 1,
+        "exercises": [
+          {
+            "name": "Air Squat",
+            "category": "legs",
+            "modality": "strength",
+            "exercise_order": 1,
+            "target_sets": 3,
+            "target_reps": 10
+          }
+        ]
+      },
+      {
+        "kind": "sport",
+        "name": "Long ride",
+        "sequence_position": 2,
+        "sport": {
+          "sport_id": "cycling",
+          "sport_name": "Cycling",
+          "target_duration_minutes": 90,
+          "target_distance_meters": 40000
+        }
+      }
+    ]
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("programId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("programRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/programs`
+  
+  Creates the active program; 201
+}

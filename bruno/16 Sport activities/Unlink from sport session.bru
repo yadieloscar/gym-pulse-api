@@ -1,0 +1,38 @@
+meta {
+  name: DESTRUCTIVE Unlink from sport session
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{baseUrl}}/api/v1/sport-activities/{{sportActivityId}}/unlink
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "expected_revision": {{scheduledWorkoutRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/sport-activities/{id}/unlink`
+  
+  Reopens the linked sport session; revision is the linked workout's revision Needs an activity that Link attached to a session; otherwise 409.
+}

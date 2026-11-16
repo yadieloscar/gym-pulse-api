@@ -85,10 +85,12 @@ func TestRuntimeRoleReachesEveryApplicationTable(t *testing.T) {
 		}
 	}
 
-	// The identity check reads auth.users.id only (migrations 026 and 039).
-	var ids int64
-	if err := runtime.QueryRow(ctx, `SELECT count(id) FROM auth.users`).Scan(&ids); err != nil {
-		t.Errorf("runtime role cannot read auth.users.id: %v", err)
+	// The identity check calls the owner's auth_user_exists (migration 043).
+	var exists bool
+	if err := runtime.QueryRow(ctx, `SELECT gym_pulse_private.auth_user_exists($1)`, uuid.New()).Scan(&exists); err != nil {
+		t.Errorf("runtime role cannot call gym_pulse_private.auth_user_exists: %v", err)
+	} else if exists {
+		t.Error("auth_user_exists reported a random id as existing")
 	}
 }
 

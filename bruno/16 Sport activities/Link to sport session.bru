@@ -1,0 +1,33 @@
+meta {
+  name: Link to sport session
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/sport-activities/{{sportActivityId}}/link
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "scheduled_workout_id": "{{scheduledWorkoutId}}",
+    "expected_revision": {{scheduledWorkoutRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/sport-activities/{id}/link`
+  
+  scheduledWorkoutId must be a planned sport session; revision is that workout's revision Needs a scheduled sport session (a program with a sport unit); a strength workout answers 422.
+}

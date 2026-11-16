@@ -48,7 +48,7 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 	if len(publicTables) != 42 {
 		t.Fatalf("found %d public application tables, want 42: %v", len(publicTables), publicTables)
 	}
-	// Migration 043's helper enables RLS and provisions the runtime role in one
+	// Migration 044's helper enables RLS and provisions the runtime role in one
 	// call, so a table secured through it satisfies both checks below.
 	securedByHelper := func(table string) bool {
 		return strings.Contains(contents, "gym_pulse_private.secure_table('"+table+"')")
@@ -133,7 +133,7 @@ func TestSupabaseSecurityMigrationRevokesDataAPIAccess(t *testing.T) {
 }
 
 func TestSecureTableHelperMigration(t *testing.T) {
-	body, err := os.ReadFile("../../migrations/043_create_secure_table_helper.up.sql")
+	body, err := os.ReadFile("../../migrations/044_create_secure_table_helper.up.sql")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -153,12 +153,12 @@ func TestSecureTableHelperMigration(t *testing.T) {
 		"REVOKE ALL ON FUNCTION gym_pulse_private.secure_table(regclass) FROM PUBLIC;",
 	} {
 		if !strings.Contains(contents, required) {
-			t.Errorf("migration 043 is missing %q", required)
+			t.Errorf("migration 044 is missing %q", required)
 		}
 	}
 	for _, forbidden := range []string{"SECURITY DEFINER", "GRANT ALL", "TRUNCATE", "REFERENCES", "TRIGGER", "WITH GRANT OPTION", "FORCE ROW LEVEL SECURITY", "PASSWORD", "GRANT USAGE ON SCHEMA gym_pulse_private", "GRANT EXECUTE"} {
 		if strings.Contains(strings.ToUpper(contents), strings.ToUpper(forbidden)) {
-			t.Errorf("migration 043 must not contain %q", forbidden)
+			t.Errorf("migration 044 must not contain %q", forbidden)
 		}
 	}
 }

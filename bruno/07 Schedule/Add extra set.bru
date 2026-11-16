@@ -1,0 +1,47 @@
+meta {
+  name: Add extra set
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{baseUrl}}/api/v1/scheduled-workouts/{{scheduledWorkoutId}}/extra-sets
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{scheduledWorkoutRevision}},
+    "exercise_id": null,
+    "exercise_name": "Push-Up",
+    "exercise_category": "push",
+    "exercise_modality": "strength",
+    "set_index": 1,
+    "actual_reps": 20,
+    "completed": true
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/scheduled-workouts/{id}/extra-sets`
+  
+  Not on finalized workouts (409); 201
+}

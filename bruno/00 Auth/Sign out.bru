@@ -1,0 +1,37 @@
+meta {
+  name: Sign out
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{supabaseUrl}}/auth/v1/logout
+  body: none
+  auth: bearer
+}
+
+headers {
+  apikey: {{supabasePublishableKey}}
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+script:pre-request {
+  // Needs a Supabase project; skipped when no publishable key is set (for example the local stack).
+  if (!bru.getEnvVar("supabasePublishableKey")) {
+    bru.runner.skipRequest();
+  }
+}
+
+script:post-response {
+  if (res.status === 204) {
+    bru.setEnvVar("accessToken", "");
+    bru.setEnvVar("refreshToken", "");
+  }
+}
+
+docs {
+  Revokes the refresh token. The current access token keeps working at the API until it expires (up to an hour).
+}

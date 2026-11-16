@@ -1,0 +1,21 @@
+meta {
+  name: Export all data (JSON)
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/export
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/export`
+  
+  6/min shared with imports
+}

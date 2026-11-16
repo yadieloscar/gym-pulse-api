@@ -1,0 +1,49 @@
+meta {
+  name: Update my food
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/api/v1/nutrition/foods/{{foodId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Whey protein",
+    "serving": {
+      "label": "1 scoop",
+      "grams": 32
+    },
+    "energy_kcal": 130,
+    "protein_g": 25,
+    "carbs_g": 3,
+    "fat_g": 1.5,
+    "expected_revision": {{foodRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("foodRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/nutrition/foods/{id}`
+  
+  Own foods only
+}

@@ -1,0 +1,64 @@
+meta {
+  name: Create saved meal
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/nutrition/meals
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Post-workout shake",
+    "section": "breakfast",
+    "items": [
+      {
+        "food": {
+          "id": "{{foodId}}"
+        },
+        "serving": {
+          "label": "30 g",
+          "grams": 30
+        },
+        "amount": 1
+      },
+      {
+        "food": {
+          "id": "{{foodId}}"
+        },
+        "serving": {
+          "label": "100 g",
+          "grams": 100
+        },
+        "amount": 0.5
+      }
+    ],
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("mealId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("mealRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/nutrition/meals`
+  
+  Needs a food; names unique per user (case-insensitive); 201
+}

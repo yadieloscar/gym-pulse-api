@@ -1911,7 +1911,7 @@ API. Two alternatives were rejected:
 Operational rules:
 
 - Every migration that creates a table ends with
-  `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 043). The helper enables
+  `SELECT gym_pulse_private.secure_table('public.<table>');` (migration 044). The helper enables
   RLS, revokes `anon`, `authenticated`, and `service_role`, and grants `gym_pulse_api` DML plus the
   `gym_pulse_api_access` policy. It lives in a private schema no client role can use and runs as
   the caller. Tables from 033 and earlier carry the same SQL inline.

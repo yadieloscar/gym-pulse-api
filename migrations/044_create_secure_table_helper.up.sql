@@ -7,9 +7,10 @@
 --
 --     SELECT gym_pulse_private.secure_table('public.<table>');
 --
--- The function lives in a private schema that no client role can use, so the
--- Supabase Data API never exposes it, and it runs as the caller (the schema
--- owner running migrations). It is idempotent and safe where the hosted
+-- The function lives in gym_pulse_private (migration 043), which the Supabase
+-- Data API does not expose. gym_pulse_api may use that schema but gets no
+-- EXECUTE here, and the function runs as the caller (the schema owner running
+-- migrations). It is idempotent and safe where the hosted
 -- Supabase roles do not exist. internal/dao/supabase_security_migration_test.go
 -- accepts the call as provisioning for both RLS and the runtime role.
 CREATE SCHEMA IF NOT EXISTS gym_pulse_private;

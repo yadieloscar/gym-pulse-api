@@ -1,0 +1,36 @@
+meta {
+  name: List starter programs
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/starter-programs?primary_goal=strength&available_days=2&experience=beginner&equipment=bodyweight&session_duration_minutes=45
+  body: none
+  auth: inherit
+}
+
+params:query {
+  primary_goal: strength
+  available_days: 2
+  experience: beginner
+  equipment: bodyweight
+  session_duration_minutes: 45
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.starter_programs[0].id; if (v !== undefined && v !== null) bru.setVar("starterProgramId", v); } catch (e) {}
+    try { const v = body.starter_programs[0].version; if (v !== undefined && v !== null) bru.setVar("starterVersion", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/starter-programs`
+}

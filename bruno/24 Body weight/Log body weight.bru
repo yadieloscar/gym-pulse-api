@@ -1,0 +1,37 @@
+meta {
+  name: Log body weight
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/api/v1/body/weight
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "date": "2026-11-16",
+    "weight": 182.4,
+    "unit": "lb"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("bodyWeightId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/body/weight`
+  
+  201
+}

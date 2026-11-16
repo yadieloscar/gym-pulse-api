@@ -1,0 +1,66 @@
+meta {
+  name: DESTRUCTIVE Apply goal change
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/plan-transitions/apply
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "proposed_profile": {
+      "primary_goal": "strength",
+      "available_days": [
+        1,
+        3,
+        5
+      ],
+      "usual_activity": "moderate",
+      "experience": "intermediate",
+      "equipment": [
+        "barbell",
+        "dumbbells"
+      ],
+      "session_duration_minutes": 60,
+      "timezone": "America/New_York",
+      "preferences": {}
+    },
+    "from": "2026-11-23",
+    "to": "2026-12-06",
+    "preview_token": "{{previewToken}}",
+    "operation_key": "{{operationKey}}",
+    "expected_profile_revision": {{profileRevision}}
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.target_program.id; if (v !== undefined && v !== null) bru.setVar("programId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/plan-transitions/apply`
+  
+  Send the exact preview body plus token; replaces unstarted workouts and the active program; 30/min
+}

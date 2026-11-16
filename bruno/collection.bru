@@ -1,0 +1,36 @@
+meta {
+  name: GymPulse API
+}
+
+auth {
+  mode: bearer
+}
+
+auth:bearer {
+  token: {{accessToken}}
+}
+
+script:pre-request {
+  // A fresh operation key per request. Routes that require one compare the
+  // Idempotency-Key header with the body's operation_key, so both use this.
+  const { v4 } = require("uuid");
+  bru.setVar("operationKey", v4());
+
+  // Local environment: mint a development token when none is set yet.
+  if (!bru.getEnvVar("accessToken") && bru.getEnvVar("localJwtSecret")) {
+    const CryptoJS = require("crypto-js");
+    const b64 = (words) => CryptoJS.enc.Base64.stringify(words).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+    const enc = (obj) => b64(CryptoJS.enc.Utf8.parse(JSON.stringify(obj)));
+    const now = Math.floor(Date.now() / 1000);
+    const head = enc({ alg: "HS256", typ: "JWT" });
+    const payload = enc({ sub: bru.getEnvVar("localUserId"), iat: now, exp: now + 3600 });
+    const signature = b64(CryptoJS.HmacSHA256(head + "." + payload, bru.getEnvVar("localJwtSecret")));
+    bru.setEnvVar("accessToken", head + "." + payload + "." + signature);
+  }
+}
+
+docs {
+  Every request inherits `Authorization: Bearer {{accessToken}}`.
+  Run **00 Auth / Sign in** first on a hosted environment. The local environment mints a test token by itself.
+  Requests marked DESTRUCTIVE refuse to send until the environment sets `allowDestructive` to `true`.
+}

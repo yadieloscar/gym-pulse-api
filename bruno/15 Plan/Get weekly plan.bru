@@ -1,0 +1,26 @@
+meta {
+  name: Get weekly plan
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/plan?from=2026-11-16&to=2026-12-13
+  body: none
+  auth: inherit
+}
+
+params:query {
+  from: 2026-11-16
+  to: 2026-12-13
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/plan`
+  
+  from/to optional; default today +/- 4 weeks
+}

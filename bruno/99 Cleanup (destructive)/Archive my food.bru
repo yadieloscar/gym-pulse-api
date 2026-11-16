@@ -1,0 +1,35 @@
+meta {
+  name: DESTRUCTIVE Archive my food
+  type: http
+  seq: 3
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/nutrition/foods/{{foodId}}?expected_revision={{foodRevision}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  expected_revision: {{foodRevision}}
+}
+
+headers {
+  Idempotency-Key: {{$randomUUID}}
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `DELETE /api/v1/nutrition/foods/{id}`
+  
+  Idempotency-Key header required (no body); archives, 204
+}
