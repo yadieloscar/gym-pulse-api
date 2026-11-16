@@ -1,0 +1,61 @@
+meta {
+  name: Log workout day
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/logs
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "date": "2026-11-16",
+    "type_id": "push",
+    "subtype_id": "hypertrophy",
+    "template_id": "{{templateId}}",
+    "session_notes": "Felt strong",
+    "overrides": [
+      {
+        "exercise_id": "{{templateExerciseId}}",
+        "actual_sets": 3,
+        "actual_reps": 8,
+        "actual_weight": 135,
+        "notes": "Paused reps",
+        "skipped": false
+      }
+    ],
+    "set_logs": [
+      {
+        "exercise_id": "{{templateExerciseId}}",
+        "set_index": 1,
+        "target_reps": 8,
+        "target_weight": 135,
+        "actual_reps": 8,
+        "actual_weight": 135,
+        "duration_seconds": null,
+        "completed": true
+      }
+    ]
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("dayLogId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/logs`
+  
+  Needs a template; Idempotency-Key is optional, but when sent it must equal body operation_key; 201
+}

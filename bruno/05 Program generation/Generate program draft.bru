@@ -1,0 +1,30 @@
+meta {
+  name: Generate program draft
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/program-generation
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "request": "no deadlifts",
+    "avoid": [
+      "hinge"
+    ]
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/program-generation`
+  
+  5/min plus a daily quota; read-only draft; needs a training profile; 503 when no provider is configured
+}

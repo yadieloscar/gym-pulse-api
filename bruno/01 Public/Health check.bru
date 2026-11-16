@@ -1,0 +1,21 @@
+meta {
+  name: Health check
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /health`
+  
+  No auth
+}

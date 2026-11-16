@@ -1,0 +1,21 @@
+meta {
+  name: Look up barcode
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/api/v1/nutrition/foods/barcode/{{barcode}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/nutrition/foods/barcode/{code}`
+  
+  60/min; code is a UPC/EAN such as 096619123452; 404 when unknown
+}

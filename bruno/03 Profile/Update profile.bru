@@ -1,0 +1,27 @@
+meta {
+  name: Update profile
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/profile
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "display_name": "Jordan"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/profile`
+  
+  All fields optional; onboarding_completed:false is rejected
+}

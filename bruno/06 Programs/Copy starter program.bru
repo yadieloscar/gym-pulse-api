@@ -1,0 +1,43 @@
+meta {
+  name: Copy starter program
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/programs/from-starter
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "starter_program_id": "{{starterProgramId}}",
+    "starter_version": {{starterVersion}},
+    "name": "My Strength Plan",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("programId", v); } catch (e) {}
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("programRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/programs/from-starter`
+  
+  Needs List starter programs first; deactivates the previous active program; 201
+}

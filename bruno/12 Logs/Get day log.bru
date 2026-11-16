@@ -1,0 +1,19 @@
+meta {
+  name: Get day log
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/logs/{{today}}
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/logs/{date}`
+}

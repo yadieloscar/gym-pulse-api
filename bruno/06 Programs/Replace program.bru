@@ -1,0 +1,61 @@
+meta {
+  name: Replace program
+  type: http
+  seq: 7
+}
+
+put {
+  url: {{baseUrl}}/api/v1/programs/{{programId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "name": "Mixed strength week v2",
+    "primary_goal": "strength",
+    "roadmap": {},
+    "active": true,
+    "expected_revision": {{programRevision}},
+    "operation_key": "{{operationKey}}",
+    "workouts": [
+      {
+        "name": "Lower A",
+        "sequence_position": 1,
+        "exercises": [
+          {
+            "name": "Air Squat",
+            "category": "legs",
+            "modality": "strength",
+            "exercise_order": 1,
+            "target_sets": 4,
+            "target_reps": 12,
+            "rest_seconds": 90
+          }
+        ]
+      }
+    ]
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("programRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/programs/{id}`
+  
+  Full replacement; needs a program first
+}

@@ -1,0 +1,19 @@
+meta {
+  name: List day entries
+  type: http
+  seq: 6
+}
+
+get {
+  url: {{baseUrl}}/api/v1/nutrition/days/{{today}}/entries
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/nutrition/days/{date}/entries`
+}

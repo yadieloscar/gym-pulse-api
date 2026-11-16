@@ -1,0 +1,45 @@
+meta {
+  name: Materialize week
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/schedule/materialize
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "program_id": "{{programId}}",
+    "from": "2026-11-23",
+    "to": "2026-11-29",
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{programRevision}}
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.scheduled_workouts[0].id; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutId", v); } catch (e) {}
+    try { const v = body.scheduled_workouts[0].required_sets[0].id; if (v !== undefined && v !== null) bru.setVar("setId", v); } catch (e) {}
+    try { const v = body.scheduled_workouts[0].revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/schedule/materialize`
+  
+  Needs a program; 30/min; 201
+}

@@ -1,0 +1,28 @@
+meta {
+  name: Set day override
+  type: http
+  seq: 3
+}
+
+put {
+  url: {{baseUrl}}/api/v1/plan/overrides/{{today}}
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "template_id": null,
+    "rest": true
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/plan/overrides/{date}`
+  
+  204; rest:true requires template_id null
+}

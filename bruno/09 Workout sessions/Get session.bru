@@ -1,0 +1,27 @@
+meta {
+  name: Get session
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/api/v1/workout-sessions/{{sessionId}}
+  body: none
+  auth: inherit
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("sessionRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/workout-sessions/{id}`
+}

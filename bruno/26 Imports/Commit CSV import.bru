@@ -1,0 +1,45 @@
+meta {
+  name: DESTRUCTIVE Commit CSV import
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/imports
+  body: multipartForm
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:multipart-form {
+  file: @file(fixtures/workouts.csv)
+  unmatched: keep
+  operation_key: {{operationKey}}
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("importId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/imports`
+  
+  multipart; Idempotency-Key must equal the operation_key form field; 6/min; 201 then 200 on replay
+}

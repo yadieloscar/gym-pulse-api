@@ -1,0 +1,35 @@
+meta {
+  name: Log saved meal
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/v1/nutrition/days/{{today}}/meal-logs
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "meal": {
+      "id": "{{mealId}}"
+    },
+    "section": "snacks",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/nutrition/days/{date}/meal-logs`
+  
+  Date not after local today; optional items overrides this log only; 201
+}

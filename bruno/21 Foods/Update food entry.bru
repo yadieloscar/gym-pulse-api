@@ -1,0 +1,45 @@
+meta {
+  name: Update food entry
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{baseUrl}}/api/v1/nutrition/entries/{{entryId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "serving": {
+      "label": "30 g",
+      "grams": 30
+    },
+    "amount": 1,
+    "expected_revision": {{entryRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.entry.revision; if (v !== undefined && v !== null) bru.setVar("entryRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/nutrition/entries/{id}`
+  
+  Capture path assumes the {entry, day} response shape
+}

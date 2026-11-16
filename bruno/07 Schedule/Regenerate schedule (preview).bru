@@ -1,0 +1,50 @@
+meta {
+  name: DESTRUCTIVE Regenerate schedule (preview)
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{baseUrl}}/api/v1/schedule/regenerate
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "program_id": "{{programId}}",
+    "from": "2026-11-23",
+    "to": "2026-12-06",
+    "apply": false,
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{programRevision}}
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.preview_token; if (v !== undefined && v !== null) bru.setVar("regeneratePreviewToken", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/schedule/regenerate`
+  
+  30/min; apply:false previews; resend with apply:true and preview_token to replace unstarted workouts
+}

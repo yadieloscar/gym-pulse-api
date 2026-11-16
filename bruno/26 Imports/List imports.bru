@@ -1,0 +1,19 @@
+meta {
+  name: List imports
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/imports
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/imports`
+}

@@ -1,0 +1,47 @@
+meta {
+  name: DESTRUCTIVE Advance stage
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{baseUrl}}/api/v1/training-blocks/{{blockId}}/transitions
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "action": "advance",
+    "expected_revision": {{blockRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("blockRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/training-blocks/{block_id}/transitions`
+  
+  advance needs enough qualifying exposures; regress needs to_stage_id and reason; also complete, archive
+}

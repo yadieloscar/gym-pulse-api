@@ -1,0 +1,47 @@
+meta {
+  name: Log mobility session
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{baseUrl}}/api/v1/mobility-sessions
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "date": "2026-11-15",
+    "routine_id": "hips-and-hamstrings",
+    "routine_name": "Hips and hamstrings",
+    "context": "rest_day",
+    "duration_seconds": 540,
+    "moves_completed": 7,
+    "moves_total": 8,
+    "content_version": "1",
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.id; if (v !== undefined && v !== null) bru.setVar("mobilitySessionId", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `POST /api/v1/mobility-sessions`
+  
+  Date not in the future; 201
+}

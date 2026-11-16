@@ -1,0 +1,27 @@
+meta {
+  name: DESTRUCTIVE Remove day override
+  type: http
+  seq: 8
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/plan/overrides/{{today}}
+  body: none
+  auth: inherit
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `DELETE /api/v1/plan/overrides/{date}`
+  
+  204; 404 if no override
+}

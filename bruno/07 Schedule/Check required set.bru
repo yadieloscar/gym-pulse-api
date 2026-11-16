@@ -1,0 +1,42 @@
+meta {
+  name: Check required set
+  type: http
+  seq: 6
+}
+
+put {
+  url: {{baseUrl}}/api/v1/scheduled-workouts/{{scheduledWorkoutId}}/sets/{{setId}}
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "operation_key": "{{operationKey}}",
+    "expected_revision": {{scheduledWorkoutRevision}},
+    "actual_reps": 10,
+    "completed": true
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.revision; if (v !== undefined && v !== null) bru.setVar("scheduledWorkoutRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/scheduled-workouts/{id}/sets/{set_id}`
+  
+  Needs a materialized exercise workout
+}

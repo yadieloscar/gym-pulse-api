@@ -1,0 +1,41 @@
+meta {
+  name: Move entry to section
+  type: http
+  seq: 9
+}
+
+put {
+  url: {{baseUrl}}/api/v1/nutrition/entries/{{entryId}}/section
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "section": "lunch",
+    "expected_revision": {{entryRevision}},
+    "operation_key": "{{operationKey}}"
+  }
+}
+
+script:post-response {
+  // Keep the previous value when this request fails.
+  if (res.status < 300) {
+    const body = res.getBody();
+    try { const v = body.entry.revision; if (v !== undefined && v !== null) bru.setVar("entryRevision", v); } catch (e) {}
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/nutrition/entries/{id}/section`
+  
+  section is breakfast, lunch, dinner, snacks, or null
+}

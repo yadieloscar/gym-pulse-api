@@ -1,0 +1,37 @@
+meta {
+  name: Replace weekly plan
+  type: http
+  seq: 2
+}
+
+put {
+  url: {{baseUrl}}/api/v1/plan/weekly
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "days": [
+      {
+        "weekday": 1,
+        "template_id": "{{templateId}}",
+        "rest": false
+      },
+      {
+        "weekday": 3,
+        "rest": true
+      }
+    ]
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/plan/weekly`
+  
+  Full replace; needs a template
+}

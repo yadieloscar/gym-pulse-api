@@ -1,0 +1,27 @@
+meta {
+  name: DESTRUCTIVE Delete import
+  type: http
+  seq: 9
+}
+
+delete {
+  url: {{baseUrl}}/api/v1/imports/{{importId}}
+  body: none
+  auth: inherit
+}
+
+script:pre-request {
+  if (String(bru.getEnvVar("allowDestructive")) !== "true") {
+    throw new Error("DESTRUCTIVE request blocked: set allowDestructive to true in this environment to send it");
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `DELETE /api/v1/imports/{id}`
+  
+  Removes every day log the import created; 204
+}

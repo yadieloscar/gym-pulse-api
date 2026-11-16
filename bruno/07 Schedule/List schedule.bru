@@ -1,0 +1,26 @@
+meta {
+  name: List schedule
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/api/v1/schedule?from=2026-11-16&to=2026-11-22
+  body: none
+  auth: inherit
+}
+
+params:query {
+  from: 2026-11-16
+  to: 2026-11-22
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/schedule`
+  
+  Range at most 366 days
+}

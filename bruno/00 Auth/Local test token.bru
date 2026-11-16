@@ -1,0 +1,34 @@
+meta {
+  name: Local test token
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+script:pre-request {
+  // Mints the same HS256 token scripts/smoke.sh uses. Only a development or
+  // test API accepts it; staging and production refuse HMAC tokens.
+  const CryptoJS = require("crypto-js");
+  const b64 = (words) => CryptoJS.enc.Base64.stringify(words).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
+  const enc = (obj) => b64(CryptoJS.enc.Utf8.parse(JSON.stringify(obj)));
+  const now = Math.floor(Date.now() / 1000);
+  const header = enc({ alg: "HS256", typ: "JWT" });
+  const payload = enc({ sub: bru.getEnvVar("localUserId"), iat: now, exp: now + 3600 });
+  const signature = b64(CryptoJS.HmacSHA256(header + "." + payload, bru.getEnvVar("localJwtSecret")));
+  bru.setEnvVar("accessToken", header + "." + payload + "." + signature);
+  bru.setEnvVar("userId", bru.getEnvVar("localUserId"));
+}
+
+tests {
+  test("local API is up", () => expect(res.status).to.equal(200));
+}
+
+docs {
+  **Local environment only.** Signs a one-hour test token for `localUserId` with `localJwtSecret`
+  (the local docker stack's `SUPABASE_JWT_SECRET`). That user must exist in the local `auth.users`.
+}
