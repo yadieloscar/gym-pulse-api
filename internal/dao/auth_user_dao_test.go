@@ -57,7 +57,7 @@ func TestAuthUserDAOExists(t *testing.T) {
 			if got != exists {
 				t.Fatalf("exists = %t, want %t", got, exists)
 			}
-			if !strings.Contains(querier.query, "FROM auth.users WHERE id = $1") {
+			if !strings.Contains(querier.query, "gym_pulse_private.auth_user_exists($1)") {
 				t.Fatalf("query is not scoped to the auth identity root: %s", querier.query)
 			}
 			if len(querier.args) != 1 || querier.args[0] != userID {

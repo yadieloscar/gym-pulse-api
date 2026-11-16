@@ -23,11 +23,13 @@ func NewAuthUserDAO(pool *pgxpool.Pool) *AuthUserDAO {
 }
 
 // Exists reports whether the JWT subject still has an active auth identity.
+// It calls a function owned by the schema owner (migration 043) because hosted
+// Supabase does not let the runtime role be granted the auth schema.
 func (r *AuthUserDAO) Exists(ctx context.Context, userID uuid.UUID) (bool, error) {
 	var exists bool
 	if err := r.database.QueryRow(
 		ctx,
-		`SELECT EXISTS(SELECT 1 FROM auth.users WHERE id = $1)`,
+		`SELECT gym_pulse_private.auth_user_exists($1)`,
 		userID,
 	).Scan(&exists); err != nil {
 		return false, fmt.Errorf("checking auth user existence: %w", err)
