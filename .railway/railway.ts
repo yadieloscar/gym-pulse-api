@@ -39,6 +39,9 @@ export default defineRailway((ctx) => {
       SUPABASE_SERVICE_ROLE_KEY: preserve(),
       SUPABASE_JWT_AUDIENCE: preserve(),
       ALLOWED_ORIGINS: preserve(),
+      // The owner's Supabase user id until launch; see "Private pre-launch
+      // access" in docs/RELEASE_RUNBOOK.md.
+      ALLOWED_USER_IDS: preserve(),
       // Feature keys: program generation (Anthropic) and live food search
       // (USDA FoodData Central). Set them in Railway before applying.
       ANTHROPIC_API_KEY: preserve(),
