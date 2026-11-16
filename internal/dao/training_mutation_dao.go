@@ -222,11 +222,11 @@ func loadProgram(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID) (*
 	program := &model.Program{}
 	err := tx.QueryRow(ctx, `
 		SELECT id, starter_program_id, starter_version, name, primary_goal,
-		       roadmap, active, revision, created_at, updated_at
+		       roadmap, active, revision, created_at, updated_at, to_char(scheduled_through, 'YYYY-MM-DD')
 		FROM programs WHERE id=$1 AND user_id=$2`, programID, userID).Scan(
 		&program.ID, &program.StarterProgramID, &program.StarterVersion, &program.Name,
 		&program.PrimaryGoal, &program.Roadmap, &program.Active, &program.Revision,
-		&program.CreatedAt, &program.UpdatedAt,
+		&program.CreatedAt, &program.UpdatedAt, &program.ScheduledThrough,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "program not found"}

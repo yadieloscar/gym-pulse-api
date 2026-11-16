@@ -1,6 +1,7 @@
 package model
 
 import (
+	"encoding/json"
 	"slices"
 	"sort"
 	"time"
@@ -174,6 +175,23 @@ type Program struct {
 	Workouts         []ProgramWorkout `json:"workouts"`
 	CreatedAt        time.Time        `json:"created_at"`
 	UpdatedAt        time.Time        `json:"updated_at"`
+	// ScheduledThrough is the last date the schedule fill covered for this
+	// program. It is storage state, not part of the contract.
+	ScheduledThrough *string `json:"-"`
+}
+
+// Placed reports whether every unit of the program has its weekdays. A program
+// is always all placed or all unplaced.
+func (p *Program) Placed() bool {
+	if p == nil || len(p.Workouts) == 0 {
+		return false
+	}
+	for _, unit := range p.Workouts {
+		if len(unit.Weekdays) == 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // UnitKind says whether a program or scheduled unit is an exercise workout or
@@ -243,11 +261,29 @@ const (
 	MaxProgramRoadmapBytes = 16 * 1024
 )
 
+// ScheduleHorizonDays is how far ahead of today the active program is kept
+// filled with sessions.
+const ScheduleHorizonDays = 56
+
+// WeekdayList is the ISO weekdays (Monday=1) a program unit sits on. A nil
+// list means the unit is unplaced. It always encodes as a JSON array, so a
+// client can tell that the API supports weekdays from the field's presence.
+type WeekdayList []int
+
+// MarshalJSON encodes a nil list as [] rather than null.
+func (l WeekdayList) MarshalJSON() ([]byte, error) {
+	if l == nil {
+		return []byte("[]"), nil
+	}
+	return json.Marshal([]int(l))
+}
+
 type ProgramWorkout struct {
 	ID               uuid.UUID         `json:"id"`
 	Kind             UnitKind          `json:"kind"`
 	Name             string            `json:"name"`
 	PreferredWeekday *int              `json:"preferred_weekday,omitempty"`
+	Weekdays         WeekdayList       `json:"weekdays"`
 	SequencePosition int               `json:"sequence_position"`
 	Sport            *SportTarget      `json:"sport,omitempty"`
 	Exercises        []ProgramExercise `json:"exercises"`
@@ -431,6 +467,10 @@ type ScheduledWorkout struct {
 	ExtraSets        []PerformedSet  `json:"extra_sets"`
 	CreatedAt        time.Time       `json:"created_at"`
 	UpdatedAt        time.Time       `json:"updated_at"`
+	// SlotDate is the layout date the program fill generated this session
+	// for. It never changes, including when the session is moved, and is nil
+	// for recover copies and off-plan sessions. Storage state only.
+	SlotDate *string `json:"-"`
 }
 
 // IsSport reports whether the scheduled unit is a sport session.

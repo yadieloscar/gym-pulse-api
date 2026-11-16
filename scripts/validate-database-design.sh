@@ -72,6 +72,8 @@ awk '
     if (alter_table != "" && line ~ /ADD COLUMN[[:space:]]+[a-zA-Z_][a-zA-Z0-9_]*/) {
       column = line
       sub(/^.*ADD COLUMN[[:space:]]+/, "", column)
+      # Re-runnable migrations (043 and later) write ADD COLUMN IF NOT EXISTS.
+      sub(/^IF NOT EXISTS[[:space:]]+/, "", column)
       sub(/[[:space:]].*/, "", column)
       print alter_table "|" column
     }
@@ -104,7 +106,7 @@ missing_columns="$(comm -23 "${work_dir}/migration-columns" "${work_dir}/documen
 extra_columns="$(comm -13 "${work_dir}/migration-columns" "${work_dir}/documented-columns")"
 
 sed -nE \
-  's/^[[:space:]]*CREATE( UNIQUE)? INDEX[[:space:]]+([a-zA-Z0-9_]+).*/\2/p' \
+  's/^[[:space:]]*CREATE( UNIQUE)? INDEX( IF NOT EXISTS)?[[:space:]]+([a-zA-Z0-9_]+).*/\3/p' \
   "${migrations_dir}"/*.up.sql |
   sort -u >"${work_dir}/migration-indexes"
 

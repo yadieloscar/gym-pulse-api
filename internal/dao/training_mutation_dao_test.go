@@ -202,7 +202,9 @@ func TestProgramWorkoutsPersistUnitKindAndSportColumns(t *testing.T) {
 	}
 	source := string(body)
 	for _, marker := range []string{
-		"INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,\n\t\t\t\tkind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)",
+		"INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,\n\t\t\t\tkind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes, weekdays)",
+		"SELECT pw.id, pw.name, pw.preferred_weekday, pw.weekdays, pw.sequence_position,",
+		"workout.Weekdays = weekdayList(weekdays)",
 		"pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,",
 		"workout.Kind = model.UnitKindExercises",
 		"workout.Kind = model.NormalizeUnitKind(workout.Kind)",
