@@ -32,6 +32,12 @@
   failed validation or its subject no longer exists. Clients branch on `code`
   and the challenge, never on the message text. A transient identity-check
   failure is `503 AUTHENTICATION_UNAVAILABLE` and must not sign the user out.
+- Contract 1.10.0 (additive): a deployment may set `ALLOWED_USER_IDS` to keep
+  itself private. A valid token whose `sub` is not on that list gets
+  `403 { "error": "<message>", "code": "ACCOUNT_NOT_ALLOWED" }` on every
+  `/api/v1/*` route, including `DELETE /api/v1/account`. The session is valid,
+  so the client must not sign the user out or retry; it shows that the account
+  has no access. With the variable unset, every verified user is allowed.
 - All bodies are JSON, snake_case. **The client must not camelCase anything.**
 - Browser preflight accepts `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, and
   `OPTIONS`, including `Authorization`, `Content-Type`, and `Idempotency-Key`.

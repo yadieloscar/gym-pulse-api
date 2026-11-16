@@ -17,7 +17,7 @@ func setEnv(t *testing.T, key, val string) {
 // clearAll unsets all relevant env vars.
 func clearAll(t *testing.T) {
 	t.Helper()
-	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_PROVIDER", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT"} {
+	for _, k := range []string{"DATABASE_URL", "DATABASE_LOCK_URL", "DATABASE_MIGRATE_URL", "SUPABASE_JWT_SECRET", "PORT", "ENVIRONMENT", "LOG_LEVEL", "ALLOWED_ORIGINS", "SUPABASE_JWKS_URL", "SUPABASE_JWT_ISSUER", "SUPABASE_JWT_AUDIENCE", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_AVATAR_BUCKET", "DATABASE_MAX_CONNS", "DATABASE_MIN_CONNS", "DATABASE_LOCK_MAX_CONNS", "DATABASE_MAX_CONN_LIFETIME", "DATABASE_MAX_CONN_IDLE_TIME", "DATABASE_HEALTH_CHECK_PERIOD", "ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "PROGRAM_GENERATION_PROVIDER", "PROGRAM_GENERATION_MODEL", "PROGRAM_GENERATION_DAILY_LIMIT", "PROGRAM_GENERATION_TIMEOUT", "ALLOWED_USER_IDS"} {
 		t.Setenv(k, "")
 	}
 }
@@ -643,5 +643,46 @@ func TestLoad_ReleaseEnvironmentsStartWithoutProviderKey(t *testing.T) {
 	}
 	if cfg.ProgramGenerationUsesModel() || cfg.ProgramGenerationProvider != ProgramGenerationProviderRules {
 		t.Fatalf("release environments serve drafts from the rules engine without a key: %+v", cfg)
+	}
+}
+
+func TestLoad_AllowedUserIDs(t *testing.T) {
+	first := "11111111-1111-4111-8111-111111111111"
+	second := "22222222-2222-4222-8222-222222222222"
+
+	t.Run("unset allows everyone", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.AllowedUserIDs) != 0 {
+			t.Fatalf("AllowedUserIDs = %v, want empty", cfg.AllowedUserIDs)
+		}
+	})
+
+	t.Run("parses a trimmed list and skips blanks", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		setEnv(t, "ALLOWED_USER_IDS", " "+first+" ,, "+second+",")
+		cfg, err := Load()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(cfg.AllowedUserIDs) != 2 || cfg.AllowedUserIDs[0].String() != first || cfg.AllowedUserIDs[1].String() != second {
+			t.Fatalf("AllowedUserIDs = %v, want [%s %s]", cfg.AllowedUserIDs, first, second)
+		}
+	})
+
+	for _, bad := range []string{"not-a-uuid", first + ",owner@example.com", "00000000-0000-0000-0000-000000000000"} {
+		t.Run("rejects "+bad, func(t *testing.T) {
+			clearAll(t)
+			setValidDevelopmentEnv(t)
+			setEnv(t, "ALLOWED_USER_IDS", bad)
+			if _, err := Load(); !errors.Is(err, ErrInvalidAllowedUserIDs) {
+				t.Fatalf("Load() error = %v, want ErrInvalidAllowedUserIDs", err)
+			}
+		})
 	}
 }

@@ -69,6 +69,10 @@ func New(
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.AuthMiddlewareWithConfig(middleware.AuthConfig{JWTSecret: cfg.SupabaseJWTSecret, JWKSURL: cfg.SupabaseJWKSURL, Issuer: cfg.SupabaseJWTIssuer, Audience: cfg.SupabaseJWTAudience}))
 
+		// ALLOWED_USER_IDS keeps a pre-launch deployment private: a verified
+		// token for anyone else gets 403 before any limiter or database work.
+		r.Use(middleware.RequireAllowedUser(cfg.AllowedUserIDs))
+
 		// Every authenticated route shares a per-user ceiling; costlier routes
 		// add tighter limits below. It runs before the active-user lookup so a
 		// flood does not reach the database.

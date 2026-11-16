@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 var (
@@ -23,6 +25,7 @@ var (
 	ErrProductionCORS            = errors.New("staging and production require explicit HTTPS ALLOWED_ORIGINS")
 	ErrInvalidEnvironment        = errors.New("ENVIRONMENT is required and must be development, test, staging, or production")
 	ErrInvalidDatabasePool       = errors.New("invalid database pool configuration")
+	ErrInvalidAllowedUserIDs     = errors.New("ALLOWED_USER_IDS must be a comma-separated list of user UUIDs")
 )
 
 // Defaults for the food sources; see docs/CONTRACTS.md "Food logging".
@@ -85,14 +88,18 @@ type Config struct {
 	ProgramGenerationDailyLimit       int
 	ProgramGenerationTimeout          time.Duration
 	AllowedOrigins                    []string
-	Environment                       string
-	LogLevel                          string
-	DatabaseMaxConns                  int32
-	DatabaseMinConns                  int32
-	DatabaseLockMaxConns              int32
-	DatabaseMaxConnLifetime           time.Duration
-	DatabaseMaxConnIdleTime           time.Duration
-	DatabaseHealthCheckPeriod         time.Duration
+	// AllowedUserIDs, when non-empty, limits every authenticated route to
+	// these Supabase user ids; anyone else gets 403. Empty allows every
+	// verified user. It keeps a pre-launch deployment private to its owner.
+	AllowedUserIDs            []uuid.UUID
+	Environment               string
+	LogLevel                  string
+	DatabaseMaxConns          int32
+	DatabaseMinConns          int32
+	DatabaseLockMaxConns      int32
+	DatabaseMaxConnLifetime   time.Duration
+	DatabaseMaxConnIdleTime   time.Duration
+	DatabaseHealthCheckPeriod time.Duration
 }
 
 // Load reads configuration from environment variables.
@@ -127,6 +134,11 @@ func Load() (*Config, error) {
 	logLevel := os.Getenv("LOG_LEVEL")
 	if logLevel == "" {
 		logLevel = "info"
+	}
+
+	allowedUserIDs, err := parseAllowedUserIDs(os.Getenv("ALLOWED_USER_IDS"))
+	if err != nil {
+		return nil, err
 	}
 
 	var origins []string
@@ -290,6 +302,7 @@ func Load() (*Config, error) {
 		ProgramGenerationDailyLimit:       int(generationLimit),
 		ProgramGenerationTimeout:          generationTimeout,
 		AllowedOrigins:                    origins,
+		AllowedUserIDs:                    allowedUserIDs,
 		Environment:                       env,
 		LogLevel:                          logLevel,
 		DatabaseMaxConns:                  maxConns,
@@ -412,4 +425,23 @@ func positiveDurationEnv(name string, fallback time.Duration) (time.Duration, er
 // production, where TLS termination and HTTPS-only clients are guaranteed.
 func (c *Config) IsReleaseEnvironment() bool {
 	return c.Environment == "staging" || c.Environment == "production"
+}
+
+// parseAllowedUserIDs reads ALLOWED_USER_IDS. Blank entries are ignored; any
+// other entry that is not a UUID stops startup so a typo cannot silently lock
+// the owner out or open the deployment.
+func parseAllowedUserIDs(raw string) ([]uuid.UUID, error) {
+	var ids []uuid.UUID
+	for entry := range strings.SplitSeq(raw, ",") {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		id, err := uuid.Parse(trimmed)
+		if err != nil || id == uuid.Nil {
+			return nil, ErrInvalidAllowedUserIDs
+		}
+		ids = append(ids, id)
+	}
+	return ids, nil
 }

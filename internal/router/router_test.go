@@ -478,3 +478,42 @@ func TestRouter_AuthenticatedRoutesShareDefaultUserLimit(t *testing.T) {
 		t.Fatalf("GET /api/v1/settings for another user = %d, want 200", code)
 	}
 }
+
+func TestRouter_AllowedUserIDsRestrictAuthenticatedRoutes(t *testing.T) {
+	owner, stranger := uuid.New(), uuid.New()
+	cfg := &config.Config{SupabaseJWTSecret: "test-secret", AllowedOrigins: []string{"https://app.example.com"}, AllowedUserIDs: []uuid.UUID{owner}}
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	activeUsers := &fakeActiveUserChecker{exists: true}
+	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+
+	send := func(method, path string, sub uuid.UUID) int {
+		claims := jwt.MapClaims{"sub": sub.String(), "exp": time.Now().Add(time.Hour).Unix()}
+		token, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString([]byte(cfg.SupabaseJWTSecret))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(method, path, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		r.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	if code := send(http.MethodGet, "/api/v1/settings", owner); code != http.StatusOK {
+		t.Fatalf("owner GET /api/v1/settings = %d, want 200", code)
+	}
+	callsBefore := activeUsers.calls
+	if code := send(http.MethodGet, "/api/v1/settings", stranger); code != http.StatusForbidden {
+		t.Fatalf("stranger GET /api/v1/settings = %d, want 403", code)
+	}
+	if code := send(http.MethodDelete, "/api/v1/account", stranger); code != http.StatusForbidden {
+		t.Fatalf("stranger DELETE /api/v1/account = %d, want 403", code)
+	}
+	if activeUsers.calls != callsBefore {
+		t.Error("a forbidden request still reached the active-user lookup")
+	}
+	if code := send(http.MethodGet, "/health", stranger); code != http.StatusOK {
+		t.Fatalf("GET /health = %d, want 200 regardless of the list", code)
+	}
+}
