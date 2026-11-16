@@ -375,9 +375,10 @@ weekday. `weekdays` is **always an array** in every program and starter
 response, so its presence tells a client that this contract is supported. It is
 `[]` while the unit is **unplaced**.
 
-- On write, `weekdays` holds 1–7 unique values from 1–7 (returned sorted). A
-  program's units all carry `weekdays` or none do; anything else is
-  `422 VALIDATION_ERROR` with `details.field = "workouts"`.
+- On write, `weekdays` holds 1–7 unique values from 1–7 (returned sorted). An
+  omitted field or an empty list means unplaced, so a program can be sent back
+  exactly as it was read. A program's units are all placed or all unplaced;
+  anything else is `422 VALIDATION_ERROR` with `details.field = "workouts"`.
 - A program saved without `weekdays` (a client older than 1.10.0, a starter
   copy) is unplaced. The server places it **once**, the first time a session
   would be created for it: walking forward from that operation's start date,

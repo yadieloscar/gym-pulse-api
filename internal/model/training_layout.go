@@ -91,16 +91,19 @@ func setUnitWeekdays(unit *ProgramWorkout, weekdays []int) {
 }
 
 // ValidateUnitWeekdays checks the weekdays a client supplied and sorts them.
-// A unit without the field is unplaced; a program is all placed or all
-// unplaced. A placed unit's preferred_weekday becomes its first weekday.
+// A unit without the field, or with an empty list, is unplaced: an unplaced
+// unit reads back as [], so a client can send a program exactly as it received
+// it. A program is all placed or all unplaced. A placed unit's
+// preferred_weekday becomes its first weekday.
 func ValidateUnitWeekdays(units []ProgramWorkout) error {
 	placed := 0
 	for index := range units {
 		unit := &units[index]
-		if unit.Weekdays == nil {
+		if len(unit.Weekdays) == 0 {
+			unit.Weekdays = nil
 			continue
 		}
-		if len(unit.Weekdays) == 0 || len(unit.Weekdays) > 7 {
+		if len(unit.Weekdays) > 7 {
 			return validationError("workouts", "weekdays must hold one to seven ISO weekdays")
 		}
 		weekdays := append([]int(nil), unit.Weekdays...)

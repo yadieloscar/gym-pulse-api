@@ -234,6 +234,9 @@ Captured with 300 athletes and 126,600 sessions loaded inside a rolled-back tran
   `release_migration_integration_test.go`.
 - Found while testing: `POST /programs` and `PUT /programs/{id}` without the optional `roadmap`
   returned 500 (a NOT NULL violation). Both now store `{}`.
+- Found while building the app's mock server: a unit sent back with the `weekdays: []` it was read
+  with was rejected. An empty list now means unplaced, so a program round-trips (spec User Story 1,
+  scenario 5 amended).
 - `scripts/validate-database-design.sh` did not parse `ADD COLUMN IF NOT EXISTS` or
   `CREATE INDEX IF NOT EXISTS`, which strict migrations require. It now does.
 

@@ -183,7 +183,8 @@ func TestValidateUnitWeekdays(t *testing.T) {
 		{name: "weekday below range", units: []ProgramWorkout{layoutUnit("A", 1, 0)}, wantErr: true},
 		{name: "weekday above range", units: []ProgramWorkout{layoutUnit("A", 1, 8)}, wantErr: true},
 		{name: "duplicate weekday", units: []ProgramWorkout{layoutUnit("A", 1, 2, 2)}, wantErr: true},
-		{name: "present but empty", units: []ProgramWorkout{{Name: "A", SequencePosition: 1, Weekdays: WeekdayList{}}}, wantErr: true},
+		{name: "an empty list is unplaced, as it reads back", units: []ProgramWorkout{{Name: "A", SequencePosition: 1, Weekdays: WeekdayList{}}}, want: [][]int{nil}},
+		{name: "more than seven days", units: []ProgramWorkout{layoutUnit("A", 1, 1, 2, 3, 4, 5, 6, 7, 1)}, wantErr: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -121,9 +121,10 @@ verify each unit appears only on its weekdays, every week.
 4. **Given** a program saved without weekdays (a released app or a starter), **When** it is first
    placed, **Then** the server deals its units in sequence across the athlete's available days once,
    stores the result as the program's weekdays, and returns them.
-5. **Given** a unit with a weekday outside 1 to 7, a repeated weekday, or an empty weekday list,
-   **When** it is saved, **Then** the API returns 422 `VALIDATION_ERROR` with
-   `details.field = "workouts"`.
+5. **Given** a unit with a weekday outside 1 to 7 or a repeated weekday, **When** it is saved,
+   **Then** the API returns 422 `VALIDATION_ERROR` with `details.field = "workouts"`. An empty
+   weekday list means unplaced, so a program can be sent back as it was read (amended 2026-11-16
+   during app implementation).
 
 ---
 
