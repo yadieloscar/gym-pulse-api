@@ -128,6 +128,16 @@ Response 200:
   "onboarding_completed": false
 }
 ```
+`avatar_url` (contract 1.11.0): the avatar bucket is private. For a photo uploaded
+through `PUT /api/v1/profile/avatar`, every profile response carries a signed
+Supabase Storage link that works for one hour and is then refused. The same link
+is returned for up to 30 minutes, so an image cache keeps working; after that a
+new one is issued. Clients show it, never store it as the photo's address, and
+read the profile again for a fresh link (a cached profile may hold an expired
+one). `null` means no photo, or that a link could not be made right now; the
+profile is still returned. An external `https://` URL set through
+`PUT /api/v1/profile` is returned unchanged.
+
 Omitting `onboarding_completed` preserves it. `true` completes onboarding;
 `false` is rejected with 422 and onboarding cannot be reset through this API.
 Unrelated display-name or avatar URL changes never complete onboarding.
@@ -137,8 +147,9 @@ Unrelated display-name or avatar URL changes never complete onboarding.
 Authenticated `multipart/form-data` with exactly one `file` part containing a
 JPEG or PNG of at most 5 MiB. Under the per-user cross-replica lock, the server
 loads the current profile and uploads to the inactive bounded slot:
-`<user_uuid>/avatar-0` or `<user_uuid>/avatar-1`. It then persists the
-cache-busted public URL. The previous active object is never overwritten before
+`<user_uuid>/avatar-0` or `<user_uuid>/avatar-1`. It then persists a stable,
+versioned reference to that object (never served to clients; the response
+carries a signed link, see `GET /api/v1/profile`). The previous active object is never overwritten before
 the database update commits. After any database-write error, the new object is
 never deleted. A detached read that positively confirms its exact URL turns the
 response into success. An unresolved read or one that still shows the old URL
@@ -163,6 +174,10 @@ Body — **all fields optional** (uses `omitempty`):
   "onboarding_completed": true
 }
 ```
+`avatar_url` may be an external `https://` URL, or a link this API issued for one
+of the caller's own avatar objects (stored as its stable reference, so a signed
+link sent back does not expire in the database). A link to another account's
+avatar object is `422 VALIDATION_ERROR` with `details.field = "avatar_url"`.
 
 ---
 

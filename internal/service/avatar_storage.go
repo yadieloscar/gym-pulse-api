@@ -21,10 +21,22 @@ var (
 	ErrAvatarStorageUnavailable = errors.New("avatar storage unavailable")
 	ErrAvatarUploadFailed       = errors.New("avatar upload failed")
 	ErrAvatarDeleteFailed       = errors.New("avatar delete failed")
+	ErrAvatarSignFailed         = errors.New("avatar link signing failed")
 )
 
 type AvatarStorage interface {
 	Upload(ctx context.Context, objectPath, contentType string, body []byte) (string, error)
+}
+
+// AvatarSigner turns a stored avatar reference into a short-lived link. The
+// bucket is private, so the stored public-form URL is never handed to a client.
+type AvatarSigner interface {
+	// ObjectPath returns the bucket-relative path when storedURL points into
+	// this deployment's avatar bucket, in either its stored or its signed form.
+	ObjectPath(storedURL string) (string, bool)
+	// CanonicalURL is the form the database stores for an object path.
+	CanonicalURL(objectPath string) string
+	Sign(ctx context.Context, objectPath string, ttl time.Duration) (string, error)
 }
 
 type AvatarDeleter interface {
@@ -88,8 +100,73 @@ func (s *SupabaseAvatarStorage) Upload(ctx context.Context, objectPath, contentT
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		return "", fmt.Errorf("%w: storage status %d", ErrAvatarUploadFailed, resp.StatusCode)
 	}
-	publicPath := path.Join(s.bucket, objectPath)
-	return s.baseURL + "/storage/v1/object/public/" + publicPath + "?v=" + strconv.FormatInt(s.now().UnixNano(), 10), nil
+	return s.CanonicalURL(objectPath), nil
+}
+
+// CanonicalURL is the stable reference kept in user_profiles.avatar_url. It has
+// the shape of a public object URL, which a private bucket does not serve; the
+// version query tells one upload to a reused slot from the next.
+func (s *SupabaseAvatarStorage) CanonicalURL(objectPath string) string {
+	publicPath := path.Join(s.bucket, strings.TrimLeft(objectPath, "/"))
+	return s.baseURL + "/storage/v1/object/public/" + publicPath + "?v=" + strconv.FormatInt(s.now().UnixNano(), 10)
+}
+
+func (s *SupabaseAvatarStorage) ObjectPath(storedURL string) (string, bool) {
+	parsed, err := url.Parse(strings.TrimSpace(storedURL))
+	if err != nil {
+		return "", false
+	}
+	base, err := url.Parse(s.baseURL)
+	if err != nil || !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
+		return "", false
+	}
+	for _, access := range [...]string{"public", "sign", "authenticated"} {
+		prefix := "/storage/v1/object/" + access + "/" + s.bucket + "/"
+		if objectPath, found := strings.CutPrefix(parsed.Path, prefix); found && objectPath != "" {
+			return objectPath, true
+		}
+	}
+	return "", false
+}
+
+// Sign asks Supabase Storage for a link to one object that stops working after ttl.
+func (s *SupabaseAvatarStorage) Sign(ctx context.Context, objectPath string, ttl time.Duration) (string, error) {
+	seconds := int(ttl / time.Second)
+	if seconds < 1 {
+		return "", fmt.Errorf("%w: ttl must be at least one second", ErrAvatarSignFailed)
+	}
+	payload, err := json.Marshal(map[string]int{"expiresIn": seconds})
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrAvatarSignFailed, err)
+	}
+	endpoint := s.baseURL + "/storage/v1/object/sign/" + url.PathEscape(s.bucket) + "/" + strings.TrimLeft(objectPath, "/")
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(payload))
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrAvatarSignFailed, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+s.serviceRoleKey)
+	req.Header.Set("apikey", s.serviceRoleKey)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrAvatarSignFailed, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		return "", fmt.Errorf("%w: storage status %d", ErrAvatarSignFailed, resp.StatusCode)
+	}
+	var signed struct {
+		SignedURL string `json:"signedURL"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 16<<10)).Decode(&signed); err != nil {
+		return "", fmt.Errorf("%w: decoding response: %w", ErrAvatarSignFailed, err)
+	}
+	// Storage answers with a path relative to its own root, token included.
+	if !strings.HasPrefix(signed.SignedURL, "/object/sign/") {
+		return "", fmt.Errorf("%w: unexpected response", ErrAvatarSignFailed)
+	}
+	return s.baseURL + "/storage/v1" + signed.SignedURL, nil
 }
 
 func (s *SupabaseAvatarStorage) Delete(ctx context.Context, objectPaths ...string) error {

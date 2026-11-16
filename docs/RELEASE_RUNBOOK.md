@@ -83,6 +83,14 @@ every release, and record the values in the release notes:
 - [ ] **JWT signing keys**: the project uses an asymmetric key (ES256 or RS256) served from
       JWKS; the legacy HMAC secret is not used by any release environment.
 
+## Avatar storage
+
+- [ ] The Supabase Storage bucket named by `SUPABASE_AVATAR_BUCKET` (default `avatars`) exists
+      and is **private** (no "Public" tag). The API uploads with the service-role key and returns
+      one-hour signed links; a public bucket would serve every photo to anyone holding its path.
+- [ ] After deploy, upload a photo in the app, confirm it shows, and confirm the unsigned path
+      `<SUPABASE_URL>/storage/v1/object/public/<bucket>/<user id>/avatar-0` is refused.
+
 ## Private pre-launch access
 
 Until the app opens to other people, keep each hosted environment private to its owner:
