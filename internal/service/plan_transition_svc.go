@@ -79,17 +79,19 @@ func (s *planTransitionService) effectiveProfile(ctx context.Context, userID uui
 	return *stored, nil
 }
 
-func (s *planTransitionService) activeProgram(ctx context.Context, userID uuid.UUID) (*model.Program, error) {
+// activeProgram returns the program the athlete follows. found is false when
+// there is none.
+func (s *planTransitionService) activeProgram(ctx context.Context, userID uuid.UUID) (p *model.Program, found bool, err error) {
 	programs, err := s.programs.List(ctx, userID)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	for i := range programs {
 		if programs[i].Active {
-			return &programs[i], nil
+			return &programs[i], true, nil
 		}
 	}
-	return nil, nil
+	return nil, false, nil
 }
 
 func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, req model.PreviewPlanTransitionRequest) (*transitionPlan, error) {
@@ -126,7 +128,7 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 	if len(candidates) > 0 {
 		recommended = &candidates[0]
 	}
-	active, err := s.activeProgram(ctx, userID)
+	active, hasActive, err := s.activeProgram(ctx, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -147,7 +149,7 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 		if starter, err = s.starters.Get(ctx, *req.StarterProgramID, version); err == nil {
 			target = programFromStarter(starter)
 		}
-	case active != nil:
+	case hasActive:
 		target = active
 	case recommended != nil:
 		target = programFromStarter(recommended)
@@ -158,7 +160,7 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 		return nil, err
 	}
 	// A target that is already the active, placed program changes no session.
-	unchanged := active != nil && active.ID == target.ID && target.Placed()
+	unchanged := hasActive && active.ID == target.ID && target.Placed()
 	if len(target.Workouts) > 0 && !target.Placed() {
 		if err := model.PlaceProgram(target, profile.AvailableDays, start); err != nil {
 			return nil, err
@@ -183,7 +185,7 @@ func (s *planTransitionService) resolve(ctx context.Context, userID uuid.UUID, r
 		RecommendedStarterProgram: recommended, ScheduledWorkouts: workouts, StartDate: start,
 		OffAvailability: model.OffAvailability(target, profile.AvailableDays),
 	}
-	if active != nil && active.ID != target.ID {
+	if hasActive && active.ID != target.ID {
 		preview.ReplacesProgram = &model.ProgramRef{ID: active.ID, Name: active.Name}
 	}
 	if len(workouts) > 0 && !unchanged {

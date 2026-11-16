@@ -53,7 +53,10 @@ func (s *transitionApplyStub) Apply(_ context.Context, _ uuid.UUID, apply dao.Pl
 // newTransitionServiceAt builds the plan-transition service with its clock
 // fixed at midnight UTC of today, so tests can use stable dates.
 func newTransitionServiceAt(today string, starters dao.StarterProgramDAO, programs dao.ProgramDAO, profiles dao.TrainingProfileDAO, transitions dao.PlanTransitionDAO) PlanTransitionService {
-	svc := NewPlanTransitionService(starters, programs, profiles, transitions, validator.New()).(*planTransitionService)
+	svc, ok := NewPlanTransitionService(starters, programs, profiles, transitions, validator.New()).(*planTransitionService)
+	if !ok {
+		panic("unexpected plan transition service implementation")
+	}
 	fixed, err := time.Parse(time.DateOnly, today)
 	if err != nil {
 		panic(err)

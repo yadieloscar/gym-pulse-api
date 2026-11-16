@@ -24,6 +24,10 @@ type RollingScheduleDAO interface {
 	MoveIdempotent(ctx context.Context, userID, workoutID uuid.UUID, date, today string, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 }
 
+// errUnitWithoutWeekdays reports an attempt to store a placement that left a
+// unit without weekdays. It indicates a programming error, not client input.
+var errUnitWithoutWeekdays = errors.New("unit has no weekdays")
+
 // unstartedPlanned selects sessions that no operation has touched: planned,
 // not finalized, and without an active or completed workout session. Starts,
 // program saves, and removals may replace only these. The table alias is sw.
@@ -97,7 +101,7 @@ func storePlacement(ctx context.Context, tx pgx.Tx, programID uuid.UUID, units [
 	for i := range units {
 		unit := &units[i]
 		if len(unit.Weekdays) == 0 {
-			return fmt.Errorf("storing placement: unit %s has no weekdays", unit.ID)
+			return fmt.Errorf("storing placement of unit %s: %w", unit.ID, errUnitWithoutWeekdays)
 		}
 		if _, err := tx.Exec(ctx, `UPDATE program_workouts SET weekdays=$3, preferred_weekday=$4 WHERE id=$1 AND program_id=$2`,
 			unit.ID, programID, weekdayColumn(unit.Weekdays), unit.Weekdays[0]); err != nil {
@@ -145,18 +149,22 @@ func insertPlacedSessions(ctx context.Context, tx pgx.Tx, userID, programID uuid
 	return advanceScheduledThrough(ctx, tx, programID, through)
 }
 
-// loadActiveProgram returns the athlete's active program, or nil when there
-// is none.
-func loadActiveProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (*model.Program, error) {
+// loadActiveProgram returns the athlete's active program. found is false when
+// there is none.
+func loadActiveProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (p *model.Program, found bool, err error) {
 	var programID uuid.UUID
-	err := tx.QueryRow(ctx, `SELECT id FROM programs WHERE user_id=$1 AND active=true`, userID).Scan(&programID)
+	err = tx.QueryRow(ctx, `SELECT id FROM programs WHERE user_id=$1 AND active=true`, userID).Scan(&programID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return nil, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("finding active program: %w", err)
+		return nil, false, fmt.Errorf("finding active program: %w", err)
 	}
-	return loadProgram(ctx, tx, userID, programID)
+	p, err = loadProgram(ctx, tx, userID, programID)
+	if err != nil {
+		return nil, false, err
+	}
+	return p, true, nil
 }
 
 // fillActiveProgram extends the active program's sessions through the
@@ -165,8 +173,8 @@ func loadActiveProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (*model
 // again and dates that passed unfilled stay empty. The caller holds the
 // program and schedule locks.
 func fillActiveProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID, today string, availableDays []int) error {
-	p, err := loadActiveProgram(ctx, tx, userID)
-	if err != nil || p == nil || len(p.Workouts) == 0 {
+	p, found, err := loadActiveProgram(ctx, tx, userID)
+	if err != nil || !found || len(p.Workouts) == 0 {
 		return err
 	}
 	horizon, err := scheduleHorizon(today)

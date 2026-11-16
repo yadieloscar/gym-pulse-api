@@ -303,7 +303,10 @@ func newRollingScheduleService(t *testing.T, profile *model.TrainingProfile, now
 	sessions := newCoverageSessionRepo()
 	contract := NewScheduleService(repo, newCoverageProgramRepo(), &trainingProfileRepoStub{profile: profile}, sessions,
 		&coverageSetRepo{schedules: repo.coverageScheduleRepo, sessions: sessions}, &coverageParticipationRepo{}, nil, newCoverageIdempotencyRepo(), validator.New())
-	svc := contract.(*scheduleService)
+	svc, ok := contract.(*scheduleService)
+	if !ok {
+		t.Fatal("unexpected schedule service implementation")
+	}
 	fixed, err := time.Parse(time.RFC3339, now)
 	if err != nil {
 		t.Fatal(err)
