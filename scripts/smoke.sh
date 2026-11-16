@@ -86,6 +86,36 @@ else
   bad "partial settings update lost or rejected omitted values (seed=$seed_status update=$resp)" "$body"
 fi
 
+# ---------- 2b. settings: Athletic UI palettes (contract 1.9.0) ----------
+step "2b. PUT /api/v1/settings accepts irisViolet and every earlier palette"
+palette_fail=""
+for palette in obsidianEmber abyssCerulean mossChartreuse voltLime oliveCitrine slateMint irisViolet; do
+  resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/settings" \
+    "${auth[@]}" -H "Content-Type: application/json" -d "{\"palette\":\"$palette\"}")
+  body=$(cat /tmp/smoke.body)
+  if [ "$resp" != "200" ] || ! python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['palette']==sys.argv[2] and d['weekly_goal']==5 and d['weight_unit']=='kg'" "$body" "$palette" 2>/dev/null; then
+    palette_fail="$palette → $resp $body"
+    break
+  fi
+done
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/settings" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ -n "$palette_fail" ]; then
+  bad "palette rejected or not returned" "$palette_fail"
+elif [ "$resp" = "200" ] && python3 -c "import json,sys; assert json.loads(sys.argv[1])['palette']=='irisViolet'" "$body" 2>/dev/null; then
+  ok "all seven palettes accepted; GET returns the stored irisViolet"
+else
+  bad "GET /api/v1/settings did not return the stored irisViolet ($resp)" "$body"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/settings" \
+  "${auth[@]}" -H "Content-Type: application/json" -d '{"palette":"neonGrape"}')
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='VALIDATION_ERROR' and d['details']['field']=='body'" "$body" 2>/dev/null; then
+  ok "unknown palette → 422 VALIDATION_ERROR field=body"
+else
+  bad "unknown palette expected 422 VALIDATION_ERROR, got $resp" "$body"
+fi
+
 # ---------- 3. settings: weekly_goal=1 must succeed ----------
 step "3. PUT /api/v1/settings with weekly_goal=1 should 200 (onboarding regression)"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/settings" \

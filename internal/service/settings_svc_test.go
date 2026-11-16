@@ -63,7 +63,10 @@ func TestSettingsService_Update(t *testing.T) {
 		{"valid moss palette", model.UpdateUserSettingsRequest{Palette: stringPtr("mossChartreuse")}, false, false},
 		{"valid volt palette", model.UpdateUserSettingsRequest{Palette: stringPtr("voltLime")}, false, false},
 		{"valid olive palette", model.UpdateUserSettingsRequest{Palette: stringPtr("oliveCitrine")}, false, false},
+		{"valid ember palette", model.UpdateUserSettingsRequest{Palette: stringPtr("obsidianEmber")}, false, false},
 		{"valid slate palette", model.UpdateUserSettingsRequest{Palette: stringPtr("slateMint")}, false, false},
+		{"valid iris palette", model.UpdateUserSettingsRequest{Palette: stringPtr("irisViolet")}, false, false},
+		{"palette is case sensitive", model.UpdateUserSettingsRequest{Palette: stringPtr("irisviolet")}, true, true},
 		{"unknown palette", model.UpdateUserSettingsRequest{Palette: stringPtr("neonGrape")}, true, true},
 		{"valid kg 1", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("kg"), WeeklyGoal: settingsIntPtr(1)}, false, false},
 		{"invalid unit", model.UpdateUserSettingsRequest{WeightUnit: stringPtr("stone")}, true, true},
@@ -114,3 +117,42 @@ func TestSettingsService_Update(t *testing.T) {
 
 func stringPtr(v string) *string { return &v }
 func settingsIntPtr(v int) *int  { return &v }
+
+// TestSettingsService_UpdatePassesPaletteToDAO checks that an accepted palette
+// reaches the DAO unchanged and that a rejected one never does.
+func TestSettingsService_UpdatePassesPaletteToDAO(t *testing.T) {
+	ctx := context.Background()
+	userID := uuid.New()
+
+	t.Run("irisViolet reaches the DAO", func(t *testing.T) {
+		var seen *string
+		repo := &MockSettingsDAO{
+			PatchFunc: func(_ context.Context, id uuid.UUID, req model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+				if id != userID {
+					t.Errorf("userID = %v, want %v", id, userID)
+				}
+				seen = req.Palette
+				return &model.UserSettings{WeightUnit: "lb", WeeklyGoal: 5, Palette: *req.Palette}, nil
+			},
+		}
+		got, err := NewSettingsService(repo, validator.New()).Update(ctx, userID, model.UpdateUserSettingsRequest{Palette: stringPtr("irisViolet")})
+		if err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if seen == nil || *seen != "irisViolet" || got.Palette != "irisViolet" {
+			t.Errorf("DAO saw %v, service returned %+v", seen, got)
+		}
+	})
+
+	t.Run("unknown palette never reaches the DAO", func(t *testing.T) {
+		repo := &MockSettingsDAO{
+			PatchFunc: func(context.Context, uuid.UUID, model.UpdateUserSettingsRequest) (*model.UserSettings, error) {
+				t.Error("DAO called for an invalid palette")
+				return nil, nil
+			},
+		}
+		if _, err := NewSettingsService(repo, validator.New()).Update(ctx, userID, model.UpdateUserSettingsRequest{Palette: stringPtr("neonGrape")}); err == nil {
+			t.Fatal("expected a validation error")
+		}
+	})
+}
