@@ -201,10 +201,16 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
 		return nil, err
 	}
+	if err := model.ValidateUnitWeekdays(req.Workouts); err != nil {
+		return nil, err
+	}
 	if err := validateRoadmap(req.Roadmap); err != nil {
 		return nil, err
 	}
-	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: true, Workouts: req.Workouts}
+	// Saving starts the program only for clients that do not say otherwise;
+	// active false saves it beside the program the athlete follows.
+	active := req.Active == nil || *req.Active
+	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: active, Workouts: req.Workouts}
 	if s.mutations != nil {
 		hash, err := hashPayload(req)
 		if err != nil {
@@ -300,6 +306,9 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		return nil, &model.ValidationError{Message: "invalid program", Field: "body"}
 	}
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
+		return nil, err
+	}
+	if err := model.ValidateUnitWeekdays(req.Workouts); err != nil {
 		return nil, err
 	}
 	if err := validateRoadmap(req.Roadmap); err != nil {

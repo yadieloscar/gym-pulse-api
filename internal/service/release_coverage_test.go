@@ -10,6 +10,7 @@ import (
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
 
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
@@ -667,8 +668,11 @@ type releaseTransitionRepo struct {
 	err       error
 }
 
-func (r *releaseTransitionRepo) Apply(context.Context, uuid.UUID, int64, *model.TrainingProfile, *model.Program, string, string, string, string) (uuid.UUID, []model.ScheduledWorkout, bool, error) {
-	return r.programID, r.workouts, r.replay, r.err
+func (r *releaseTransitionRepo) Apply(context.Context, uuid.UUID, dao.PlanTransitionApply) (*dao.PlanTransitionResult, error) {
+	if r.err != nil {
+		return nil, r.err
+	}
+	return &dao.PlanTransitionResult{ProgramID: r.programID, Workouts: r.workouts, Replay: r.replay}, nil
 }
 
 func TestPlanTransitionReleaseBranches(t *testing.T) {
@@ -681,7 +685,7 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 	}
 	starters := &coverageStarterRepo{starters: []model.StarterProgram{starter}}
 	valid := model.PreviewPlanTransitionRequest{
-		ProposedProfile: model.ProposedTrainingProfile{
+		ProposedProfile: &model.ProposedTrainingProfile{
 			PrimaryGoal: model.GoalStrength, AvailableDays: []int{1}, UsualActivity: "light",
 			Experience: "beginner", Equipment: []string{"dumbbells"}, SessionDurationMinutes: 45,
 			Timezone: "UTC",
@@ -689,12 +693,14 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 		ProgramID: &program.ID, From: "2026-07-20", To: "2026-07-26",
 	}
 
-	svc := NewPlanTransitionService(starters, programs, &releaseTransitionRepo{}, validator.New())
+	svc := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, &releaseTransitionRepo{})
 	if _, err := svc.Preview(ctx, userID, model.PreviewPlanTransitionRequest{}); err == nil {
 		t.Fatal("expected preview validation error")
 	}
 	badProfile := valid
-	badProfile.ProposedProfile.PrimaryGoal = "unknown"
+	unknownGoal := *valid.ProposedProfile
+	unknownGoal.PrimaryGoal = "unknown"
+	badProfile.ProposedProfile = &unknownGoal
 	if _, err := svc.Preview(ctx, userID, badProfile); err == nil {
 		t.Fatal("expected proposed profile validation error")
 	}
@@ -714,10 +720,10 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 	}
 
 	nonReplay := &releaseTransitionRepo{
-		programID: uuid.New(),
+		programID: program.ID,
 		workouts:  preview.ScheduledWorkouts,
 	}
-	applySvc := NewPlanTransitionService(starters, programs, nonReplay, validator.New())
+	applySvc := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, nonReplay)
 	apply := model.ApplyPlanTransitionRequest{
 		PreviewPlanTransitionRequest: valid,
 		PreviewToken:                 preview.PreviewToken,
@@ -735,7 +741,7 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 		t.Fatal("expected apply validation error")
 	}
 
-	failing := NewPlanTransitionService(starters, programs, &releaseTransitionRepo{err: errors.New("transition failed")}, validator.New())
+	failing := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, &releaseTransitionRepo{err: errors.New("transition failed")})
 	if _, err := failing.Apply(ctx, userID, apply); err == nil {
 		t.Fatal("expected transition persistence failure")
 	}
@@ -743,7 +749,8 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 	t.Run("reports no matching starter", func(t *testing.T) {
 		request := valid
 		request.ProgramID = nil
-		empty := NewPlanTransitionService(&coverageStarterRepo{}, programs, &releaseTransitionRepo{}, validator.New())
+		// With no active program and no starter there is nothing to start.
+		empty := newTransitionServiceAt("2026-07-01", &coverageStarterRepo{}, newCoverageProgramRepo(), &trainingProfileRepoStub{}, &releaseTransitionRepo{})
 		if _, err := empty.Preview(ctx, userID, request); err == nil {
 			t.Fatal("expected missing starter error")
 		}
@@ -754,7 +761,7 @@ func TestPlanTransitionReleaseBranches(t *testing.T) {
 		request.ProgramID = nil
 		request.StarterProgramID = &starter.ID
 		request.StarterVersion = &starter.Version
-		explicit := NewPlanTransitionService(starters, programs, &releaseTransitionRepo{}, validator.New())
+		explicit := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, &releaseTransitionRepo{})
 		got, err := explicit.Preview(ctx, userID, request)
 		if err != nil {
 			t.Fatal(err)

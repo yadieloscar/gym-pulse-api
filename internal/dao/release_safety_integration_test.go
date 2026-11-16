@@ -192,7 +192,7 @@ func TestReleaseRegenerationRollbackIntegration(t *testing.T) {
 			f.injectFailure(t, table)
 			assertInjectedRollback(t, f, func() error {
 				_, _, err := f.schedules.RegenerateIdempotent(f.ctx, f.userID, f.program.ID, 1,
-					"2026-10-12", "2026-10-12", []model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-12")},
+					"2026-10-12", "2026-10-12", nil, []model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-12")},
 					&model.RegenerateScheduleResponse{}, releaseRecord("schedule/regenerate"))
 				return err
 			})
@@ -291,7 +291,7 @@ func TestReleaseDuplicateMutationsIntegration(t *testing.T) {
 					v, replay, err := (&programDAO{pool: f.pool}).CreateIdempotent(f.ctx, f.userID, program, rec)
 					return releaseResult{value: v, replay: replay, err: err}
 				case "materialize":
-					v, replay, err := f.schedules.MaterializeIdempotent(f.ctx, f.userID, f.program.ID, 1,
+					v, replay, err := f.schedules.MaterializeIdempotent(f.ctx, f.userID, f.program.ID, 1, "2026-10-13", nil,
 						[]model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-13")}, rec)
 					return releaseResult{value: v, replay: replay, err: err}
 				case "recovery":
@@ -384,7 +384,7 @@ func testSessionStartRegenerationOrder(t *testing.T, first string) {
 	regenerated := make(chan error, 1)
 	regenerate := func() {
 		_, _, err := f.schedules.RegenerateIdempotent(f.ctx, f.userID, f.program.ID, 1,
-			"2026-10-12", "2026-10-12", []model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-12")},
+			"2026-10-12", "2026-10-12", nil, []model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-12")},
 			&model.RegenerateScheduleResponse{}, releaseRecord("regenerate"))
 		regenerated <- err
 	}

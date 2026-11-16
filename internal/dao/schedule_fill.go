@@ -27,8 +27,7 @@ type RollingScheduleDAO interface {
 // unstartedPlanned selects sessions that no operation has touched: planned,
 // not finalized, and without an active or completed workout session. Starts,
 // program saves, and removals may replace only these. The table alias is sw.
-const unstartedPlanned = `sw.status='planned' AND sw.finalized_at IS NULL
-	AND NOT EXISTS (SELECT 1 FROM workout_sessions ws WHERE ws.scheduled_workout_id=sw.id AND ws.status IN ('active','completed'))`
+const unstartedPlanned = `sw.status='planned' AND sw.finalized_at IS NULL AND NOT EXISTS (SELECT 1 FROM workout_sessions ws WHERE ws.scheduled_workout_id=sw.id AND ws.status IN ('active','completed'))`
 
 // shiftDate returns the YYYY-MM-DD date days after date.
 func shiftDate(date string, days int) (string, error) {
@@ -128,6 +127,22 @@ func fillProgram(ctx context.Context, tx pgx.Tx, userID uuid.UUID, p *model.Prog
 		return err
 	}
 	return advanceScheduledThrough(ctx, tx, p.ID, through)
+}
+
+// insertPlacedSessions serves the materialize and regenerate operations of a
+// released app. It stores a pending placement, inserts the layout sessions
+// while keeping any slot that already holds one, replaces skipped entries of
+// sessions with the stored row, and advances the watermark to through.
+func insertPlacedSessions(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID, through string, placement []model.ProgramWorkout, sessions []model.ScheduledWorkout) error {
+	if placement != nil {
+		if err := storePlacement(ctx, tx, programID, placement); err != nil {
+			return err
+		}
+	}
+	if err := insertLayoutSessions(ctx, tx, userID, sessions, true); err != nil {
+		return err
+	}
+	return advanceScheduledThrough(ctx, tx, programID, through)
 }
 
 // loadActiveProgram returns the athlete's active program, or nil when there

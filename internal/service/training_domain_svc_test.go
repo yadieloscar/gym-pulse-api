@@ -75,7 +75,7 @@ func TestMaterializeSnapshotsAndRequiredCompletionRules(t *testing.T) {
 			}},
 		}},
 	}
-	workouts, err := materializeProgram(program, "2026-07-20", "2026-07-26")
+	workouts, _, err := layoutSessions(program, []int{1}, "2026-07-20", "2026-07-26")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,12 +370,15 @@ func TestMaterializeSportUnitSnapshotsTargetWithoutSets(t *testing.T) {
 			{ID: uuid.New(), Kind: model.UnitKindSport, Name: "Long ride", SequencePosition: 2, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance, Notes: &note}},
 		},
 	}
-	workouts, err := model.MaterializeProgramForWeekdays(program, []int{1, 3}, "2026-10-26", "2026-11-01")
+	workouts, placement, err := layoutSessions(program, []int{1, 3}, "2026-10-26", "2026-11-01")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(workouts) != 2 {
 		t.Fatalf("want 2 scheduled units, got %d", len(workouts))
+	}
+	if len(placement) != 2 {
+		t.Fatalf("an unplaced program must report its placement, got %d units", len(placement))
 	}
 	gym, ride := workouts[0], workouts[1]
 	if gym.Kind != model.UnitKindExercises || gym.Sport != nil || len(gym.RequiredSets) != 2 {

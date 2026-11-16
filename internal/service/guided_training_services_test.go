@@ -295,8 +295,8 @@ type coverageTransitionRepo struct {
 	replay    bool
 }
 
-func (r *coverageTransitionRepo) Apply(context.Context, uuid.UUID, int64, *model.TrainingProfile, *model.Program, string, string, string, string) (uuid.UUID, []model.ScheduledWorkout, bool, error) {
-	return r.programID, r.workouts, r.replay, nil
+func (r *coverageTransitionRepo) Apply(context.Context, uuid.UUID, dao.PlanTransitionApply) (*dao.PlanTransitionResult, error) {
+	return &dao.PlanTransitionResult{ProgramID: r.programID, Workouts: r.workouts, Replay: r.replay}, nil
 }
 
 func coverageProgramFixture() model.Program {
@@ -513,8 +513,8 @@ func TestGuidedPlanTransitionStarterReplay(t *testing.T) {
 	existing := program
 	programs := newCoverageProgramRepo(existing)
 	transitions := &coverageTransitionRepo{programID: existing.ID, replay: true}
-	service := NewPlanTransitionService(starters, programs, transitions, validator.New())
-	request := model.PreviewPlanTransitionRequest{ProposedProfile: model.ProposedTrainingProfile{PrimaryGoal: model.GoalStrength, AvailableDays: []int{1}, UsualActivity: "light", Experience: "beginner", Equipment: []string{"dumbbells"}, SessionDurationMinutes: 45, Timezone: "UTC", Preferences: map[string]any{}}, StarterProgramID: &starter.ID, From: "2026-07-20", To: "2026-07-26"}
+	service := newTransitionServiceAt("2026-07-01", starters, programs, &trainingProfileRepoStub{}, transitions)
+	request := model.PreviewPlanTransitionRequest{ProposedProfile: &model.ProposedTrainingProfile{PrimaryGoal: model.GoalStrength, AvailableDays: []int{1}, UsualActivity: "light", Experience: "beginner", Equipment: []string{"dumbbells"}, SessionDurationMinutes: 45, Timezone: "UTC", Preferences: map[string]any{}}, StarterProgramID: &starter.ID, From: "2026-07-20", To: "2026-07-26"}
 	preview, err := service.Preview(ctx, userID, request)
 	if err != nil || preview.RecommendedStarterProgram == nil || preview.FirstAffectedDate == nil {
 		t.Fatalf("starter preview failed: %+v %v", preview, err)

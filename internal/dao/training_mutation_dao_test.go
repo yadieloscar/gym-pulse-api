@@ -255,14 +255,30 @@ func TestScheduledUnitsCarryKindThroughReadsWritesAndOutcomes(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(transition), "insertScheduledWorkouts(ctx, tx, userID, workouts)") || strings.Contains(string(transition), "INSERT INTO scheduled_workouts") {
-		t.Error("plan transition must insert through the shared kind-aware helper")
+	if !strings.Contains(string(transition), "fillProgram(ctx, tx, userID, target, apply.Start, apply.Through)") || strings.Contains(string(transition), "INSERT INTO scheduled_workouts") {
+		t.Error("plan transition must insert through the shared kind-aware fill")
 	}
-	// Regenerate and plan-transition delete only planned, unfinalized rows with
-	// no started session; a planned sport row matches and a completed one is kept.
-	for _, src := range []string{string(schedule), string(transition)} {
+	fill, err := os.ReadFile("schedule_fill.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, marker := range []string{
+		"kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)",
+		"ON CONFLICT (program_workout_id, slot_date) WHERE program_workout_id IS NOT NULL AND slot_date IS NOT NULL DO NOTHING",
+	} {
+		if !strings.Contains(string(fill), marker) {
+			t.Errorf("schedule fill missing %q", marker)
+		}
+	}
+	// Regenerate and every start, save, and removal delete only planned,
+	// unfinalized rows with no started session; a planned sport row matches
+	// and a completed one is kept. The shared predicate lives beside the fill.
+	for _, src := range []string{string(schedule), string(fill)} {
 		if !strings.Contains(src, "sw.status='planned' AND sw.finalized_at IS NULL AND NOT EXISTS") {
 			t.Error("replacement delete predicate changed; sport retention relies on it")
 		}
+	}
+	if !strings.Contains(string(transition), "AND `+unstartedPlanned") {
+		t.Error("plan transition must delete through the shared unstarted-planned predicate")
 	}
 }

@@ -131,12 +131,12 @@ func (s *scheduleService) Materialize(ctx context.Context, userID uuid.UUID, req
 	if err != nil {
 		return nil, err
 	}
-	workouts, err := model.MaterializeProgramForWeekdays(program, profile.AvailableDays, req.From, req.To)
+	workouts, placement, err := layoutSessions(program, profile.AvailableDays, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
 	if repo, ok := s.schedules.(dao.IdempotentScheduleDAO); ok {
-		result, _, err := repo.MaterializeIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, workouts, model.IdempotencyRecord{Scope: "schedule/materialize", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 201, ResourceType: "schedule"})
+		result, _, err := repo.MaterializeIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, req.To, placement, workouts, model.IdempotencyRecord{Scope: "schedule/materialize", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 201, ResourceType: "schedule"})
 		return result, err
 	}
 	if err := s.schedules.Create(ctx, userID, workouts); err != nil {
@@ -166,7 +166,7 @@ func (s *scheduleService) Regenerate(ctx context.Context, userID uuid.UUID, req 
 	if err != nil {
 		return nil, err
 	}
-	workouts, err := model.MaterializeProgramForWeekdays(program, profile.AvailableDays, req.From, req.To)
+	workouts, placement, err := layoutSessions(program, profile.AvailableDays, req.From, req.To)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +189,7 @@ func (s *scheduleService) Regenerate(ctx context.Context, userID uuid.UUID, req 
 		if err != nil {
 			return nil, err
 		}
-		result, _, err := repo.RegenerateIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, req.From, req.To, workouts, response, model.IdempotencyRecord{Scope: "schedule/regenerate", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 200, ResourceType: "schedule"})
+		result, _, err := repo.RegenerateIdempotent(ctx, userID, req.ProgramID, req.ExpectedRevision, req.From, req.To, placement, workouts, response, model.IdempotencyRecord{Scope: "schedule/regenerate", OperationKey: req.OperationKey, RequestHash: hash, ResponseStatus: 200, ResourceType: "schedule"})
 		return result, err
 	}
 	sessions, err := s.sessions.List(ctx, userID, req.From, req.To)
@@ -690,14 +690,23 @@ func checkedCount(sets []model.ScheduledSet) int {
 	return count
 }
 
-func materializeProgram(p *model.Program, from, to string) ([]model.ScheduledWorkout, error) {
-	days := []int{}
-	for _, workout := range p.Workouts {
-		if workout.PreferredWeekday != nil {
-			days = append(days, *workout.PreferredWeekday)
+// layoutSessions returns the program's sessions between from and to. A
+// program without weekdays is first placed, in memory, across availableDays
+// starting at from; placement then holds the placed units for the DAO to
+// store in the transaction that creates the sessions. It is nil when the
+// program was already placed.
+func layoutSessions(p *model.Program, availableDays []int, from, to string) (sessions []model.ScheduledWorkout, placement []model.ProgramWorkout, err error) {
+	if len(p.Workouts) > 0 && !p.Placed() {
+		if err := model.PlaceProgram(p, availableDays, from); err != nil {
+			return nil, nil, err
 		}
+		placement = p.Workouts
 	}
-	return model.MaterializeProgramForWeekdays(p, days, from, to)
+	sessions, err = model.LayoutSessions(p, from, to)
+	if err != nil {
+		return nil, nil, err
+	}
+	return sessions, placement, nil
 }
 
 func (s *workoutSessionService) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.WorkoutSession, error) {

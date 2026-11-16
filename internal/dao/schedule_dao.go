@@ -24,8 +24,11 @@ type ScheduleDAO interface {
 }
 
 type IdempotentScheduleDAO interface {
-	MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error)
-	RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, from, to string, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error)
+	// MaterializeIdempotent and RegenerateIdempotent receive the program's
+	// layout sessions. placement is non-nil when the program had no weekdays
+	// and must be stored as placed in the same transaction.
+	MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, through string, placement []model.ProgramWorkout, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error)
+	RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expectedRevision int64, from, to string, placement []model.ProgramWorkout, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error)
 	RecoverIdempotent(ctx context.Context, userID uuid.UUID, date string, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 }
 
@@ -388,7 +391,7 @@ func lockProgramRevision(ctx context.Context, tx pgx.Tx, userID, programID uuid.
 	return nil
 }
 
-func (r *scheduleDAO) MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error) {
+func (r *scheduleDAO) MaterializeIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, through string, placement []model.ProgramWorkout, workouts []model.ScheduledWorkout, record model.IdempotencyRecord) ([]model.ScheduledWorkout, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("beginning materialization: %w", err)
@@ -409,7 +412,7 @@ func (r *scheduleDAO) MaterializeIdempotent(ctx context.Context, userID, program
 	if err := lockProgramRevision(ctx, tx, userID, programID, expected); err != nil {
 		return nil, false, err
 	}
-	if err := insertScheduledWorkouts(ctx, tx, userID, workouts); err != nil {
+	if err := insertPlacedSessions(ctx, tx, userID, programID, through, placement, workouts); err != nil {
 		return nil, false, err
 	}
 	if err := insertIdempotency(ctx, tx, userID, record, workouts); err != nil {
@@ -421,7 +424,7 @@ func (r *scheduleDAO) MaterializeIdempotent(ctx context.Context, userID, program
 	return workouts, false, nil
 }
 
-func (r *scheduleDAO) RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, from, to string, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error) {
+func (r *scheduleDAO) RegenerateIdempotent(ctx context.Context, userID, programID uuid.UUID, expected int64, from, to string, placement []model.ProgramWorkout, workouts []model.ScheduledWorkout, response *model.RegenerateScheduleResponse, record model.IdempotencyRecord) (*model.RegenerateScheduleResponse, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
 		return nil, false, fmt.Errorf("beginning regeneration: %w", err)
@@ -453,7 +456,7 @@ func (r *scheduleDAO) RegenerateIdempotent(ctx context.Context, userID, programI
 	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.date BETWEEN $2 AND $3 AND sw.status='planned' AND sw.finalized_at IS NULL AND NOT EXISTS (SELECT 1 FROM workout_sessions ws WHERE ws.scheduled_workout_id=sw.id AND ws.status IN ('active','completed'))`, userID, from, to); err != nil {
 		return nil, false, fmt.Errorf("deleting unstarted scheduled workouts: %w", err)
 	}
-	if err := insertScheduledWorkouts(ctx, tx, userID, workouts); err != nil {
+	if err := insertPlacedSessions(ctx, tx, userID, programID, to, placement, workouts); err != nil {
 		return nil, false, err
 	}
 	response.ScheduledWorkouts = workouts

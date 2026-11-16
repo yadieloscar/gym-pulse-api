@@ -309,11 +309,14 @@ type ProgramExercise struct {
 }
 
 type CreateProgramRequest struct {
-	Name         string           `json:"name" validate:"required,min=1,max=200"`
-	PrimaryGoal  string           `json:"primary_goal" validate:"required"`
-	Roadmap      map[string]any   `json:"roadmap"`
-	Workouts     []ProgramWorkout `json:"workouts" validate:"required,min=1"`
-	OperationKey string           `json:"operation_key" validate:"required"`
+	Name        string           `json:"name" validate:"required,min=1,max=200"`
+	PrimaryGoal string           `json:"primary_goal" validate:"required"`
+	Roadmap     map[string]any   `json:"roadmap"`
+	Workouts    []ProgramWorkout `json:"workouts" validate:"required,min=1"`
+	// Active false saves the program without starting it. Omitted means true,
+	// which is what clients older than contract 1.10.0 rely on.
+	Active       *bool  `json:"active,omitempty"`
+	OperationKey string `json:"operation_key" validate:"required"`
 }
 
 type UpdateProgramRequest struct {
@@ -677,14 +680,23 @@ func (p ProposedTrainingProfile) TrainingProfile() TrainingProfile {
 	return TrainingProfile{PrimaryGoal: p.PrimaryGoal, AvailableDays: p.AvailableDays, UsualActivity: p.UsualActivity, Experience: p.Experience, Equipment: p.Equipment, SessionDurationMinutes: p.SessionDurationMinutes, Timezone: p.Timezone, Preferences: p.Preferences}
 }
 
+// PreviewPlanTransitionRequest previews the start of a program, optionally
+// together with a training-profile change. Without a proposed profile the
+// stored profile is used and left unchanged. Without a program or starter the
+// athlete's active program is the target, and the top recommended starter
+// when there is none. To only bounds the sessions returned.
 type PreviewPlanTransitionRequest struct {
-	ProposedProfile  ProposedTrainingProfile `json:"proposed_profile"`
-	ProgramID        *uuid.UUID              `json:"program_id,omitempty"`
-	StarterProgramID *uuid.UUID              `json:"starter_program_id,omitempty"`
-	StarterVersion   *int                    `json:"starter_version,omitempty"`
-	From             string                  `json:"from" validate:"required"`
-	To               string                  `json:"to" validate:"required"`
+	ProposedProfile  *ProposedTrainingProfile `json:"proposed_profile,omitempty"`
+	ProgramID        *uuid.UUID               `json:"program_id,omitempty"`
+	StarterProgramID *uuid.UUID               `json:"starter_program_id,omitempty"`
+	StarterVersion   *int                     `json:"starter_version,omitempty"`
+	From             string                   `json:"from" validate:"required"`
+	To               string                   `json:"to,omitempty"`
 }
+
+// DefaultTransitionPreviewDays is how many days of sessions a start preview
+// returns when the request names no end date.
+const DefaultTransitionPreviewDays = 28
 
 type ApplyPlanTransitionRequest struct {
 	PreviewPlanTransitionRequest
@@ -693,13 +705,28 @@ type ApplyPlanTransitionRequest struct {
 	ExpectedProfileRevision int64  `json:"expected_profile_revision" validate:"gte=0"`
 }
 
+// ProgramRef names a program without its units.
+type ProgramRef struct {
+	ID   uuid.UUID `json:"id"`
+	Name string    `json:"name"`
+}
+
 type PlanTransitionPreview struct {
-	PreviewToken              string                  `json:"preview_token"`
-	ProposedProfile           ProposedTrainingProfile `json:"proposed_profile"`
-	TargetProgram             Program                 `json:"target_program"`
-	RecommendedStarterProgram *StarterProgram         `json:"recommended_starter_program"`
-	FirstAffectedDate         *string                 `json:"first_affected_date"`
-	ScheduledWorkouts         []ScheduledWorkout      `json:"scheduled_workouts"`
+	PreviewToken              string                   `json:"preview_token"`
+	ProposedProfile           *ProposedTrainingProfile `json:"proposed_profile"`
+	TargetProgram             Program                  `json:"target_program"`
+	RecommendedStarterProgram *StarterProgram          `json:"recommended_starter_program"`
+	FirstAffectedDate         *string                  `json:"first_affected_date"`
+	ScheduledWorkouts         []ScheduledWorkout       `json:"scheduled_workouts"`
+	// StartDate is the first date the start may change: the later of the
+	// requested from date and today in the athlete's timezone.
+	StartDate string `json:"start_date"`
+	// ReplacesProgram is the active program this start would replace. It is
+	// nil when there is none or when the target is already the active one.
+	ReplacesProgram *ProgramRef `json:"replaces_program"`
+	// OffAvailability lists the target's units that sit on weekdays outside
+	// the athlete's available days. It is always present.
+	OffAvailability []OffAvailabilityUnit `json:"off_availability"`
 }
 
 type CreateWorkoutSessionRequest struct {
