@@ -7,9 +7,10 @@ DO $$
 BEGIN
     IF to_regclass('auth.users') IS NULL THEN
         CREATE SCHEMA IF NOT EXISTS auth;
-        CREATE TABLE auth.users (
-            id UUID PRIMARY KEY
-        );
+-- Left unindented so scripts/validate-database-design.sh still reads it.
+CREATE TABLE auth.users (
+    id UUID PRIMARY KEY
+);
     END IF;
 END
 $$;
