@@ -47,10 +47,12 @@ func (s *templateService) Create(ctx context.Context, userID uuid.UUID, req mode
 	}
 
 	t := &model.WorkoutTemplate{
-		Name:      req.Name,
-		TypeID:    req.TypeID,
-		SubtypeID: req.SubtypeID,
-		Exercises: toExercises(req.Exercises),
+		Name:              req.Name,
+		TypeID:            req.TypeID,
+		SubtypeID:         req.SubtypeID,
+		WarmupRoutineID:   req.WarmupRoutineID.Value,
+		CooldownRoutineID: req.CooldownRoutineID.Value,
+		Exercises:         toExercises(req.Exercises),
 	}
 
 	if err := s.repo.Create(ctx, userID, t); err != nil {
@@ -73,6 +75,13 @@ func (s *templateService) Update(ctx context.Context, userID, templateID uuid.UU
 	existing.Name = req.Name
 	existing.TypeID = req.TypeID
 	existing.SubtypeID = req.SubtypeID
+	// An absent routine field keeps the stored choice (older clients).
+	if req.WarmupRoutineID.Present {
+		existing.WarmupRoutineID = req.WarmupRoutineID.Value
+	}
+	if req.CooldownRoutineID.Present {
+		existing.CooldownRoutineID = req.CooldownRoutineID.Value
+	}
 	existing.Exercises = toExercises(req.Exercises)
 
 	if err := s.repo.Update(ctx, userID, existing); err != nil {
@@ -95,6 +104,11 @@ func (s *templateService) validateRequest(req model.CreateTemplateRequest) error
 	if !model.IsValidSubtypeID(req.SubtypeID) {
 		return &model.ValidationError{Message: "invalid workout subtype: " + req.SubtypeID, Field: "subtype_id"}
 	}
+	for field, routine := range map[string]*string{"warmup_routine_id": req.WarmupRoutineID.Value, "cooldown_routine_id": req.CooldownRoutineID.Value} {
+		if routine != nil && (len(*routine) > maxRoutineIDLength || !sportIDPattern.MatchString(*routine)) {
+			return &model.ValidationError{Message: "invalid stretching routine id", Field: field}
+		}
+	}
 	for _, e := range req.Exercises {
 		if err := s.validator.Struct(e); err != nil {
 			return &model.ValidationError{Message: "invalid exercise data", Field: "exercises"}
@@ -106,22 +120,31 @@ func (s *templateService) validateRequest(req model.CreateTemplateRequest) error
 	return nil
 }
 
-// validateExerciseShape enforces that an exercise is either strength
-// (sets+reps) or cardio (duration_minutes), never neither and never both.
-// Intensity is only meaningful for cardio exercises.
+// maxRoutineIDLength matches the mobility session routine_id limit.
+const maxRoutineIDLength = 64
+
+// validateExerciseShape enforces that an exercise is exactly one of: strength
+// (sets+reps), timed (sets+duration_seconds, a hold or stretch), or cardio
+// (duration_minutes). Intensity is only meaningful for cardio exercises.
 func validateExerciseShape(e model.CreateExerciseRequest) error {
 	strength := e.Sets != nil && e.Reps != nil
+	timed := e.Sets != nil && e.DurationSeconds != nil
 	cardio := e.DurationMinutes != nil
 
 	switch {
-	case !strength && !cardio:
+	case !strength && !timed && !cardio:
 		return &model.ValidationError{
-			Message: "exercise requires either sets and reps or duration_minutes",
+			Message: "exercise requires sets and reps, sets and duration_seconds, or duration_minutes",
 			Field:   "exercises",
 		}
 	case strength && cardio:
 		return &model.ValidationError{
 			Message: "exercise cannot have both sets/reps and duration_minutes",
+			Field:   "exercises",
+		}
+	case e.DurationSeconds != nil && (e.Reps != nil || cardio):
+		return &model.ValidationError{
+			Message: "duration_seconds cannot be combined with reps or duration_minutes",
 			Field:   "exercises",
 		}
 	case e.Intensity != nil && !cardio:
@@ -145,6 +168,7 @@ func toExercises(reqs []model.CreateExerciseRequest) []model.Exercise {
 			Weight:          r.Weight,
 			RestSeconds:     r.RestSeconds,
 			DurationMinutes: r.DurationMinutes,
+			DurationSeconds: r.DurationSeconds,
 			Intensity:       r.Intensity,
 			Notes:           r.Notes,
 		}

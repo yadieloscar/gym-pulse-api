@@ -409,6 +409,9 @@ func ProgramFromLegacyWeeklyPlan(primaryGoal string, assignments []LegacyWeeklyA
 				targetSets = 1
 				seconds := *legacy.DurationMinutes * 60
 				durationSeconds = &seconds
+			} else if legacy.DurationSeconds != nil {
+				// A hold or stretch stays strength work, timed per set.
+				durationSeconds = legacy.DurationSeconds
 			}
 			category := assignment.Template.SubtypeID
 			if category == "" || category == "general" {

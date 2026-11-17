@@ -256,7 +256,7 @@ func collectExportSets(rows pgx.Rows, index map[uuid.UUID]int, out *model.DataEx
 
 func readExportTemplates(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
 	rows, err := tx.Query(ctx, `
-		SELECT id, name, type_id, subtype_id, created_at, updated_at
+		SELECT id, name, type_id, subtype_id, warmup_routine_id, cooldown_routine_id, created_at, updated_at
 		FROM workout_templates
 		WHERE user_id=$1
 		ORDER BY created_at, id`, userID)
@@ -265,7 +265,7 @@ func readExportTemplates(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *
 	}
 	templates, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.ExportTemplate, error) {
 		t := model.ExportTemplate{Exercises: []model.ExportTemplateExercise{}}
-		err := row.Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
+		err := row.Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.WarmupRoutineID, &t.CooldownRoutineID, &t.CreatedAt, &t.UpdatedAt)
 		return t, err
 	})
 	if err != nil {
@@ -277,7 +277,7 @@ func readExportTemplates(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *
 	}
 
 	exerciseRows, err := tx.Query(ctx, `
-		SELECT e.template_id, e.name, e.sets, e.reps, e.weight, e.rest_seconds, e.duration_minutes, e.intensity, e.notes
+		SELECT e.template_id, e.name, e.sets, e.reps, e.weight, e.rest_seconds, e.duration_minutes, e.duration_seconds, e.intensity, e.notes
 		FROM exercises e
 		JOIN workout_templates t ON t.id = e.template_id
 		WHERE t.user_id=$1
@@ -289,7 +289,7 @@ func readExportTemplates(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *
 	for exerciseRows.Next() {
 		var parent uuid.UUID
 		var e model.ExportTemplateExercise
-		if err := exerciseRows.Scan(&parent, &e.Name, &e.Sets, &e.Reps, &e.Weight, &e.RestSeconds, &e.DurationMinutes, &e.Intensity, &e.Notes); err != nil {
+		if err := exerciseRows.Scan(&parent, &e.Name, &e.Sets, &e.Reps, &e.Weight, &e.RestSeconds, &e.DurationMinutes, &e.DurationSeconds, &e.Intensity, &e.Notes); err != nil {
 			return fmt.Errorf("scanning export template exercise: %w", err)
 		}
 		if i, ok := index[parent]; ok {

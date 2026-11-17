@@ -1575,17 +1575,43 @@ Body:
   "subtype_id": "string (required)",
   "exercises": [
     { "name": "string (1-100)", "sort_order": 1, "sets": 4, "reps": 8,
-      "catalog_id": "uuid (optional)", "duration_minutes": 20, "intensity": "easy|moderate|hard" }
-  ]
+      "catalog_id": "uuid (optional)", "duration_minutes": 20, "intensity": "easy|moderate|hard",
+      "duration_seconds": 30 }
+  ],
+  "warmup_routine_id": "warmup-lower | null (optional)",
+  "cooldown_routine_id": "hips-hamstrings | null (optional)"
 }
 ```
 **Exercise shape rule (enforced server-side, 422 on violation):** each
-exercise is EITHER strength (`sets` + `reps`) OR cardio (`duration_minutes`)
-— never neither, never both. `intensity` is only valid alongside
-`duration_minutes`. `catalog_id` is optional; free-text `name`-only
-exercises (legacy payloads) keep working unchanged.
+exercise is exactly one of strength (`sets` + `reps`), timed (`sets` +
+`duration_seconds`, a hold or stretch; contract 1.13.0), or cardio
+(`duration_minutes`). `duration_seconds` is 1..3600 seconds **per set** and
+cannot be combined with `reps` or `duration_minutes`. `intensity` is only
+valid alongside `duration_minutes`. `catalog_id` is optional; free-text
+`name`-only exercises (legacy payloads) keep working unchanged.
+
+A timed exercise is strength work for logging: its sets are logged with
+`duration_seconds` and no `actual_reps`, and `exercise_modality` stays
+`strength`. A program unit copied from such an exercise carries
+`modality: "strength"`, `target_reps: null`, and `target_duration_seconds`;
+`POST` and `PUT /api/v1/programs` accept that shape, and its scheduled sets
+are checked off with `duration_seconds`.
+
+**Chosen stretching routines (contract 1.13.0, additive).**
+`warmup_routine_id` and `cooldown_routine_id` name the stretching routine the
+athlete chose to open and close this workout. Routines are bundled in the app;
+the API stores the slug (1..64 characters, lowercase letters, digits, and
+single hyphens) and does not look it up. `null` means the app picks by body
+area, as it did before 1.13.0. `GET /api/v1/templates/{id}`, `POST`, and `PUT`
+always return both keys, `null` when unset; a client may use their presence to
+detect contract 1.13.0. 422 `VALIDATION_ERROR` with `details.field` naming the
+field when a value is not a slug.
 
 ### `PUT /api/v1/templates/{id}` — same body as POST.
+
+A routine key that is **absent** from the PUT body keeps the stored choice, so
+a client older than 1.13.0 does not clear it. `null` or `""` clears the choice.
+Exercises are still replaced as a whole list.
 ### `DELETE /api/v1/templates/{id}` → 204.
 
 ---
@@ -1628,7 +1654,7 @@ request (the template must still be owned, and the date not in the future).
 
 `set_logs` is the per-set history behind the active workout player.
 `set_index` is 1-based (≥ 1). A `completed: true` set must include `actual_reps`
-or `duration_seconds` (cardio) → 422 otherwise. `target_*` snapshot the plan at
+or `duration_seconds` (a cardio set, or a timed hold or stretch) → 422 otherwise. `target_*` snapshot the plan at
 session start; `actual_*` are what was performed. `overrides` (per-exercise
 aggregates: notes/skipped) and `set_logs` coexist.
 Exercise references must belong to the authenticated user and, for a templated
@@ -2556,8 +2582,10 @@ A read failure answers the standard JSON error with no attachment header.
   "templates": [{
     "id": "uuid", "name": "Upper A", "type_id": "strength", "subtype_id": "general",
     "created_at": "RFC3339", "updated_at": "RFC3339",
+    "warmup_routine_id": null, "cooldown_routine_id": null,
     "exercises": [{ "name": "Row", "sets": 3 | null, "reps": 8 | null, "weight": 60 | null,
-      "rest_seconds": 90 | null, "duration_minutes": null, "intensity": null, "notes": null }]
+      "rest_seconds": 90 | null, "duration_minutes": null, "duration_seconds": null,
+      "intensity": null, "notes": null }]
   }],
   "sport_activities": [{
     "id": "uuid", "date": "YYYY-MM-DD", "sport_id": "tennis", "sport_name": "Tennis",
@@ -2607,6 +2635,10 @@ A read failure answers the standard JSON error with no attachment header.
   `{ "name": "Usual breakfast", "section": "breakfast", "items": [{ "food_name": "Oats", "serving_label": "1 cup (81 g)", "serving_g": 81, "amount": 1 }] }`.
   It carries no values; `[]` when none. Exports made by an older API omit the
   key.
+- `templates[].warmup_routine_id`, `templates[].cooldown_routine_id`, and
+  `templates[].exercises[].duration_seconds` (added in contract 1.13.0,
+  additive, `schema_version` still 1). Exports made by an older API omit the
+  keys.
 - `nutrition.calculator_profile` (added in contract 1.11.0, additive,
   `schema_version` still 1) is `null`, or the saved macro calculator input
   (the `CalculatorInput` fields with defaults resolved) plus `bmr_kcal`,

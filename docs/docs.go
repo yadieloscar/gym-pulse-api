@@ -5216,6 +5216,11 @@ const docTemplate = `{
                 "duration_minutes": {
                     "type": "integer"
                 },
+                "duration_seconds": {
+                    "type": "integer",
+                    "maximum": 3600,
+                    "minimum": 1
+                },
                 "intensity": {
                     "type": "string",
                     "enum": [
@@ -5382,6 +5387,9 @@ const docTemplate = `{
                 "type_id"
             ],
             "properties": {
+                "cooldown_routine_id": {
+                    "type": "string"
+                },
                 "exercises": {
                     "type": "array",
                     "items": {
@@ -5397,6 +5405,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "type_id": {
+                    "type": "string"
+                },
+                "warmup_routine_id": {
+                    "description": "A routine field that is absent keeps the stored choice on PUT, so a\nclient older than contract 1.13.0 does not clear it. Null or \"\" clears\nthe choice back to automatic.",
                     "type": "string"
                 }
             }
@@ -5681,6 +5693,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "duration_minutes": {
+                    "type": "integer"
+                },
+                "duration_seconds": {
+                    "description": "DurationSeconds is the seconds per set of a hold or stretch.",
                     "type": "integer"
                 },
                 "id": {
@@ -6235,6 +6251,9 @@ const docTemplate = `{
         "model.ExportTemplate": {
             "type": "object",
             "properties": {
+                "cooldown_routine_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -6258,6 +6277,9 @@ const docTemplate = `{
                 },
                 "updated_at": {
                     "type": "string"
+                },
+                "warmup_routine_id": {
+                    "type": "string"
                 }
             }
         },
@@ -6265,6 +6287,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "duration_minutes": {
+                    "type": "integer"
+                },
+                "duration_seconds": {
                     "type": "integer"
                 },
                 "intensity": {
@@ -9060,6 +9085,9 @@ const docTemplate = `{
                 "type_id"
             ],
             "properties": {
+                "cooldown_routine_id": {
+                    "type": "string"
+                },
                 "created_at": {
                     "type": "string"
                 },
@@ -9084,6 +9112,10 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updated_at": {
+                    "type": "string"
+                },
+                "warmup_routine_id": {
+                    "description": "WarmupRoutineID and CooldownRoutineID name the stretching routines the\nathlete chose for this workout. Null means the app picks by body area.",
                     "type": "string"
                 }
             }

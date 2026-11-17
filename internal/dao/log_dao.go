@@ -384,11 +384,11 @@ func (r *logDAO) ExerciseHistory(ctx context.Context, userID uuid.UUID, exercise
 func (r *logDAO) getTemplate(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
 	t := &model.WorkoutTemplate{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, name, type_id, subtype_id, created_at, updated_at
+		SELECT id, name, type_id, subtype_id, warmup_routine_id, cooldown_routine_id, created_at, updated_at
 		FROM workout_templates
 		WHERE id = $1 AND user_id = $2`,
 		templateID, userID,
-	).Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.Name, &t.TypeID, &t.SubtypeID, &t.WarmupRoutineID, &t.CooldownRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, nil //nolint:nilnil
@@ -397,7 +397,7 @@ func (r *logDAO) getTemplate(ctx context.Context, userID, templateID uuid.UUID) 
 	}
 
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, template_id, name, sort_order, sets, reps, weight, rest_seconds, notes
+		SELECT id, template_id, name, sort_order, sets, reps, weight, rest_seconds, duration_seconds, notes
 		FROM exercises
 		WHERE template_id = $1
 		ORDER BY sort_order`,
@@ -412,7 +412,7 @@ func (r *logDAO) getTemplate(ctx context.Context, userID, templateID uuid.UUID) 
 		var e model.Exercise
 		if err := rows.Scan(
 			&e.ID, &e.TemplateID, &e.Name, &e.SortOrder,
-			&e.Sets, &e.Reps, &e.Weight, &e.RestSeconds, &e.Notes,
+			&e.Sets, &e.Reps, &e.Weight, &e.RestSeconds, &e.DurationSeconds, &e.Notes,
 		); err != nil {
 			return nil, fmt.Errorf("scanning exercise: %w", err)
 		}
