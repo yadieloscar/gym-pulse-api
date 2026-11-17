@@ -358,9 +358,10 @@ the program list, the sessions remain with their names, and removing the active 
 - **FR-014**: A new mutation MUST move one planned, unstarted session to a date from today through
   the filled range, with `expected_revision` and `operation_key`. It MUST change only that session.
 - **FR-015**: Saving the active program MUST update its unstarted planned sessions from today
-  onward to match the saved week and targets, in the same transaction as the save. A session the
-  athlete has started, finished, or missed MUST NOT change, and a unit with a started session
-  today MUST NOT get a second session on that day. A save that starts or stops the program, or a
+  onward to match the saved week and targets, in the same transaction as the save. A finished or
+  missed session MUST NOT change; a started, unfinished session MUST keep every logged set and
+  take the rest of the edit (Amendment A4). A unit with a started session today MUST NOT get a
+  second session on that day. A save that starts or stops the program, or a
   save from a client older than weekdays, still acts from tomorrow (Amendment A3).
 - **FR-016**: A one-off move MUST survive a program save unless that unit was removed or its
   weekdays changed.
@@ -449,4 +450,14 @@ nothing in the past." The owner added a workout to Tuesday on a Tuesday and Plan
 - A unit that already has a started session today keeps that one session. The unique
   `(program_workout_id, slot_date)` index refuses a second.
 - No schema change and no new field. Contract 1.12.1 records the changed date range.
+
+## Amendment A4: a started workout takes the edit around what was logged (2026-11-17)
+
+**Owner report (2026-11-17), after updating a program workout from its saved workout:** "It's not getting updated at the workout level; if I started something it doesn't pick it up." The rule until now was that a started session never changes.
+
+- A session that is **started and not finished**, dated today or later, now follows a change to its unit's name, order, or exercises. Sets the athlete logged (any performed set, done or not) stay exactly as they are; every other required set is replaced by the edited workout's sets.
+- A logged set moves to its exercise's place in the edited workout (matched by exercise name). If the edit removed that exercise, the logged set stays and is listed after the edited exercises.
+- Unchanged: a finished or missed session never changes; a started session is not moved or removed when its unit's weekdays change or the unit is removed; past dates never change.
+- FR-015 is amended: "A session the athlete has started, finished, or missed MUST NOT change" becomes "A finished or missed session MUST NOT change; a started, unfinished session MUST keep every logged set and take the rest of the edit."
+- No schema change. Contract 1.13.1 records it. The session's revision increases, so an open player reads it again.
 

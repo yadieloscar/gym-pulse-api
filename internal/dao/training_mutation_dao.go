@@ -464,9 +464,13 @@ func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, store
 
 // resnapshotUnitSessions rewrites what the unit's planned unstarted sessions
 // snapshot: name, order, sport target, and required sets. Their dates stay,
-// so a session the athlete moved keeps its date.
+// so a session the athlete moved keeps its date. A session that is under way
+// takes the edit too, around the sets the athlete has logged.
 func resnapshotUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, unit *model.ProgramWorkout, from string) error {
-	rows, err := tx.Query(ctx, `SELECT sw.id FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, unit.ID, from)
+	if err := mergeStartedUnitSessions(ctx, tx, userID, unit, from); err != nil {
+		return err
+	}
+	rows, err := tx.Query(ctx, `SELECT sw.id FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned+` AND NOT `+hasLoggedSets, userID, unit.ID, from)
 	if err != nil {
 		return fmt.Errorf("finding sessions to re-snapshot: %w", err)
 	}
@@ -498,6 +502,94 @@ func resnapshotUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, un
 		groups[i] = scheduledSetGroup{workoutID: id, sets: model.SnapshotScheduledSets(unit.Exercises)}
 	}
 	return insertScheduledSetGroups(ctx, tx, groups)
+}
+
+// mergeStartedUnitSessions brings an edited unit into its sessions that the
+// athlete has started and not finished, dated `from` or later (in practice,
+// today's). Logged sets stay as the record; every other set is replaced by
+// the edited workout's. A finished session never changes.
+func mergeStartedUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, unit *model.ProgramWorkout, from string) error {
+	if unit.IsSport() {
+		return nil
+	}
+	rows, err := tx.Query(ctx, `
+		SELECT sw.id FROM scheduled_workouts sw
+		WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3
+		  AND sw.finalized_at IS NULL AND sw.kind='exercises'
+		  AND (NOT (`+unstartedPlanned+`) OR `+hasLoggedSets+`)`, userID, unit.ID, from)
+	if err != nil {
+		return fmt.Errorf("finding started sessions to update: %w", err)
+	}
+	ids, err := pgx.CollectRows(rows, pgx.RowTo[uuid.UUID])
+	if err != nil {
+		return fmt.Errorf("reading started sessions to update: %w", err)
+	}
+	for _, id := range ids {
+		if err := mergeStartedSession(ctx, tx, userID, id, unit); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// hasLoggedSets selects a session with a performed set on any of its required
+// sets, done or not. Its sets cannot simply be replaced: a performed set must
+// keep the set it belongs to.
+const hasLoggedSets = `EXISTS (SELECT 1 FROM scheduled_sets logged_ss JOIN set_logs logged_sl ON logged_sl.scheduled_set_id=logged_ss.id WHERE logged_ss.scheduled_workout_id=sw.id)`
+
+// startedSetParking moves kept sets clear of every real exercise order while
+// they are renumbered, so the unique (workout, order, index) never collides.
+const startedSetParking = 100000
+
+func mergeStartedSession(ctx context.Context, tx pgx.Tx, userID, workoutID uuid.UUID, unit *model.ProgramWorkout) error {
+	rows, err := tx.Query(ctx, `
+		SELECT ss.id, ss.exercise_name, ss.exercise_order, ss.set_index,
+		       EXISTS (SELECT 1 FROM set_logs sl WHERE sl.scheduled_set_id=ss.id)
+		FROM scheduled_sets ss WHERE ss.scheduled_workout_id=$1
+		ORDER BY ss.exercise_order, ss.set_index`, workoutID)
+	if err != nil {
+		return fmt.Errorf("reading a started session's sets: %w", err)
+	}
+	current, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.StartedSet, error) {
+		var set model.StartedSet
+		err := row.Scan(&set.ID, &set.ExerciseName, &set.ExerciseOrder, &set.SetIndex, &set.Logged)
+		return set, err
+	})
+	if err != nil {
+		return fmt.Errorf("scanning a started session's sets: %w", err)
+	}
+	kept, added := model.MergeStartedSets(current, model.SnapshotScheduledSets(unit.Exercises))
+
+	// A set with a performed set cannot be deleted: the log must keep its set.
+	if _, err := tx.Exec(ctx, `
+		DELETE FROM scheduled_sets ss WHERE ss.scheduled_workout_id=$1
+		  AND NOT EXISTS (SELECT 1 FROM set_logs sl WHERE sl.scheduled_set_id=ss.id)`, workoutID); err != nil {
+		return fmt.Errorf("removing a started session's open sets: %w", err)
+	}
+	if len(kept) > 0 {
+		if _, err := tx.Exec(ctx, `UPDATE scheduled_sets SET exercise_order=exercise_order+$2 WHERE scheduled_workout_id=$1`, workoutID, startedSetParking); err != nil {
+			return fmt.Errorf("parking a started session's logged sets: %w", err)
+		}
+		setIDs := make([]uuid.UUID, len(kept))
+		orders := make([]int32, len(kept))
+		for i, placement := range kept {
+			setIDs[i], orders[i] = placement.ID, int32(placement.ExerciseOrder) //nolint:gosec // bounded by the unit's exercise count
+		}
+		if _, err := tx.Exec(ctx, `
+			UPDATE scheduled_sets ss SET exercise_order=placed.exercise_order
+			FROM unnest($2::uuid[], $3::int[]) AS placed(id, exercise_order)
+			WHERE ss.id=placed.id AND ss.scheduled_workout_id=$1`, workoutID, setIDs, orders); err != nil {
+			return fmt.Errorf("placing a started session's logged sets: %w", err)
+		}
+	}
+	if err := insertScheduledSetGroups(ctx, tx, []scheduledSetGroup{{workoutID: workoutID, sets: added}}); err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `UPDATE scheduled_workouts SET name=$2, sequence_position=$3, updated_at=now() WHERE id=$1 AND user_id=$4`, workoutID, unit.Name, unit.SequencePosition, userID); err != nil {
+		return fmt.Errorf("renaming a started session: %w", err)
+	}
+	// Recounts done sets against the new total and bumps the revision.
+	return updateScheduledStatus(ctx, tx, userID, workoutID)
 }
 
 // DeleteProgram removes a saved program and its planned unstarted sessions.
