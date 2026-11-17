@@ -53,6 +53,12 @@ func scheduleHorizon(today string) (string, error) {
 // loadExisting is set, the skipped entries are replaced by the stored session
 // so the caller can return the authoritative rows.
 func insertLayoutSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, sessions []model.ScheduledWorkout, loadExisting bool) error {
+	if len(sessions) == 0 {
+		return nil
+	}
+	// One round trip for every session and one for every set: a program laid
+	// out to the horizon is dozens of sessions and hundreds of sets.
+	batch := &pgx.Batch{}
 	for i := range sessions {
 		w := &sessions[i]
 		w.Kind = model.NormalizeUnitKind(w.Kind)
@@ -60,36 +66,62 @@ func insertLayoutSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, sess
 		if w.Sport != nil {
 			sport = sportColumns(&w.Sport.SportTarget)
 		}
-		err := tx.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO scheduled_workouts (user_id, program_id, program_workout_id, date, slot_date, name, sequence_position, status,
 				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,'planned',$8,$9,$10,$11,$12,$13)
 			ON CONFLICT (program_workout_id, slot_date) WHERE program_workout_id IS NOT NULL AND slot_date IS NOT NULL DO NOTHING
 			RETURNING id, revision, created_at, updated_at`, userID, w.ProgramID, w.ProgramWorkoutID,
 			w.Date, w.SlotDate, w.Name, w.SequencePosition,
-			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes).Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
+			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes)
+	}
+	results := tx.SendBatch(ctx, batch)
+	// taken marks a slot another session already holds.
+	taken := make([]bool, len(sessions))
+	for i := range sessions {
+		w := &sessions[i]
+		err := results.QueryRow().Scan(&w.ID, &w.Revision, &w.CreatedAt, &w.UpdatedAt)
 		if errors.Is(err, pgx.ErrNoRows) {
-			if !loadExisting {
-				continue
-			}
-			var existingID uuid.UUID
-			if err := tx.QueryRow(ctx, `SELECT id FROM scheduled_workouts WHERE user_id=$1 AND program_workout_id=$2 AND slot_date=$3`,
-				userID, w.ProgramWorkoutID, w.SlotDate).Scan(&existingID); err != nil {
-				return fmt.Errorf("finding the session that holds a slot: %w", err)
-			}
-			existing, err := loadScheduledWorkout(ctx, tx, userID, existingID)
-			if err != nil {
-				return err
-			}
-			sessions[i] = *existing
+			taken[i] = true
 			continue
 		}
 		if err != nil {
+			_ = results.Close()
 			return fmt.Errorf("inserting program session: %w", err)
 		}
-		if err := insertScheduledSets(ctx, tx, w.ID, w.RequiredSets); err != nil {
+	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting program sessions: %w", err)
+	}
+
+	groups := make([]scheduledSetGroup, 0, len(sessions))
+	for i := range sessions {
+		if !taken[i] {
+			groups = append(groups, scheduledSetGroup{workoutID: sessions[i].ID, sets: sessions[i].RequiredSets})
+		}
+	}
+	if err := insertScheduledSetGroups(ctx, tx, groups); err != nil {
+		return err
+	}
+
+	if !loadExisting {
+		return nil
+	}
+	for i := range sessions {
+		if !taken[i] {
+			continue
+		}
+		w := &sessions[i]
+		var existingID uuid.UUID
+		if err := tx.QueryRow(ctx, `SELECT id FROM scheduled_workouts WHERE user_id=$1 AND program_workout_id=$2 AND slot_date=$3`,
+			userID, w.ProgramWorkoutID, w.SlotDate).Scan(&existingID); err != nil {
+			return fmt.Errorf("finding the session that holds a slot: %w", err)
+		}
+		existing, err := loadScheduledWorkout(ctx, tx, userID, existingID)
+		if err != nil {
 			return err
 		}
+		sessions[i] = *existing
 	}
 	return nil
 }
