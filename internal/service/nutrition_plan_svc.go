@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -18,9 +21,9 @@ import (
 // maps wire types, names validation failures, and delegates storage.
 type NutritionPlanService interface {
 	// Options returns the foods, ranges, and defaults the calculator uses.
-	Options() *model.CalculatorOptions
-	// Calculate computes a plan and stores nothing.
-	Calculate(input model.CalculatorInput) (*model.NutritionPlan, error)
+	Options(ctx context.Context) *model.CalculatorOptions
+	// Calculate computes a plan and stores nothing about the athlete.
+	Calculate(ctx context.Context, input model.CalculatorInput) (*model.NutritionPlan, error)
 	// SaveProfile recomputes the targets from the request and stores the
 	// input with them as the athlete's plan.
 	SaveProfile(ctx context.Context, userID uuid.UUID, req model.SaveNutritionProfileRequest) (*model.SavedNutritionPlan, model.NutritionProfileOutcome, error)
@@ -28,17 +31,91 @@ type NutritionPlanService interface {
 	GetPlan(ctx context.Context, userID uuid.UUID) (*model.SavedNutritionPlan, error)
 }
 
-type nutritionPlanService struct {
-	profiles dao.NutritionProfileDAO
+// TemplateFoodCatalog writes the template's USDA foods to the shared food
+// catalog and returns them with their catalog ids. dao.FoodDAO satisfies it.
+type TemplateFoodCatalog interface {
+	UpsertCatalogFoods(ctx context.Context, foods []model.Food) ([]model.Food, error)
 }
 
-func NewNutritionPlanService(profiles dao.NutritionProfileDAO) NutritionPlanService {
-	return &nutritionPlanService{profiles: profiles}
+type nutritionPlanService struct {
+	profiles dao.NutritionProfileDAO
+	catalog  TemplateFoodCatalog
+	now      func() time.Time
+
+	// catalogIDs maps a food's FDC id to its catalog id. It is filled once,
+	// on the first plan that needs it, and kept for the life of the process:
+	// the template foods are fixed and their catalog ids never change.
+	catalogMu  sync.Mutex
+	catalogIDs map[int]uuid.UUID
 }
+
+// NewNutritionPlanService builds the service. catalog may be nil, in which
+// case plans carry no catalog ids and their foods cannot be logged.
+func NewNutritionPlanService(profiles dao.NutritionProfileDAO, catalog TemplateFoodCatalog) NutritionPlanService {
+	return &nutritionPlanService{profiles: profiles, catalog: catalog, now: time.Now}
+}
+
+// templateCatalogIDs returns the catalog id of every template food, writing
+// the foods to the shared catalog the first time. The rows are published
+// USDA facts keyed by FDC id, the same rows a food search stores; nothing
+// about the athlete is written. On failure it returns nil, so a plan is
+// still served (without ids), and the next call tries again.
+func (s *nutritionPlanService) templateCatalogIDs(ctx context.Context) map[int]uuid.UUID {
+	if s.catalog == nil {
+		return nil
+	}
+	s.catalogMu.Lock()
+	defer s.catalogMu.Unlock()
+	if s.catalogIDs != nil {
+		return s.catalogIDs
+	}
+	foods := make([]model.Food, 0, len(nutritionplan.Foods))
+	for _, f := range nutritionplan.Foods {
+		foods = append(foods, model.Food{
+			Source:    model.FoodSourceUSDA,
+			SourceID:  strconv.Itoa(f.FDCID),
+			DataType:  templateFoodDataType,
+			Name:      f.USDAName,
+			Servings:  model.EnsureHundredGramServing(templateServings(f)),
+			Per100g:   model.Per100g{EnergyKcal: f.Kcal, ProteinG: f.Protein, CarbsG: f.Carbs, FatG: f.Fat},
+			FetchedAt: s.now(),
+		})
+	}
+	saved, err := s.catalog.UpsertCatalogFoods(ctx, foods)
+	if err != nil || len(saved) != len(foods) {
+		return nil
+	}
+	ids := make(map[int]uuid.UUID, len(saved))
+	for i, food := range saved {
+		ids[nutritionplan.Foods[i].FDCID] = food.ID
+	}
+	s.catalogIDs = ids
+	return ids
+}
+
+// templateServings is the food's everyday unit as a catalog serving ("1 oz",
+// "1 cup", "1 each"); foods measured in grams have only the 100 g serving.
+func templateServings(f nutritionplan.Food) []model.Serving {
+	switch f.Unit {
+	case nutritionplan.UnitOz:
+		return []model.Serving{{Label: "1 oz", Grams: f.GramsPerUnit}}
+	case nutritionplan.UnitCup:
+		return []model.Serving{{Label: "1 cup", Grams: f.GramsPerUnit}}
+	case nutritionplan.UnitCount:
+		return []model.Serving{{Label: "1 each", Grams: f.GramsPerUnit}}
+	default:
+		return nil
+	}
+}
+
+// templateFoodDataType is how the catalog labels an SR Legacy record, the
+// data set every template food comes from.
+const templateFoodDataType = "sr_legacy"
 
 const foodSourceUSDA = "usda"
 
-func (s *nutritionPlanService) Options() *model.CalculatorOptions {
+func (s *nutritionPlanService) Options(ctx context.Context) *model.CalculatorOptions {
+	catalogIDs := s.templateCatalogIDs(ctx)
 	fatDefault := nutritionplan.DefaultFatPerLb
 	options := &model.CalculatorOptions{
 		Goals:          make([]model.CalculatorGoalOption, 0, len(nutritionplan.Goals)),
@@ -79,16 +156,17 @@ func (s *nutritionPlanService) Options() *model.CalculatorOptions {
 	}
 	for _, f := range nutritionplan.Foods {
 		options.Foods = append(options.Foods, model.CalculatorFood{
-			ID:         f.ID,
-			Name:       f.Name,
-			Role:       f.Role,
-			Tags:       append([]string{}, f.Tags...),
-			Unit:       f.Unit,
-			Step:       f.Step,
-			Selectable: f.Selectable,
-			Source:     foodSourceUSDA,
-			FDCID:      f.FDCID,
-			Per100G:    model.PlanProvided{EnergyKcal: int(f.Kcal), ProteinG: f.Protein, CarbsG: f.Carbs, FatG: f.Fat},
+			ID:            f.ID,
+			Name:          f.Name,
+			Role:          f.Role,
+			Tags:          append([]string{}, f.Tags...),
+			Unit:          f.Unit,
+			Step:          f.Step,
+			Selectable:    f.Selectable,
+			Source:        foodSourceUSDA,
+			FDCID:         f.FDCID,
+			Per100G:       model.PlanProvided{EnergyKcal: int(f.Kcal), ProteinG: f.Protein, CarbsG: f.Carbs, FatG: f.Fat},
+			CatalogFoodID: catalogID(catalogIDs, f.FDCID),
 		})
 	}
 	for _, m := range nutritionplan.MealSlots {
@@ -97,13 +175,20 @@ func (s *nutritionPlanService) Options() *model.CalculatorOptions {
 	return options
 }
 
-func (s *nutritionPlanService) Calculate(input model.CalculatorInput) (*model.NutritionPlan, error) {
+func (s *nutritionPlanService) Calculate(ctx context.Context, input model.CalculatorInput) (*model.NutritionPlan, error) {
 	resolved, err := resolveCalculatorInput(input)
 	if err != nil {
 		return nil, err
 	}
-	plan := planToModel(nutritionplan.Build(resolved, nutritionplan.Calculate(resolved)))
+	plan := planToModel(nutritionplan.Build(resolved, nutritionplan.Calculate(resolved)), s.templateCatalogIDs(ctx))
 	return &plan, nil
+}
+
+func catalogID(ids map[int]uuid.UUID, fdcID int) *uuid.UUID {
+	if id, ok := ids[fdcID]; ok {
+		return &id
+	}
+	return nil
 }
 
 func (s *nutritionPlanService) SaveProfile(ctx context.Context, userID uuid.UUID, req model.SaveNutritionProfileRequest) (*model.SavedNutritionPlan, model.NutritionProfileOutcome, error) {
@@ -141,12 +226,12 @@ func (s *nutritionPlanService) SaveProfile(ctx context.Context, userID uuid.UUID
 		var conflict *model.ConflictError
 		if errors.As(err, &conflict) {
 			if current, ok := conflict.Authoritative.(*model.NutritionProfile); ok && current != nil {
-				conflict.Authoritative = savedPlan(current)
+				conflict.Authoritative = savedPlan(current, s.templateCatalogIDs(ctx))
 			}
 		}
 		return nil, model.NutritionProfileCreated, err
 	}
-	return savedPlan(stored), outcome, nil
+	return savedPlan(stored, s.templateCatalogIDs(ctx)), outcome, nil
 }
 
 func (s *nutritionPlanService) GetPlan(ctx context.Context, userID uuid.UUID) (*model.SavedNutritionPlan, error) {
@@ -154,12 +239,12 @@ func (s *nutritionPlanService) GetPlan(ctx context.Context, userID uuid.UUID) (*
 	if err != nil {
 		return nil, err
 	}
-	return savedPlan(profile), nil
+	return savedPlan(profile, s.templateCatalogIDs(ctx)), nil
 }
 
 // savedPlan builds the plan for a stored profile from its stored targets, so
 // a saved plan's numbers move only when the athlete saves again.
-func savedPlan(profile *model.NutritionProfile) *model.SavedNutritionPlan {
+func savedPlan(profile *model.NutritionProfile, catalogIDs map[int]uuid.UUID) *model.SavedNutritionPlan {
 	in := storedInput(profile.Input)
 	targets := nutritionplan.Targets{
 		BMRKcal:        profile.BMRKcal,
@@ -171,7 +256,7 @@ func savedPlan(profile *model.NutritionProfile) *model.SavedNutritionPlan {
 		FatG:           profile.FatG,
 	}
 	return &model.SavedNutritionPlan{
-		NutritionPlan: planToModel(nutritionplan.Build(in, targets)),
+		NutritionPlan: planToModel(nutritionplan.Build(in, targets), catalogIDs),
 		Revision:      profile.Revision,
 		CreatedAt:     profile.CreatedAt,
 		UpdatedAt:     profile.UpdatedAt,
@@ -301,7 +386,7 @@ func inputToModel(in nutritionplan.Input) model.CalculatorInput {
 	return m
 }
 
-func planToModel(p nutritionplan.Plan) model.NutritionPlan {
+func planToModel(p nutritionplan.Plan, catalogIDs map[int]uuid.UUID) model.NutritionPlan {
 	out := model.NutritionPlan{
 		Input:                 inputToModel(p.Input),
 		Activity:              model.PlanActivity{SuggestedLevel: p.SuggestedLevel.ID, Level: p.Level.ID, Multiplier: p.Level.Multiplier},
@@ -343,18 +428,20 @@ func planToModel(p nutritionplan.Plan) model.NutritionPlan {
 			}
 			for _, item := range m.Items {
 				meal.Items = append(meal.Items, model.PlanMealItem{
-					Food:       item.Food.ID,
-					Name:       item.Food.Name,
-					Role:       item.Role,
-					Amount:     item.Amount,
-					Unit:       item.Food.Unit,
-					Grams:      item.Grams,
-					EnergyKcal: item.EnergyKcal,
-					ProteinG:   item.ProteinG,
-					CarbsG:     item.CarbsG,
-					FatG:       item.FatG,
-					Source:     foodSourceUSDA,
-					FDCID:      item.Food.FDCID,
+					Food:          item.Food.ID,
+					Name:          item.Food.Name,
+					Role:          item.Role,
+					Amount:        item.Amount,
+					Unit:          item.Food.Unit,
+					Grams:         item.Grams,
+					EnergyKcal:    item.EnergyKcal,
+					ProteinG:      item.ProteinG,
+					CarbsG:        item.CarbsG,
+					FatG:          item.FatG,
+					Source:        foodSourceUSDA,
+					FDCID:         item.Food.FDCID,
+					CatalogFoodID: catalogID(catalogIDs, item.Food.FDCID),
+					Serving:       model.GramsOnlyServing(item.Grams),
 				})
 			}
 			template.Meals = append(template.Meals, meal)

@@ -218,7 +218,7 @@ func main() {
 	openFoodFactsSource := service.NewOpenFoodFactsSource(cfg.OpenFoodFactsBaseURL, cfg.FoodSourceUserAgent, nil)
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	savedMealSvc := service.NewSavedMealService(savedMealRepo, trainingProfileRepo)
-	nutritionPlanSvc := service.NewNutritionPlanService(nutritionProfileRepo)
+	nutritionPlanSvc := service.NewNutritionPlanService(nutritionProfileRepo, foodRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, trainingProfileRepo, planTransitionRepo, v)
 	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).

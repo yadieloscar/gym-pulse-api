@@ -44,6 +44,14 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 - [X] T021 Run `gofmt`, `go test ./...`, `golangci-lint run`, `./scripts/validate-database-design.sh`, `./scripts/smoke-toggle.sh`, and the integration suite; record results below
 - [X] T022 Independent read-only review of the final diff; fix or record findings. Findings (2026-11-16): no blockers. Fixed: the solver's fallback always kept protein + carbohydrate and could abandon the egg-white companion or drop the fat source (replaced by a best-fit search with regression and sweep tests); `per_100g` example; `strength_days`/`cardio_days` documented as defaulting to 0; conflict `resource` wording; zero-weight guard in `buildMeal`; a note on the cycling share at small intakes. Added in the same pass: `limits` in the options so the app holds no copy of the ranges
 
+## Phase 7: Amendment A1 (loggable template items, US7)
+
+- [X] T023 [US7] `USDAName` on every template food with a catalog test
+- [X] T024 [US7] Service tests: catalog rows written once, ids stable, serving loggable and equal to the item's values, failure served without ids and retried, saved plan carries ids
+- [X] T025 [US7] `TemplateFoodCatalog`, `catalog_food_id` and `serving` on items, `catalog_food_id` on option foods; wiring in `cmd/server/main.go`
+- [X] T026 [US7] `docs/CONTRACTS.md` (1.12.0), Swagger, smoke step 13m extended: log a template item and save a template meal through the existing routes
+- [X] T027 [US7] Gates re-run (see Evidence, "A1")
+
 ## Evidence
 
 | Check | Result |
@@ -57,3 +65,6 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 | `scripts/validate-supabase-security.sh` | Passed on the same database |
 | `./scripts/smoke-toggle.sh` | Not run: it tests the shared dev stack's image, not this branch. The same `smoke.sh` ran against this branch's image instead |
 | `govulncheck` | Not run: no dependency change |
+| A1 (2026-11-17): `go test ./...`, `golangci-lint run`, schema validation | Passed; service coverage 91.0% |
+| A1: integration suite | Passed on an isolated migrated database (version 48) |
+| A1: `scripts/smoke.sh` | 41 passed, 0 failed on an image built from this branch. The first run failed, usefully: the catalog keeps per-100 g facts to one decimal, so a logged portion differed from the template by 0.1 g. Item values are now computed the way a food entry's are, and a sweep over weights, goals, cycling, and exclusions pins equality |

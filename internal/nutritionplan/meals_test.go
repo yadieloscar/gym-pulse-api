@@ -14,6 +14,9 @@ func TestCatalogIsComplete(t *testing.T) {
 			t.Errorf("food %q: missing or duplicate id or name", f.ID)
 		}
 		seen[f.ID] = true
+		if f.USDAName == "" {
+			t.Errorf("%s: missing USDA description", f.ID)
+		}
 		if f.FDCID == 0 || fdc[f.FDCID] {
 			t.Errorf("%s: missing or duplicate FDC id", f.ID)
 		}

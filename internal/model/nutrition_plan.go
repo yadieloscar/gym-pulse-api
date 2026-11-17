@@ -1,6 +1,10 @@
 package model
 
-import "time"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // MealChoice names the athlete's own food for one or more roles of one meal
 // of the template. An omitted role keeps the selected food.
@@ -105,6 +109,13 @@ type PlanMealItem struct {
 	FatG       float64 `json:"fat_g"`
 	Source     string  `json:"source"`
 	FDCID      int     `json:"fdc_id"`
+	// CatalogFoodID is the food's id in the shared food catalog, so the
+	// portion can be logged or saved through the food routes; null when the
+	// catalog could not be reached.
+	CatalogFoodID *uuid.UUID `json:"catalog_food_id"`
+	// Serving is the grams-only serving that logs exactly this portion with
+	// an amount of 1.
+	Serving Serving `json:"serving"`
 }
 
 // PlanMeal is one meal of a template.
@@ -213,6 +224,9 @@ type CalculatorFood struct {
 	Source     string       `json:"source"`
 	FDCID      int          `json:"fdc_id"`
 	Per100G    PlanProvided `json:"per_100g"`
+	// CatalogFoodID is the food's id in the shared food catalog; null when
+	// the catalog could not be reached.
+	CatalogFoodID *uuid.UUID `json:"catalog_food_id"`
 }
 
 // CalculatorRange is an inclusive range.

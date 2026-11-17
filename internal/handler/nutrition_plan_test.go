@@ -58,7 +58,7 @@ func (s *nutritionPlanHandlerStore) Save(_ context.Context, _ uuid.UUID, profile
 }
 
 func nutritionPlanHandler(store *nutritionPlanHandlerStore) *NutritionPlanHandler {
-	return NewNutritionPlanHandler(service.NewNutritionPlanService(store))
+	return NewNutritionPlanHandler(service.NewNutritionPlanService(store, nil))
 }
 
 func calculatorBody(extra map[string]any) map[string]any {

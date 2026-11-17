@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"math"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -67,7 +69,7 @@ func calculatorInput() model.CalculatorInput {
 }
 
 func TestNutritionPlanCalculateWorkedExample(t *testing.T) {
-	plan, err := NewNutritionPlanService(&nutritionProfileStore{}).Calculate(calculatorInput())
+	plan, err := NewNutritionPlanService(&nutritionProfileStore{}, nil).Calculate(context.Background(), calculatorInput())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +113,7 @@ func TestNutritionPlanCalculateCyclingAndOverride(t *testing.T) {
 	in.CarbCycling = true
 	very := "very"
 	in.ActivityLevel = &very
-	plan, err := NewNutritionPlanService(&nutritionProfileStore{}).Calculate(in)
+	plan, err := NewNutritionPlanService(&nutritionProfileStore{}, nil).Calculate(context.Background(), in)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -158,7 +160,7 @@ func TestNutritionPlanValidationNamesTheField(t *testing.T) {
 		t.Run(field, func(t *testing.T) {
 			in := calculatorInput()
 			mutate(&in)
-			_, err := NewNutritionPlanService(&nutritionProfileStore{}).Calculate(in)
+			_, err := NewNutritionPlanService(&nutritionProfileStore{}, nil).Calculate(context.Background(), in)
 			var validation *model.ValidationError
 			if !errors.As(err, &validation) || validation.Field != field {
 				t.Fatalf("error = %v, want validation on %s", err, field)
@@ -168,7 +170,7 @@ func TestNutritionPlanValidationNamesTheField(t *testing.T) {
 }
 
 func TestNutritionPlanOptions(t *testing.T) {
-	options := NewNutritionPlanService(&nutritionProfileStore{}).Options()
+	options := NewNutritionPlanService(&nutritionProfileStore{}, nil).Options(context.Background())
 	if len(options.Goals) != 4 || len(options.ActivityLevels) != 3 || len(options.Exclusions) != 6 || len(options.Foods) != 18 || len(options.Meals) != 4 {
 		t.Fatalf("options sizes: %d goals, %d levels, %d exclusions, %d foods, %d meals",
 			len(options.Goals), len(options.ActivityLevels), len(options.Exclusions), len(options.Foods), len(options.Meals))
@@ -213,7 +215,7 @@ func saveRequest(revision int64, key string) model.SaveNutritionProfileRequest {
 
 func TestNutritionPlanSaveAndRead(t *testing.T) {
 	store := &nutritionProfileStore{}
-	svc := NewNutritionPlanService(store)
+	svc := NewNutritionPlanService(store, nil)
 	ctx, user := context.Background(), uuid.New()
 
 	if _, err := svc.GetPlan(ctx, user); !isNotFound(err) {
@@ -257,7 +259,7 @@ func TestNutritionPlanSavedTargetsDoNotMove(t *testing.T) {
 	// A stored row whose targets differ from what today's maths would give
 	// (as after a formula change) is served as stored.
 	store := &nutritionProfileStore{}
-	svc := NewNutritionPlanService(store)
+	svc := NewNutritionPlanService(store, nil)
 	if _, _, err := svc.SaveProfile(context.Background(), uuid.New(), saveRequest(0, "k")); err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +278,7 @@ func TestNutritionPlanSavedTargetsDoNotMove(t *testing.T) {
 
 func TestNutritionPlanReadSurvivesRemovedFoods(t *testing.T) {
 	store := &nutritionProfileStore{}
-	svc := NewNutritionPlanService(store)
+	svc := NewNutritionPlanService(store, nil)
 	if _, _, err := svc.SaveProfile(context.Background(), uuid.New(), saveRequest(0, "k")); err != nil {
 		t.Fatal(err)
 	}
@@ -299,7 +301,7 @@ func TestNutritionPlanReadSurvivesRemovedFoods(t *testing.T) {
 }
 
 func TestNutritionPlanSaveValidation(t *testing.T) {
-	svc := NewNutritionPlanService(&nutritionProfileStore{})
+	svc := NewNutritionPlanService(&nutritionProfileStore{}, nil)
 	ctx, user := context.Background(), uuid.New()
 	for field, req := range map[string]model.SaveNutritionProfileRequest{
 		"operation_key":     saveRequest(0, "  "),
@@ -320,7 +322,7 @@ func TestNutritionPlanSaveValidation(t *testing.T) {
 
 func TestNutritionPlanSaveHashIsStableAndPayloadSensitive(t *testing.T) {
 	store := &nutritionProfileStore{}
-	svc := NewNutritionPlanService(store)
+	svc := NewNutritionPlanService(store, nil)
 	ctx, user := context.Background(), uuid.New()
 	if _, _, err := svc.SaveProfile(ctx, user, saveRequest(0, "k")); err != nil {
 		t.Fatal(err)
@@ -342,11 +344,179 @@ func TestNutritionPlanSaveHashIsStableAndPayloadSensitive(t *testing.T) {
 
 func TestNutritionPlanStoreErrorsPassThrough(t *testing.T) {
 	boom := errors.New("database unavailable")
-	svc := NewNutritionPlanService(&nutritionProfileStore{err: boom})
+	svc := NewNutritionPlanService(&nutritionProfileStore{err: boom}, nil)
 	if _, err := svc.GetPlan(context.Background(), uuid.New()); !errors.Is(err, boom) {
 		t.Errorf("GetPlan error = %v", err)
 	}
 	if _, _, err := svc.SaveProfile(context.Background(), uuid.New(), saveRequest(0, "k")); !errors.Is(err, boom) {
 		t.Errorf("SaveProfile error = %v", err)
+	}
+}
+
+// templateCatalog is an in-memory food catalog keyed by source id.
+type templateCatalog struct {
+	calls int
+	err   error
+	rows  map[string]model.Food
+}
+
+func (c *templateCatalog) UpsertCatalogFoods(_ context.Context, foods []model.Food) ([]model.Food, error) {
+	c.calls++
+	if c.err != nil {
+		return nil, c.err
+	}
+	if c.rows == nil {
+		c.rows = map[string]model.Food{}
+	}
+	out := make([]model.Food, 0, len(foods))
+	for _, f := range foods {
+		if existing, ok := c.rows[f.SourceID]; ok {
+			f.ID = existing.ID
+		} else {
+			f.ID = uuid.New()
+		}
+		// The real table keeps per-100 g facts to one decimal.
+		round1 := func(v float64) float64 { return math.Round(v*10) / 10 }
+		f.Per100g = model.Per100g{EnergyKcal: round1(f.Per100g.EnergyKcal), ProteinG: round1(f.Per100g.ProteinG), CarbsG: round1(f.Per100g.CarbsG), FatG: round1(f.Per100g.FatG)}
+		c.rows[f.SourceID] = f
+		out = append(out, f)
+	}
+	return out, nil
+}
+
+func TestNutritionPlanItemsCarryCatalogIDsAndALoggableServing(t *testing.T) {
+	catalog := &templateCatalog{}
+	svc := NewNutritionPlanService(&nutritionProfileStore{}, catalog)
+	plan, err := svc.Calculate(context.Background(), calculatorInput())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(catalog.rows) != 18 {
+		t.Fatalf("catalog rows = %d, want the 18 template foods", len(catalog.rows))
+	}
+	chicken := catalog.rows["171534"]
+	if chicken.Source != model.FoodSourceUSDA || chicken.DataType != "sr_legacy" ||
+		chicken.Name != "Chicken, broiler or fryers, breast, skinless, boneless, meat only, cooked, grilled" ||
+		chicken.Per100g != (model.Per100g{EnergyKcal: 151, ProteinG: 30.5, CarbsG: 0, FatG: 3.2}) {
+		t.Errorf("chicken catalog row = %+v", chicken)
+	}
+	if got := chicken.Servings; len(got) != 2 || got[0] != (model.Serving{Label: "1 oz", Grams: 28.35}) || got[1] != model.HundredGramServing {
+		t.Errorf("chicken servings = %+v", got)
+	}
+	if got := catalog.rows["171413"].Servings; len(got) != 1 || got[0] != model.HundredGramServing {
+		t.Errorf("olive oil servings = %+v, want only 100 g", got)
+	}
+	for _, meal := range plan.MealTemplates[0].Meals {
+		for _, item := range meal.Items {
+			row, ok := catalog.rows[strconv.Itoa(item.FDCID)]
+			if !ok || item.CatalogFoodID == nil || *item.CatalogFoodID != row.ID {
+				t.Fatalf("%s: catalog id %v does not name its catalog row", item.Food, item.CatalogFoodID)
+			}
+			// The serving must be one the entry routes accept for any food, and
+			// logging it once must give the item's own values.
+			serving, err := model.ResolveServing(&row, item.Serving)
+			if err != nil || serving.Grams != item.Grams {
+				t.Fatalf("%s: serving %+v not loggable: %v", item.Food, item.Serving, err)
+			}
+			energy, protein, carbs, fat := model.EntryValues(row.Per100g, serving.Grams, 1)
+			if energy != item.EnergyKcal || protein != item.ProteinG || carbs != item.CarbsG || fat != item.FatG {
+				t.Errorf("%s: logging gives %d kcal %.1f/%.1f/%.1f, the template says %d kcal %.1f/%.1f/%.1f",
+					item.Food, energy, protein, carbs, fat, item.EnergyKcal, item.ProteinG, item.CarbsG, item.FatG)
+			}
+		}
+	}
+
+	// The catalog is written once per process, and the ids are stable.
+	options := svc.Options(context.Background())
+	if _, err := svc.Calculate(context.Background(), calculatorInput()); err != nil {
+		t.Fatal(err)
+	}
+	if catalog.calls != 1 {
+		t.Errorf("catalog writes = %d, want 1", catalog.calls)
+	}
+	for _, f := range options.Foods {
+		if f.CatalogFoodID == nil || *f.CatalogFoodID != catalog.rows[strconv.Itoa(f.FDCID)].ID {
+			t.Errorf("option %s has catalog id %v", f.ID, f.CatalogFoodID)
+		}
+	}
+}
+
+func TestNutritionPlanIsServedWithoutCatalogIDsWhenTheCatalogFails(t *testing.T) {
+	catalog := &templateCatalog{err: errors.New("database unavailable")}
+	svc := NewNutritionPlanService(&nutritionProfileStore{}, catalog)
+	plan, err := svc.Calculate(context.Background(), calculatorInput())
+	if err != nil || plan.TargetKcal != 2763 {
+		t.Fatalf("plan = %+v, err = %v; a catalog failure must not fail the calculation", plan, err)
+	}
+	item := plan.MealTemplates[0].Meals[0].Items[0]
+	if item.CatalogFoodID != nil || item.Serving.Grams != item.Grams {
+		t.Errorf("item = %+v, want no catalog id and the serving still filled", item)
+	}
+	body, _ := json.Marshal(plan)
+	if !strings.Contains(string(body), `"catalog_food_id":null`) {
+		t.Error("catalog_food_id must be present and null")
+	}
+	// The next request tries again and succeeds.
+	catalog.err = nil
+	plan, err = svc.Calculate(context.Background(), calculatorInput())
+	if err != nil || plan.MealTemplates[0].Meals[0].Items[0].CatalogFoodID == nil {
+		t.Fatalf("retry: item = %+v, err = %v", plan.MealTemplates[0].Meals[0].Items[0], err)
+	}
+	if catalog.calls != 2 {
+		t.Errorf("catalog writes = %d, want 2", catalog.calls)
+	}
+}
+
+func TestNutritionPlanSavedPlanCarriesCatalogIDs(t *testing.T) {
+	svc := NewNutritionPlanService(&nutritionProfileStore{}, &templateCatalog{})
+	ctx, user := context.Background(), uuid.New()
+	saved, _, err := svc.SaveProfile(ctx, user, saveRequest(0, "k"))
+	if err != nil || saved.MealTemplates[0].Meals[1].Items[0].CatalogFoodID == nil {
+		t.Fatalf("saved = %+v, err = %v", saved, err)
+	}
+	read, err := svc.GetPlan(ctx, user)
+	if err != nil || *read.MealTemplates[0].Meals[1].Items[0].CatalogFoodID != *saved.MealTemplates[0].Meals[1].Items[0].CatalogFoodID {
+		t.Fatalf("read = %+v, err = %v", read, err)
+	}
+}
+
+// TestNutritionPlanLoggedPortionsMatchTheTemplateAcrossInputs sweeps weights,
+// goals, cycling, and exclusions: for every item of every meal, logging its
+// catalog food with its serving once gives the values the template shows.
+func TestNutritionPlanLoggedPortionsMatchTheTemplateAcrossInputs(t *testing.T) {
+	catalog := &templateCatalog{}
+	svc := NewNutritionPlanService(&nutritionProfileStore{}, catalog)
+	checked := 0
+	for _, weight := range []float64{100, 137.5, 180, 242, 300} {
+		for _, goal := range []string{"fat_loss", "recomp", "maintenance", "muscle_gain"} {
+			for _, exclusions := range [][]string{nil, {"dairy", "nuts"}, {"eggs", "gluten", "red_meat", "rice"}} {
+				in := calculatorInput()
+				in.Weight, in.Goal, in.Exclusions, in.CarbCycling = weight, goal, exclusions, true
+				plan, err := svc.Calculate(context.Background(), in)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, template := range plan.MealTemplates {
+					for _, meal := range template.Meals {
+						for _, item := range meal.Items {
+							row := catalog.rows[strconv.Itoa(item.FDCID)]
+							serving, err := model.ResolveServing(&row, item.Serving)
+							if err != nil {
+								t.Fatalf("%v lb %s: %s serving %+v: %v", weight, goal, item.Food, item.Serving, err)
+							}
+							energy, protein, carbs, fat := model.EntryValues(row.Per100g, serving.Grams, 1)
+							if energy != item.EnergyKcal || protein != item.ProteinG || carbs != item.CarbsG || fat != item.FatG {
+								t.Fatalf("%v lb %s: %s logs as %d kcal %.1f/%.1f/%.1f, template says %d kcal %.1f/%.1f/%.1f",
+									weight, goal, item.Food, energy, protein, carbs, fat, item.EnergyKcal, item.ProteinG, item.CarbsG, item.FatG)
+							}
+							checked++
+						}
+					}
+				}
+			}
+		}
+	}
+	if checked < 500 {
+		t.Fatalf("checked only %d items", checked)
 	}
 }

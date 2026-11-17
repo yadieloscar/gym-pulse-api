@@ -64,6 +64,11 @@ definitions:
     type: object
   model.CalculatorFood:
     properties:
+      catalog_food_id:
+        description: |-
+          CatalogFoodID is the food's id in the shared food catalog; null when
+          the catalog could not be reached.
+        type: string
       fdc_id:
         type: integer
       id:
@@ -1809,6 +1814,12 @@ definitions:
         type: number
       carbs_g:
         type: number
+      catalog_food_id:
+        description: |-
+          CatalogFoodID is the food's id in the shared food catalog, so the
+          portion can be logged or saved through the food routes; null when the
+          catalog could not be reached.
+        type: string
       energy_kcal:
         type: integer
       fat_g:
@@ -1825,6 +1836,12 @@ definitions:
         type: number
       role:
         type: string
+      serving:
+        allOf:
+        - $ref: '#/definitions/model.Serving'
+        description: |-
+          Serving is the grams-only serving that logs exactly this portion with
+          an amount of 1.
       source:
         type: string
       unit:

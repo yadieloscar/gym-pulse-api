@@ -21,8 +21,8 @@ func NewNutritionPlanHandler(svc service.NutritionPlanService) *NutritionPlanHan
 // @Success     200 {object} model.CalculatorOptions
 // @Security    BearerAuth
 // @Router      /api/v1/nutrition/calculator/options [get]
-func (h *NutritionPlanHandler) Options(w http.ResponseWriter, _ *http.Request) {
-	writeJSON(w, http.StatusOK, h.svc.Options())
+func (h *NutritionPlanHandler) Options(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, h.svc.Options(r.Context()))
 }
 
 // Calculate godoc
@@ -39,7 +39,7 @@ func (h *NutritionPlanHandler) Calculate(w http.ResponseWriter, r *http.Request)
 	if !decodeMutation(w, r, &req, "") {
 		return
 	}
-	plan, err := h.svc.Calculate(req)
+	plan, err := h.svc.Calculate(r.Context(), req)
 	respond(w, plan, err, http.StatusOK)
 }
 

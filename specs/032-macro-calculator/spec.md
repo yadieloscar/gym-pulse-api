@@ -34,6 +34,12 @@ Rules that stay: the athlete's daily target is whatever they save; targets never
 - Q: Where do the template foods and their facts come from? → A: A fixed list of 18 foods, each a copy of a USDA FoodData Central record, identified by its FDC id and shown with that source. The list is part of the service, not athlete data.
 - Q: Who may use the calculator? → A: Adults. Ages 18 to 100 are accepted; the equation was derived from adults aged 19 to 78 and the response is an estimate.
 
+### Amendment A1, 2026-11-17: template meals can be logged and saved
+
+- Q (owner, after using the shipped calculator): "You created the meal template but we are not able to log those easily." → A (owner chose "Both"): each template meal can be logged to today in one tap and saved as a saved meal. This replaces the Non-Goal "Saving a plan never ... logs food" only in this sense: logging and saving happen when the athlete taps, never on their own.
+- Q: Does the service need a new write route? → A: No. Food entries and saved meals already exist (specs 014 and 028). The only missing piece is identity: a template food had no id in the food catalog. Each template item now carries its catalog food id and the serving that logs exactly its portion; the app uses the existing entry and saved-meal routes.
+- Q: Where do the catalog rows come from? → A: The 18 template foods are written to the shared food catalog under their FDC ids, the same rows a USDA food search stores, the first time a process serves a plan. If that write fails the plan is still served without ids.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Calculate targets from my numbers (Priority: P1)
@@ -123,6 +129,19 @@ The app reads the foods (with role, tags, unit, and source), exclusion tags, goa
 
 1. **Given** an authenticated athlete, **When** options are read, **Then** every list is present and non-null and each food names its USDA source record.
 
+### User Story 7 - Log or save a template meal (Priority: P1, amendment A1)
+
+Every item of a template meal names its food in the shared catalog and the serving that logs its exact portion, so the app can add the meal to a day or save it as a saved meal with the routes that already exist.
+
+**Independent Test**: calculate, take an item's catalog food id and serving, log it to today with amount 1, and see an entry whose values equal the item's.
+
+**Acceptance Scenarios**:
+
+1. **Given** a plan, **Then** every item carries a catalog food id and a grams-only serving, and logging that food with that serving and amount 1 yields the item's energy and macros.
+2. **Given** the template foods are already in the catalog (from an earlier plan or a food search), **When** another plan is served, **Then** the same ids are returned.
+3. **Given** the catalog cannot be written, **When** a plan is requested, **Then** it is served with null catalog ids and the next request tries again.
+4. **Given** a template meal's items, **When** they are sent to the existing saved-meal create route, **Then** a saved meal with those foods and portions is created.
+
 ### Edge Cases
 
 - Weight outside 66–660 lb (30–300 kg), height outside 48–96 in (122–244 cm), age outside 18–100, or days outside 0–7: rejected naming the field.
@@ -135,7 +154,7 @@ The app reads the foods (with role, tags, unit, and source), exclusion tags, goa
 
 ## Non-Goals *(mandatory)*
 
-- No change to the daily target, daily totals, food entries, or saved meals. Saving a plan never writes a target or logs food.
+- No change to the daily target, daily totals, food entries, or saved meals by the service on its own. Saving a plan never writes a target or logs food; since A1 the athlete may log or save a template meal themselves through the existing food routes.
 - No recalculation from weight trends, activity, or time. No reminders, schedules, scores, or streaks.
 - No athlete-defined foods, recipes, grocery lists, or foods beyond the fixed USDA list in this release.
 - No sedentary or "extra active" level; three levels as requested.
@@ -158,9 +177,11 @@ The app reads the foods (with role, tags, unit, and source), exclusion tags, goa
 - **FR-010**: A swap MUST replace one food in one meal with another food of the same role and recalculate portions for the same meal target.
 - **FR-011**: Saving MUST recompute targets from the inputs, store inputs, preferences, swaps, and the resulting targets as one record per athlete, require the current revision, and honour the documented idempotency behaviour.
 - **FR-012**: Reading the plan MUST return the stored inputs and targets unchanged and a template built from them; no saved plan MUST be the shared not-found.
-- **FR-013**: Calculating MUST store nothing.
+- **FR-013**: Calculating MUST store nothing about the athlete. (A1: it may write the fixed template foods to the shared food catalog.)
 - **FR-014**: Every route MUST be scoped to the authenticated athlete; account deletion MUST remove the saved plan and the data export MUST include it.
 - **FR-015**: Validation failures MUST name the offending field. Notices (carbohydrate floor, below resting energy, cycling not applied) MUST be machine-readable.
+- **FR-017** (A1): Every template item MUST carry the food's id in the shared food catalog and a serving that, logged with amount 1 through the existing entry route, yields the item's values. The id MUST be null, and the plan still served, when the catalog is unavailable.
+- **FR-018** (A1): Template foods MUST be stored in the shared catalog as their USDA records (source, FDC id, description, per-100 g facts), never as athlete data.
 - **FR-016**: The change MUST be additive: no existing route, field, or error changes. The contract MUST be documented in `docs/CONTRACTS.md` in the same change.
 
 ### Key Entities

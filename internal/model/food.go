@@ -395,6 +395,12 @@ func ResolveServing(food *Food, serving Serving) (Serving, error) {
 	return Serving{}, &ValidationError{Message: "serving must be one of the food's servings or a grams-only serving", Field: "serving"}
 }
 
+// GramsOnlyServing is the serving that logs a plain weight: the label is the
+// weight itself ("184.3 g"), the form ResolveServing accepts for any food.
+func GramsOnlyServing(grams float64) Serving {
+	return Serving{Label: trimFloat(grams) + " g", Grams: grams}
+}
+
 func trimFloat(v float64) string {
 	s := fmt.Sprintf("%.1f", v)
 	return strings.TrimSuffix(s, ".0")
