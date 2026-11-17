@@ -2337,6 +2337,7 @@ Report one of:
 | 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 | 042 | Settings palette gains `irisViolet`; column default becomes `voltLime`; no stored row changes |
 | 045 | `program_workouts.weekdays`, `programs.scheduled_through`, `scheduled_workouts.slot_date`, a weekday check, a partial unique slot index, and a planned-by-program index; no backfill and no row rewrite |
+| 046 | Data repair, no schema change: removes untouched future `scheduled_workouts` rows of a program whose `program_workout_id` is null (their workout was deleted under the older contract) and sets the active program's `scheduled_through` to the athlete's today, so the next read refills from tomorrow; past, started, and today's rows stay |
 
 ## 19. Decision summary
 
