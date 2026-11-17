@@ -340,7 +340,12 @@ func macroError(chosen []portion, grams []float64, want [3]float64) float64 {
 // buildMeal sizes, rounds, and totals one meal.
 func buildMeal(slot MealSlot, target DayMacros, foods mealFoods, excluded []string) Meal {
 	meal := Meal{Slot: slot.Slot, Name: slot.Name, Target: target, Items: []Item{}}
-	for _, p := range solveMeal(target, foods, excluded) {
+	portions := solveMeal(target, foods, excluded)
+	// Protein foods first (the chosen one before its companion), then the
+	// carbohydrate food, then the fat source.
+	roleOrder := map[string]int{RoleProtein: 0, RoleCarb: 1, RoleFat: 2}
+	slices.SortStableFunc(portions, func(a, b portion) int { return roleOrder[a.role] - roleOrder[b.role] })
+	for _, p := range portions {
 		if p.food.GramsPerUnit <= 0 || p.food.Step <= 0 {
 			continue
 		}
