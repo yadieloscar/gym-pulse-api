@@ -2228,7 +2228,8 @@ a log, delete the returned entries with `DELETE /entries/{id}`.
 
 ## Macro calculator
 
-Contract 1.11.0 (additive). A calculator the athlete runs on their own numbers:
+Contract 1.11.0 (additive); template items became loggable in 1.12.0 (additive, see
+`NutritionPlan`). A calculator the athlete runs on their own numbers:
 estimated resting and maintenance energy (Mifflin-St Jeor and an activity
 multiplier), a target after the athlete's chosen adjustment, protein, fat, and
 carbohydrate targets, an optional training/rest carbohydrate split, and a
@@ -2297,7 +2298,8 @@ food that carries an excluded tag is ignored.
               "food": "eggs", "name": "Eggs, whole, hard-boiled", "role": "protein",
               "amount": 2, "unit": "count", "grams": 100,
               "energy_kcal": 155, "protein_g": 12.6, "carbs_g": 1.1, "fat_g": 10.6,
-              "source": "usda", "fdc_id": 173424
+              "source": "usda", "fdc_id": 173424,
+              "catalog_food_id": "<uuid>", "serving": { "label": "100 g", "grams": 100 }
             },
             { "food": "egg_whites", "name": "Egg whites", "role": "protein", "amount": 3, "unit": "count", "grams": 99, "...": "..." },
             { "food": "oats", "name": "Oats, dry", "role": "carb", "amount": 1.75, "unit": "cup", "grams": 141.8, "...": "..." }
@@ -2305,7 +2307,7 @@ food that carries an excluded tag is ignored.
           "provided": { "energy_kcal": 743, "protein_g": 42.1, "carbs_g": 97.8, "fat_g": 20 }
         }
       ],
-      "provided": { "energy_kcal": 2705, "protein_g": 156.7, "carbs_g": 400.7, "fat_g": 60.9 }
+      "provided": { "energy_kcal": 2705, "protein_g": 156.7, "carbs_g": 400.7, "fat_g": 61.1 }
     }
   ]
 }
@@ -2321,8 +2323,16 @@ food that carries an excluded tag is ignored.
 - Item energy is the food's published USDA energy for that weight, so `provided.energy_kcal` can
   differ slightly from 4/4/9 of the provided grams.
 - Item `amount` is in `unit` (`oz`, `g`, `cup`, `count`) at the food's step; `grams` is the weight
-  used for the item's values, which have one decimal. `provided` is the sum of the items.
+  used for the item's values, which have one decimal. `provided` is the sum of the items. Since 1.12.0 an item's values are computed exactly as a food entry's are (weight to one decimal, per-100 g facts to one decimal), so a logged portion matches the template to the digit.
 - Meal energy targets are `4·protein + 4·carbs + 9·fat` of the meal's gram targets.
+- Each item carries `catalog_food_id` and `serving` (contract 1.12.0, additive) so the app can log
+  the portion or save the meal through the food routes without a new write route:
+  `"catalog_food_id": "<uuid>", "serving": { "label": "99.2 g", "grams": 99.2 }`. `catalog_food_id`
+  is the food's id in the shared food catalog (the same row a food search returns for that USDA
+  record); logging `{ "food": { "id": catalog_food_id }, "serving": serving, "amount": 1 }` with
+  `POST /api/v1/nutrition/days/{date}/entries` gives exactly the item's values. `catalog_food_id`
+  is `null` when the catalog could not be reached; the plan is still served and the client hides
+  its log and save actions. Foods in `GET /calculator/options` carry `catalog_food_id` too.
 
 ### `GET /api/v1/nutrition/calculator/options` → `200`
 
@@ -2349,7 +2359,9 @@ per unit system (pounds and total inches, kilograms and centimetres) and age. `s
 
 ### `POST /api/v1/nutrition/calculate` → `200 NutritionPlan`
 
-Body: `CalculatorInput`. Stores nothing; needs no `Idempotency-Key`.
+Body: `CalculatorInput`. Stores nothing about the athlete; needs no `Idempotency-Key`. (Since
+1.12.0 the first plan served by a process writes the 18 template foods to the shared food catalog,
+the same published USDA rows a food search stores.)
 
 ### `PUT /api/v1/nutrition/profile` → `201` created, `200` replaced
 

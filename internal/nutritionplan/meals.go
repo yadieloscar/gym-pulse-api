@@ -353,16 +353,20 @@ func buildMeal(slot MealSlot, target DayMacros, foods mealFoods, excluded []stri
 		if amount <= 0 {
 			continue
 		}
-		grams := amount * p.food.GramsPerUnit
+		// An item's values are worked out the way a logged food entry's are:
+		// from the weight to one decimal and the food's facts to one decimal
+		// (how the shared food catalog keeps them). Logging the portion
+		// therefore gives exactly the numbers shown here.
+		grams := round(amount*p.food.GramsPerUnit, 1)
 		item := Item{
 			Food:       p.food,
 			Role:       p.role,
 			Amount:     round(amount, 2),
-			Grams:      round(grams, 1),
-			EnergyKcal: int(math.Round(grams * p.food.Kcal / 100)),
-			ProteinG:   round(grams*p.food.protein(), 1),
-			CarbsG:     round(grams*p.food.carbs(), 1),
-			FatG:       round(grams*p.food.fat(), 1),
+			Grams:      grams,
+			EnergyKcal: int(math.Round(round(p.food.Kcal, 1) * grams / 100)),
+			ProteinG:   round(round(p.food.Protein, 1)*grams/100, 1),
+			CarbsG:     round(round(p.food.Carbs, 1)*grams/100, 1),
+			FatG:       round(round(p.food.Fat, 1)*grams/100, 1),
 		}
 		meal.Items = append(meal.Items, item)
 		meal.Provided = meal.Provided.plus(Provided{EnergyKcal: item.EnergyKcal, ProteinG: item.ProteinG, CarbsG: item.CarbsG, FatG: item.FatG})

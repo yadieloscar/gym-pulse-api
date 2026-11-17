@@ -113,6 +113,20 @@ Additive. Started on `feat/031-one-active-program` (API #67) because migrations 
 and #67 held 045; #67 merged on 2026-11-16 and main is merged in, so this is 047 on main (API #69 took 046 on 2026-11-17 and this migration was renumbered, no SQL change). Older apps never call the routes. The app probes
 the options route and hides the calculator on `404`.
 
+### Amendment A1: loggable template items (contract 1.12.0)
+
+- `nutritionplan.Food.USDAName` holds each record's own description.
+- `nutritionPlanService` takes a `TemplateFoodCatalog` (satisfied by `dao.FoodDAO`). On the first
+  plan it upserts the 18 foods (`source usda`, `source_id` = FDC id, `data_type sr_legacy`, the
+  food's unit as a serving plus 100 g) and caches FDC id → catalog id for the life of the process.
+  Failure returns no ids and is retried on the next request.
+- `PlanMealItem` gains `catalog_food_id` (nullable) and `serving` (`model.GramsOnlyServing`);
+  `CalculatorFood` gains `catalog_food_id`.
+- No new route, table, or migration. Rejected: a "log template meal" route (duplicates the entry
+  and saved-meal transactions) and a seed migration (a second copy of the food facts in SQL).
+- Mixed versions: an app on 1.11.0 ignores the new fields. The upsert writes the same key a food
+  search writes, so an existing row keeps its id and entries that reference it are unaffected.
+
 ## Complexity Tracking
 
 | Addition | Why | Simpler alternative rejected |

@@ -1358,7 +1358,7 @@ else
 fi
 
 # ---------- 13m. macro calculator (contract 1.11.0) ----------
-step "13m. Macro calculator (contract 1.11.0): options → calculate (stores nothing) → cycling keeps the week → exclusions and a swap → save 201 → replay → stale 409 → read → export"
+step "13m. Macro calculator (contract 1.11.0): options → calculate (stores nothing) → cycling keeps the week → exclusions and a swap → save 201 → replay → stale 409 → read → export → log an item and save a meal (1.12.0)"
 mc_out=$(API="$API" TOKEN="$TOKEN" python3 - <<'PY' 2>&1
 import json, os, sys, urllib.request, urllib.error, uuid
 
@@ -1446,11 +1446,34 @@ check(status == 200 and read == replaced, "read returns the saved plan", read)
 status, export = call("GET", "/api/v1/export")
 profile = export["nutrition"]["calculator_profile"]
 check(status == 200 and export["schema_version"] == 1 and profile["goal"] == "muscle_gain" and profile["target_kcal"] == 3063 and profile["weight"] == 180, "export carries the saved plan", profile)
+
+# Contract 1.12.0: a template item names its catalog food and the serving that logs its portion,
+# so the existing entry and saved-meal routes log or save it.
+import datetime
+yesterday = (datetime.datetime.now(datetime.timezone.utc).date() - datetime.timedelta(days=1)).isoformat()
+lunch_items = read["meal_templates"][0]["meals"][1]["items"]
+check(all(i["catalog_food_id"] and i["serving"]["grams"] == i["grams"] for i in lunch_items), "items carry a catalog id and serving", lunch_items)
+option_ids = {f["fdc_id"]: f["catalog_food_id"] for f in options["foods"]}
+check(all(option_ids[i["fdc_id"]] == i["catalog_food_id"] for i in lunch_items), "options and items agree on catalog ids", lunch_items)
+item = lunch_items[0]
+entry_key = "smoke-mc-entry-" + run
+status, logged = call("POST", "/api/v1/nutrition/days/" + yesterday + "/entries",
+                      {"food": {"id": item["catalog_food_id"]}, "serving": item["serving"], "amount": 1, "section": "lunch", "operation_key": entry_key}, entry_key)
+entry = (logged or {}).get("entry") or {}
+check(status == 201 and entry.get("energy_kcal") == item["energy_kcal"] and entry.get("protein_g") == item["protein_g"] and entry.get("carbs_g") == item["carbs_g"] and entry.get("fat_g") == item["fat_g"],
+      "a logged template item has the template's values", logged)
+check(entry["food"]["source"] == "usda" and entry["section"] == "lunch", "logged as a USDA food under lunch", entry)
+meal_key = "smoke-mc-meal-" + run
+status, meal = call("POST", "/api/v1/nutrition/meals",
+                    {"name": "Smoke calculator lunch " + run, "section": "lunch",
+                     "items": [{"food": {"id": i["catalog_food_id"]}, "serving": i["serving"], "amount": 1} for i in lunch_items],
+                     "operation_key": meal_key}, meal_key)
+check(status == 201 and len(meal["items"]) == len(lunch_items), "a template meal saves as a saved meal", meal)
 print("OK")
 PY
 )
 if [ "$(echo "$mc_out" | tail -1)" = "OK" ]; then
-  ok "macro calculator: options listed USDA foods and ranges; the worked example matched by hand; calculating stored nothing; the cycled week kept its carbohydrate total with protein and fat unchanged; exclusions were never served and a swap changed one meal; four invalid inputs named their field; save created, replayed, refused a changed payload, a header mismatch, and a stale revision with the stored plan; replace advanced the revision; read and export returned the saved plan"
+  ok "macro calculator: options listed USDA foods and ranges; the worked example matched by hand; calculating stored nothing; the cycled week kept its carbohydrate total with protein and fat unchanged; exclusions were never served and a swap changed one meal; four invalid inputs named their field; save created, replayed, refused a changed payload, a header mismatch, and a stale revision with the stored plan; replace advanced the revision; read and export returned the saved plan; a template item logged through the entry route with the template's values and a template meal saved through the saved-meal route"
 else
   bad "macro calculator acceptance failed" "$(echo "$mc_out" | tail -3 | head -c 600)"
 fi

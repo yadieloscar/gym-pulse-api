@@ -4840,6 +4840,10 @@ const docTemplate = `{
         "model.CalculatorFood": {
             "type": "object",
             "properties": {
+                "catalog_food_id": {
+                    "description": "CatalogFoodID is the food's id in the shared food catalog; null when\nthe catalog could not be reached.",
+                    "type": "string"
+                },
                 "fdc_id": {
                     "type": "integer"
                 },
@@ -7432,6 +7436,10 @@ const docTemplate = `{
                 "carbs_g": {
                     "type": "number"
                 },
+                "catalog_food_id": {
+                    "description": "CatalogFoodID is the food's id in the shared food catalog, so the\nportion can be logged or saved through the food routes; null when the\ncatalog could not be reached.",
+                    "type": "string"
+                },
                 "energy_kcal": {
                     "type": "integer"
                 },
@@ -7455,6 +7463,14 @@ const docTemplate = `{
                 },
                 "role": {
                     "type": "string"
+                },
+                "serving": {
+                    "description": "Serving is the grams-only serving that logs exactly this portion with\nan amount of 1.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.Serving"
+                        }
+                    ]
                 },
                 "source": {
                     "type": "string"
