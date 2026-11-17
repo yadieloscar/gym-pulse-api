@@ -77,13 +77,15 @@ four routes, export and account-deletion additions, contract and schema document
 - `plan.go`: `Build(Input, Targets) Plan`, used by calculate (fresh targets) and by the saved-plan
   read (stored targets).
 
-**Portion solver**: with a protein food, a carbohydrate food, and a fat source, solve the 3×3
-linear system for grams that meet the meal's protein, carbohydrate, and fat. If a fat source would
-be negative (the other foods already carry the fat), drop it and solve protein and carbohydrate
-exactly. If the protein food has a lean companion (eggs → egg whites) and fat still overshoots,
-solve protein, carbohydrate, and fat with the companion as the third unknown. Negative solutions
-are clamped to zero. Amounts are then rounded to the food's step and the meal reports what the
-rounded amounts provide. Rejected alternative: a general optimizer; three unknowns do not need one.
+**Portion solver**: the candidates are the meal's protein food, carbohydrate food, fat source, and
+the protein food's lean companion (eggs → egg whites) when allowed. Every combination of one to
+three candidates is fitted by energy-weighted least squares to the meal's protein, carbohydrate,
+and fat; combinations needing a negative portion are discarded and the closest fit wins, with ties
+going to the athlete's own foods before the companion and to more foods before fewer. Three foods
+and three targets usually fit exactly. Amounts are then rounded to the food's step and the meal
+reports what the rounded amounts provide. Rejected: a general optimizer (at most 14 small systems
+per meal do not need one), and the first draft's fixed fallback to protein plus carbohydrate, which
+the independent review showed could triple a meal's fat.
 
 **Selection**: for each meal and role, in order: a preferred, allowed food suited to the meal and
 not yet used that day; a preferred allowed food suited to the meal; any preferred allowed food; an

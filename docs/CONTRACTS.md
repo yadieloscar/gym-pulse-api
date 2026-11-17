@@ -2251,8 +2251,8 @@ VALIDATION_ERROR` with `details.field`. Every number is a whole number unless st
 | `height` | number | total in 48–96 or cm 122–244; at most one decimal; required |
 | `age_years` | integer | 18–100; required |
 | `sex` | string | `male` or `female`; required |
-| `strength_days` | integer | 0–7; required |
-| `cardio_days` | integer | 0–7; required |
+| `strength_days` | integer | 0–7; `0` when omitted |
+| `cardio_days` | integer | 0–7; `0` when omitted |
 | `activity_level` | string | optional override: `light`, `moderate`, `very` |
 | `goal` | string | `fat_loss`, `recomp`, `maintenance`, `muscle_gain`; required |
 | `calorie_adjustment_kcal` | integer | optional; inside the goal's range; defaults to the goal's default |
@@ -2332,13 +2332,19 @@ food that carries an excluded tag is ignored.
   "activity_levels": [ { "id": "light", "multiplier": 1.375, "min_sessions": 0, "max_sessions": 3 } ],
   "protein_g_per_lb": { "min": 0.7, "max": 1.1, "step": 0.05 },
   "fat_g_per_lb": { "min": 0.25, "max": 0.45, "step": 0.01, "default": 0.33 },
+  "limits": {
+    "imperial": { "weight": { "min": 66, "max": 660 }, "height": { "min": 48, "max": 96 } },
+    "metric": { "weight": { "min": 30, "max": 300 }, "height": { "min": 122, "max": 244 } },
+    "age_years": { "min": 18, "max": 100 }
+  },
   "exclusions": [ "rice", "dairy", "nuts", "gluten", "eggs", "red_meat" ],
-  "foods": [ { "id": "chicken_breast", "name": "Chicken breast, grilled", "role": "protein", "tags": [], "unit": "oz", "step": 0.5, "selectable": true, "source": "usda", "fdc_id": 171534, "per_100g": { "energy_kcal": 151, "protein_g": 30.5, "carbs_g": 0, "fat_g": 3.2 } } ],
+  "foods": [ { "id": "chicken_breast", "name": "Chicken breast, grilled", "role": "protein", "tags": [], "unit": "oz", "step": 0.5, "selectable": true, "source": "usda", "fdc_id": 171534, "per_100g": { "energy_kcal": 151, "protein_g": 30.5, "carbs_g": 0, "fat_g": 3.17 } } ],
   "meals": [ { "slot": 1, "name": "Breakfast" } ]
 }
 ```
 
-`selectable` is `false` for a companion food (egg whites) that appears only beside another food.
+`per_100g` carries USDA's published values unrounded. `limits` are the accepted weight and height
+per unit system (pounds and total inches, kilograms and centimetres) and age. `selectable` is `false` for a companion food (egg whites) that appears only beside another food.
 `max_sessions` is `null` on the last level.
 
 ### `POST /api/v1/nutrition/calculate` → `200 NutritionPlan`
@@ -2352,7 +2358,8 @@ Body: `CalculatorInput` plus `expected_revision` (0 when no plan is saved) and `
 the input; the client sends no computed number. Response: `SavedNutritionPlan`, the
 `NutritionPlan` plus `"revision"`, `"created_at"`, `"updated_at"`.
 
-- Stale `expected_revision` → `409 REVISION_CONFLICT` with the stored plan under `resource`.
+- Stale `expected_revision` → `409 REVISION_CONFLICT` with the stored plan under `resource`
+  (no `resource` when nothing is saved and `expected_revision` was above 0).
 - Same key, same body → the original status and body; same key, different body →
   `409 IDEMPOTENCY_CONFLICT`.
 - Saving never changes the nutrition target, days, entries, or saved meals.

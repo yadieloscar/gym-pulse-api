@@ -352,3 +352,124 @@ func TestBuildWithZeroCarbohydrateStillServesProtein(t *testing.T) {
 		t.Errorf("notices = %v", plan.Notices)
 	}
 }
+
+// mealFor returns the meal in slot for an input, built on its first template.
+func mealFor(t *testing.T, in Input, slot int) Meal {
+	t.Helper()
+	in = mustResolve(t, in)
+	return Build(in, Calculate(in)).Templates[0].Meals[slot-1]
+}
+
+func TestSolverKeepsTheCompanionWhenTheCarbohydrateFoodIsFatty(t *testing.T) {
+	// Flour tortillas alone carry more fat than Meal 3 allows. Whole eggs on
+	// top would triple it; egg whites must carry the protein instead.
+	meal := mealFor(t, Input{
+		UnitSystem: UnitImperial, Weight: 260, Height: 68, AgeYears: 30, Sex: SexMale,
+		StrengthDays: 4, Goal: GoalRecomp,
+		MealChoices: []MealChoice{{Slot: 3, Protein: "eggs", Carb: "flour_tortillas", Fat: "olive_oil"}},
+	}, 3)
+	ids := itemIDs(meal)
+	if !slices.Contains(ids, "egg_whites") {
+		t.Fatalf("meal 3 = %v, want egg whites carrying the protein", ids)
+	}
+	if over := meal.Provided.FatG - float64(meal.Target.FatG); over > 12 {
+		t.Errorf("meal 3 fat %.1f g vs target %d g (%v)", meal.Provided.FatG, meal.Target.FatG, ids)
+	}
+	if d := math.Abs(meal.Provided.ProteinG - float64(meal.Target.ProteinG)); d > 8 {
+		t.Errorf("meal 3 protein %.1f g vs target %d g", meal.Provided.ProteinG, meal.Target.ProteinG)
+	}
+}
+
+func TestSolverKeepsAFatSourceWhenCarbohydrateIsTiny(t *testing.T) {
+	in := mustResolve(t, imperialMale())
+	plan := Build(in, Targets{BMRKcal: 1800, TDEEKcal: 2500, TargetKcal: 1400, ProteinG: 176, CarbsG: 12, FatG: 70})
+	for _, meal := range plan.Templates[0].Meals {
+		if d := math.Abs(meal.Provided.FatG - float64(meal.Target.FatG)); d > 6 {
+			t.Errorf("meal %d fat %.1f g vs target %d g (%v)", meal.Slot, meal.Provided.FatG, meal.Target.FatG, itemIDs(meal))
+		}
+		if d := math.Abs(meal.Provided.ProteinG - float64(meal.Target.ProteinG)); d > 8 {
+			t.Errorf("meal %d protein %.1f g vs target %d g (%v)", meal.Slot, meal.Provided.ProteinG, meal.Target.ProteinG, itemIDs(meal))
+		}
+	}
+}
+
+// TestSolverIsNeverBeatenByASimplerMeal sweeps weights, goals, rates, and
+// every swap of protein, carbohydrate, and fat food in every meal, and checks
+// two things for each meal: the portions are finite and non-negative, and no
+// one- or two-food meal from the same foods is closer to the target than the
+// one the solver chose.
+func TestSolverIsNeverBeatenByASimplerMeal(t *testing.T) {
+	byRole := map[string][]Food{}
+	for _, f := range Foods {
+		if f.Selectable {
+			byRole[f.Role] = append(byRole[f.Role], f)
+		}
+	}
+	checked := 0
+	for _, weight := range []float64{100, 180, 265} {
+		for _, goal := range []string{GoalFatLoss, GoalMuscleGain} {
+			for _, rates := range [][2]float64{{0.7, 0.25}, {1.1, 0.45}} {
+				in := imperialMale()
+				in.Weight, in.Goal = weight, goal
+				in.ProteinPerLb, in.FatPerLb = floatPtr(rates[0]), floatPtr(rates[1])
+				in = mustResolve(t, in)
+				day := Calculate(in)
+				for slot, target := range mealTargets(newDayMacros(day.ProteinG, day.CarbsG, day.FatG)) {
+					want := [3]float64{float64(target.ProteinG), float64(target.CarbsG), float64(target.FatG)}
+					for _, protein := range byRole[RoleProtein] {
+						for _, carb := range byRole[RoleCarb] {
+							for _, fat := range byRole[RoleFat] {
+								foods := mealFoods{protein: protein, carb: carb, fat: fat}
+								solved := solveMeal(target, foods, nil)
+								if len(solved) == 0 {
+									t.Fatalf("slot %d %s/%s/%s: no meal", slot+1, protein.ID, carb.ID, fat.ID)
+								}
+								grams := make([]float64, len(solved))
+								for i, p := range solved {
+									if math.IsNaN(p.grams) || math.IsInf(p.grams, 0) || p.grams < 0 {
+										t.Fatalf("slot %d %s/%s/%s: %s = %v g", slot+1, protein.ID, carb.ID, fat.ID, p.food.ID, p.grams)
+									}
+									grams[i] = p.grams
+								}
+								chosen := macroError(solved, grams, want)
+								for _, pair := range [][]portion{
+									{{food: protein}, {food: carb}}, {{food: protein}, {food: fat}}, {{food: carb}, {food: fat}},
+									{{food: protein}}, {{food: carb}},
+								} {
+									if g, ok := fit(pair, want); ok && macroError(pair, g, want) < chosen-1e-6 {
+										t.Fatalf("slot %d %s/%s/%s: a simpler meal is closer (%.2f < %.2f)", slot+1, protein.ID, carb.ID, fat.ID, macroError(pair, g, want), chosen)
+									}
+								}
+								checked++
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	if checked == 0 {
+		t.Fatal("sweep checked nothing")
+	}
+}
+
+func TestSubsetsPreferTheAthletesFoodsOverTheCompanion(t *testing.T) {
+	subsets := subsetsInPreferenceOrder(4)
+	if len(subsets) != 14 { // C(4,1)+C(4,2)+C(4,3)
+		t.Fatalf("subsets = %d, want 14", len(subsets))
+	}
+	if !slices.Equal(subsets[0], []int{0, 1, 2}) {
+		t.Errorf("first subset = %v, want protein, carbohydrate, fat", subsets[0])
+	}
+	seenCompanion := false
+	for _, subset := range subsets {
+		has := slices.Contains(subset, 3)
+		if seenCompanion && !has {
+			t.Fatalf("a subset without the companion comes after one with it: %v", subsets)
+		}
+		seenCompanion = seenCompanion || has
+	}
+	if got := subsetsInPreferenceOrder(2); len(got) != 3 || !slices.Equal(got[0], []int{0, 1}) {
+		t.Errorf("two candidates = %v", got)
+	}
+}

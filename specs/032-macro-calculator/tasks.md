@@ -42,7 +42,7 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 - [X] T019 `docs/CONTRACTS.md` "Macro calculator (contract 1.11.0)" and the export line; regenerate Swagger docs if the repository's generator is available
 - [X] T020 Smoke step in `scripts/smoke.sh`: options, calculate, save, read, stale save
 - [X] T021 Run `gofmt`, `go test ./...`, `golangci-lint run`, `./scripts/validate-database-design.sh`, `./scripts/smoke-toggle.sh`, and the integration suite; record results below
-- [ ] T022 Independent read-only review of the final diff; fix or record findings
+- [X] T022 Independent read-only review of the final diff; fix or record findings. Findings (2026-11-16): no blockers. Fixed: the solver's fallback always kept protein + carbohydrate and could abandon the egg-white companion or drop the fat source (replaced by a best-fit search with regression and sweep tests); `per_100g` example; `strength_days`/`cardio_days` documented as defaulting to 0; conflict `resource` wording; zero-weight guard in `buildMeal`; a note on the cycling share at small intakes. Added in the same pass: `limits` in the options so the app holds no copy of the ranges
 
 ## Evidence
 

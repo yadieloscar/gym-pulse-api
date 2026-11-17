@@ -45,9 +45,20 @@ func (s *nutritionPlanService) Options() *model.CalculatorOptions {
 		ActivityLevels: make([]model.CalculatorActivityOption, 0, len(nutritionplan.ActivityLevels)),
 		ProteinGPerLb:  model.CalculatorRateRange{Min: nutritionplan.MinProteinPerLb, Max: nutritionplan.MaxProteinPerLb, Step: 0.05},
 		FatGPerLb:      model.CalculatorRateRange{Min: nutritionplan.MinFatPerLb, Max: nutritionplan.MaxFatPerLb, Step: 0.01, Default: &fatDefault},
-		Exclusions:     append([]string{}, nutritionplan.ExclusionTags...),
-		Foods:          make([]model.CalculatorFood, 0, len(nutritionplan.Foods)),
-		Meals:          make([]model.CalculatorMealOption, 0, len(nutritionplan.MealSlots)),
+		Limits: model.CalculatorLimits{
+			Imperial: model.CalculatorUnitLimits{
+				Weight: model.CalculatorRange{Min: nutritionplan.MinWeightLb, Max: nutritionplan.MaxWeightLb},
+				Height: model.CalculatorRange{Min: nutritionplan.MinHeightIn, Max: nutritionplan.MaxHeightIn},
+			},
+			Metric: model.CalculatorUnitLimits{
+				Weight: model.CalculatorRange{Min: nutritionplan.MinWeightKg, Max: nutritionplan.MaxWeightKg},
+				Height: model.CalculatorRange{Min: nutritionplan.MinHeightCm, Max: nutritionplan.MaxHeightCm},
+			},
+			AgeYears: model.CalculatorRange{Min: nutritionplan.MinAgeYears, Max: nutritionplan.MaxAgeYears},
+		},
+		Exclusions: append([]string{}, nutritionplan.ExclusionTags...),
+		Foods:      make([]model.CalculatorFood, 0, len(nutritionplan.Foods)),
+		Meals:      make([]model.CalculatorMealOption, 0, len(nutritionplan.MealSlots)),
 	}
 	for _, g := range nutritionplan.Goals {
 		options.Goals = append(options.Goals, model.CalculatorGoalOption{

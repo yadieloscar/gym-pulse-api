@@ -145,6 +145,15 @@ definitions:
       weight:
         type: number
     type: object
+  model.CalculatorLimits:
+    properties:
+      age_years:
+        $ref: '#/definitions/model.CalculatorRange'
+      imperial:
+        $ref: '#/definitions/model.CalculatorUnitLimits'
+      metric:
+        $ref: '#/definitions/model.CalculatorUnitLimits'
+    type: object
   model.CalculatorMealOption:
     properties:
       name:
@@ -172,12 +181,21 @@ definitions:
         items:
           $ref: '#/definitions/model.CalculatorGoalOption'
         type: array
+      limits:
+        $ref: '#/definitions/model.CalculatorLimits'
       meals:
         items:
           $ref: '#/definitions/model.CalculatorMealOption'
         type: array
       protein_g_per_lb:
         $ref: '#/definitions/model.CalculatorRateRange'
+    type: object
+  model.CalculatorRange:
+    properties:
+      max:
+        type: number
+      min:
+        type: number
     type: object
   model.CalculatorRateRange:
     properties:
@@ -189,6 +207,13 @@ definitions:
         type: number
       step:
         type: number
+    type: object
+  model.CalculatorUnitLimits:
+    properties:
+      height:
+        $ref: '#/definitions/model.CalculatorRange'
+      weight:
+        $ref: '#/definitions/model.CalculatorRange'
     type: object
   model.CatalogExercise:
     properties:

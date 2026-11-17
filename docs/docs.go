@@ -4963,6 +4963,20 @@ const docTemplate = `{
                 }
             }
         },
+        "model.CalculatorLimits": {
+            "type": "object",
+            "properties": {
+                "age_years": {
+                    "$ref": "#/definitions/model.CalculatorRange"
+                },
+                "imperial": {
+                    "$ref": "#/definitions/model.CalculatorUnitLimits"
+                },
+                "metric": {
+                    "$ref": "#/definitions/model.CalculatorUnitLimits"
+                }
+            }
+        },
         "model.CalculatorMealOption": {
             "type": "object",
             "properties": {
@@ -5004,6 +5018,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.CalculatorGoalOption"
                     }
                 },
+                "limits": {
+                    "$ref": "#/definitions/model.CalculatorLimits"
+                },
                 "meals": {
                     "type": "array",
                     "items": {
@@ -5012,6 +5029,17 @@ const docTemplate = `{
                 },
                 "protein_g_per_lb": {
                     "$ref": "#/definitions/model.CalculatorRateRange"
+                }
+            }
+        },
+        "model.CalculatorRange": {
+            "type": "object",
+            "properties": {
+                "max": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
                 }
             }
         },
@@ -5029,6 +5057,17 @@ const docTemplate = `{
                 },
                 "step": {
                     "type": "number"
+                }
+            }
+        },
+        "model.CalculatorUnitLimits": {
+            "type": "object",
+            "properties": {
+                "height": {
+                    "$ref": "#/definitions/model.CalculatorRange"
+                },
+                "weight": {
+                    "$ref": "#/definitions/model.CalculatorRange"
                 }
             }
         },

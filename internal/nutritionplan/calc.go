@@ -95,6 +95,16 @@ var ActivityLevels = []ActivityLevel{
 	{ID: LevelVery, Multiplier: 1.725, MinSessions: 6, MaxSessions: -1},
 }
 
+// Limits on the athlete's numbers, per unit system: pounds and total inches,
+// or kilograms and centimetres.
+const (
+	MinWeightLb, MaxWeightLb = 66.0, 660.0
+	MinHeightIn, MaxHeightIn = 48.0, 96.0
+	MinWeightKg, MaxWeightKg = 30.0, 300.0
+	MinHeightCm, MaxHeightCm = 122.0, 244.0
+	MinAgeYears, MaxAgeYears = 18, 100
+)
+
 // FieldError is a validation failure naming the offending input field by its
 // wire name.
 type FieldError struct {
@@ -225,9 +235,9 @@ func Resolve(in Input) (Input, error) {
 	var minWeight, maxWeight, minHeight, maxHeight float64
 	switch in.UnitSystem {
 	case UnitImperial:
-		minWeight, maxWeight, minHeight, maxHeight = 66, 660, 48, 96
+		minWeight, maxWeight, minHeight, maxHeight = MinWeightLb, MaxWeightLb, MinHeightIn, MaxHeightIn
 	case UnitMetric:
-		minWeight, maxWeight, minHeight, maxHeight = 30, 300, 122, 244
+		minWeight, maxWeight, minHeight, maxHeight = MinWeightKg, MaxWeightKg, MinHeightCm, MaxHeightCm
 	default:
 		return in, fieldError("unit_system", "unit_system must be imperial or metric")
 	}
@@ -237,7 +247,7 @@ func Resolve(in Input) (Input, error) {
 	if !inRange(in.Height, minHeight, maxHeight) || !decimals(in.Height, 1) {
 		return in, fieldError("height", "height must be between %g and %g with at most one decimal", minHeight, maxHeight)
 	}
-	if in.AgeYears < 18 || in.AgeYears > 100 {
+	if in.AgeYears < MinAgeYears || in.AgeYears > MaxAgeYears {
 		return in, fieldError("age_years", "age_years must be between 18 and 100")
 	}
 	if in.Sex != SexMale && in.Sex != SexFemale {
@@ -364,7 +374,10 @@ func notices(in Input, t Targets, cycling *Cycling) []string {
 // rest day. The rest-day figure is the whole number nearest to
 // carbs×(1−restCarbShare) for which the week's total stays exactly 7×carbs
 // in whole grams; because 7 is prime such a number always lies within
-// trainingDays consecutive integers.
+// trainingDays consecutive integers. Keeping the week exact takes priority
+// over the share, so with a small daily figure and many training days the
+// rest-day reduction can land a fraction outside 15–20% (for example 20.3%
+// at 118 g with six training days).
 func cycle(in Input, t Targets) *Cycling {
 	training := TrainingDays(in.StrengthDays, in.CardioDays)
 	rest := 7 - training

@@ -194,95 +194,156 @@ type portion struct {
 	grams float64
 }
 
-// solveMeal returns the grams of each food that meet the meal's protein,
-// carbohydrate, and fat targets as closely as non-negative portions allow.
+// Weights that put a gram of each macro on the same footing (its energy) when
+// the solver compares how far two candidate meals are from the target.
+var macroWeights = [3]float64{kcalPerGProtein, kcalPerGCarbs, kcalPerGFat}
+
+// solveMeal returns the grams of each food that bring the meal closest to its
+// protein, carbohydrate, and fat targets with non-negative portions.
+//
+// The candidates are the meal's protein food, carbohydrate food, fat source,
+// and the protein food's lean companion when it has one. Every combination of
+// up to three of them is fitted by least squares on the energy-weighted macro
+// error; combinations that would need a negative portion are discarded and
+// the closest remaining one wins. Three foods and three targets usually fit
+// exactly. When they cannot (a fatty protein food, a carbohydrate food that
+// already carries the meal's fat, a tiny carbohydrate target), this keeps
+// whichever foods get nearest instead of always falling back to protein and
+// carbohydrate. On a tie the earlier candidate wins: no companion before a
+// companion, more of the athlete's chosen foods before fewer.
 func solveMeal(target DayMacros, foods mealFoods, excluded []string) []portion {
-	p, c, f := float64(target.ProteinG), float64(target.CarbsG), float64(target.FatG)
-	a, b, z := foods.protein, foods.carb, foods.fat
+	want := [3]float64{float64(target.ProteinG), float64(target.CarbsG), float64(target.FatG)}
+	candidates := []portion{{food: foods.protein, role: RoleProtein}, {food: foods.carb, role: RoleCarb}}
+	if foods.fat.ID != "" {
+		candidates = append(candidates, portion{food: foods.fat, role: RoleFat})
+	}
+	if partner, ok := FoodByID(foods.protein.LeanPartner); ok && partner.allowed(excluded) {
+		candidates = append(candidates, portion{food: partner, role: RoleProtein})
+	}
 
-	// All three foods, all three targets.
-	if z.ID != "" {
-		if g, ok := solve3(a, b, z, p, c, f); ok {
-			return []portion{{a, RoleProtein, g[0]}, {b, RoleCarb, g[1]}, {z, RoleFat, g[2]}}
+	var best []portion
+	bestErr := math.Inf(1)
+	for _, subset := range subsetsInPreferenceOrder(len(candidates)) {
+		chosen := make([]portion, len(subset))
+		for i, index := range subset {
+			chosen[i] = candidates[index]
+		}
+		grams, ok := fit(chosen, want)
+		if !ok {
+			continue
+		}
+		if err := macroError(chosen, grams, want); err < bestErr-1e-9 {
+			for i := range chosen {
+				chosen[i].grams = grams[i]
+			}
+			best, bestErr = chosen, err
 		}
 	}
-	// The protein and carbohydrate foods already carry the meal's fat (or
-	// more): meet protein and carbohydrate exactly without a fat source.
-	ga, gb := solve2(a, b, p, c)
-	// A fatty protein food with a lean companion: let the companion carry the
-	// protein the fat target leaves no room for.
-	if partner, ok := FoodByID(a.LeanPartner); ok && partner.allowed(excluded) && ga*a.fat()+gb*b.fat() > f {
-		if g, ok := solve3(a, partner, b, p, c, f); ok {
-			return []portion{{a, RoleProtein, g[0]}, {partner, RoleProtein, g[1]}, {b, RoleCarb, g[2]}}
-		}
-	}
-	return []portion{{a, RoleProtein, ga}, {b, RoleCarb, gb}}
+	return best
 }
 
-// solve3 solves grams of x, y, z for protein p, carbohydrate c, and fat f by
-// Cramer's rule. ok is false when the system is singular or any amount would
-// be negative.
-func solve3(x, y, z Food, p, c, f float64) ([3]float64, bool) {
-	m := [3][3]float64{
-		{x.protein(), y.protein(), z.protein()},
-		{x.carbs(), y.carbs(), z.carbs()},
-		{x.fat(), y.fat(), z.fat()},
-	}
-	rhs := [3]float64{p, c, f}
-	det := det3(m)
-	if math.Abs(det) < 1e-12 {
-		return [3]float64{}, false
-	}
-	var out [3]float64
-	for col := range 3 {
-		replaced := m
-		for row := range 3 {
-			replaced[row][col] = rhs[row]
-		}
-		out[col] = det3(replaced) / det
-		if out[col] < -1e-9 {
-			return [3]float64{}, false
-		}
-		out[col] = math.Max(out[col], 0)
-	}
-	return out, true
-}
-
-func det3(m [3][3]float64) float64 {
-	return m[0][0]*(m[1][1]*m[2][2]-m[1][2]*m[2][1]) -
-		m[0][1]*(m[1][0]*m[2][2]-m[1][2]*m[2][0]) +
-		m[0][2]*(m[1][0]*m[2][1]-m[1][1]*m[2][0])
-}
-
-// solve2 solves grams of protein food a and carbohydrate food b for protein p
-// and carbohydrate c. When one amount would be negative that food is left out
-// and the other is sized for its own macro.
-func solve2(a, b Food, p, c float64) (ga, gb float64) {
-	det := a.protein()*b.carbs() - b.protein()*a.carbs()
-	if math.Abs(det) > 1e-12 {
-		ga = (p*b.carbs() - b.protein()*c) / det
-		gb = (a.protein()*c - p*a.carbs()) / det
-		if ga >= 0 && gb >= 0 {
-			return ga, gb
+// subsetsInPreferenceOrder lists the index subsets of 1 to 3 of n candidates
+// (n is 2 to 4: protein, carbohydrate, fat source, lean companion). Subsets
+// without the companion (index 3) come first, then larger before smaller, so
+// an equally good fit prefers the athlete's own foods and all of them.
+func subsetsInPreferenceOrder(n int) [][]int {
+	var out [][]int
+	for _, withCompanion := range []bool{false, true} {
+		for size := 3; size >= 1; size-- {
+			for mask := 1; mask < 1<<n; mask++ {
+				subset := []int{}
+				for i := range n {
+					if mask&(1<<i) != 0 {
+						subset = append(subset, i)
+					}
+				}
+				if len(subset) == size && (mask&(1<<3) != 0) == withCompanion {
+					out = append(out, subset)
+				}
+			}
 		}
 	}
-	if ga < 0 || a.protein() == 0 {
-		return 0, safeDiv(c, b.carbs())
-	}
-	return safeDiv(p, a.protein()), 0
+	return out
 }
 
-func safeDiv(n, d float64) float64 {
-	if d <= 0 {
-		return 0
+// macros returns a food's per-gram protein, carbohydrate, and fat.
+func (f Food) macros() [3]float64 { return [3]float64{f.protein(), f.carbs(), f.fat()} }
+
+// fit solves the energy-weighted least-squares grams of the chosen foods for
+// the wanted macros through the normal equations. ok is false when the
+// system is singular or any amount would be negative.
+func fit(chosen []portion, want [3]float64) ([]float64, bool) {
+	k := len(chosen)
+	// Augmented normal matrix [AᵀWA | AᵀWb].
+	m := make([][]float64, k)
+	for i := range k {
+		m[i] = make([]float64, k+1)
+		mi := chosen[i].food.macros()
+		for j := range k {
+			mj := chosen[j].food.macros()
+			for r := range 3 {
+				m[i][j] += macroWeights[r] * macroWeights[r] * mi[r] * mj[r]
+			}
+		}
+		for r := range 3 {
+			m[i][k] += macroWeights[r] * macroWeights[r] * mi[r] * want[r]
+		}
 	}
-	return n / d
+	// Gaussian elimination with partial pivoting.
+	for col := range k {
+		pivot := col
+		for row := col + 1; row < k; row++ {
+			if math.Abs(m[row][col]) > math.Abs(m[pivot][col]) {
+				pivot = row
+			}
+		}
+		if math.Abs(m[pivot][col]) < 1e-12 {
+			return nil, false
+		}
+		m[col], m[pivot] = m[pivot], m[col]
+		for row := range k {
+			if row == col {
+				continue
+			}
+			factor := m[row][col] / m[col][col]
+			for c := col; c <= k; c++ {
+				m[row][c] -= factor * m[col][c]
+			}
+		}
+	}
+	grams := make([]float64, k)
+	for i := range k {
+		grams[i] = m[i][k] / m[i][i]
+		if math.IsNaN(grams[i]) || math.IsInf(grams[i], 0) || grams[i] < -1e-9 {
+			return nil, false
+		}
+		grams[i] = math.Max(grams[i], 0)
+	}
+	return grams, true
+}
+
+// macroError is the energy-weighted squared distance between what the
+// portions provide and what the meal wants.
+func macroError(chosen []portion, grams []float64, want [3]float64) float64 {
+	var total float64
+	for r := range 3 {
+		got := 0.0
+		for i, p := range chosen {
+			got += grams[i] * p.food.macros()[r]
+		}
+		d := macroWeights[r] * (got - want[r])
+		total += d * d
+	}
+	return total
 }
 
 // buildMeal sizes, rounds, and totals one meal.
 func buildMeal(slot MealSlot, target DayMacros, foods mealFoods, excluded []string) Meal {
 	meal := Meal{Slot: slot.Slot, Name: slot.Name, Target: target, Items: []Item{}}
 	for _, p := range solveMeal(target, foods, excluded) {
+		if p.food.GramsPerUnit <= 0 || p.food.Step <= 0 {
+			continue
+		}
 		amount := math.Round(p.grams/p.food.GramsPerUnit/p.food.Step) * p.food.Step
 		if amount <= 0 {
 			continue

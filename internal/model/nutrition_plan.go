@@ -215,6 +215,26 @@ type CalculatorFood struct {
 	Per100G    PlanProvided `json:"per_100g"`
 }
 
+// CalculatorRange is an inclusive range.
+type CalculatorRange struct {
+	Min float64 `json:"min"`
+	Max float64 `json:"max"`
+}
+
+// CalculatorUnitLimits are the accepted weight and height in one unit system.
+type CalculatorUnitLimits struct {
+	Weight CalculatorRange `json:"weight"`
+	Height CalculatorRange `json:"height"`
+}
+
+// CalculatorLimits are the accepted ranges of the athlete's numbers: pounds
+// and total inches, kilograms and centimetres, and age in years.
+type CalculatorLimits struct {
+	Imperial CalculatorUnitLimits `json:"imperial"`
+	Metric   CalculatorUnitLimits `json:"metric"`
+	AgeYears CalculatorRange      `json:"age_years"`
+}
+
 // CalculatorMealOption names one of the four meals.
 type CalculatorMealOption struct {
 	Slot int    `json:"slot"`
@@ -228,6 +248,7 @@ type CalculatorOptions struct {
 	ActivityLevels []CalculatorActivityOption `json:"activity_levels"`
 	ProteinGPerLb  CalculatorRateRange        `json:"protein_g_per_lb"`
 	FatGPerLb      CalculatorRateRange        `json:"fat_g_per_lb"`
+	Limits         CalculatorLimits           `json:"limits"`
 	Exclusions     []string                   `json:"exclusions"`
 	Foods          []CalculatorFood           `json:"foods"`
 	Meals          []CalculatorMealOption     `json:"meals"`

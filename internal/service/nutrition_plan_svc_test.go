@@ -185,6 +185,10 @@ func TestNutritionPlanOptions(t *testing.T) {
 	if options.FatGPerLb.Default == nil || *options.FatGPerLb.Default != 0.33 || options.ProteinGPerLb.Min != 0.7 || options.ProteinGPerLb.Max != 1.1 {
 		t.Errorf("rates = %+v %+v", options.ProteinGPerLb, options.FatGPerLb)
 	}
+	if l := options.Limits; l.Imperial.Weight != (model.CalculatorRange{Min: 66, Max: 660}) || l.Imperial.Height != (model.CalculatorRange{Min: 48, Max: 96}) ||
+		l.Metric.Weight != (model.CalculatorRange{Min: 30, Max: 300}) || l.Metric.Height != (model.CalculatorRange{Min: 122, Max: 244}) || l.AgeYears != (model.CalculatorRange{Min: 18, Max: 100}) {
+		t.Errorf("limits = %+v", l)
+	}
 	selectable := 0
 	for _, f := range options.Foods {
 		if f.Source != "usda" || f.FDCID == 0 || f.Tags == nil || f.Per100G.EnergyKcal == 0 {

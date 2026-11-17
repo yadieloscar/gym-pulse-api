@@ -1390,6 +1390,7 @@ base = {"unit_system": "imperial", "weight": 180, "height": 70, "age_years": 30,
 status, options = call("GET", "/api/v1/nutrition/calculator/options")
 check(status == 200 and len(options["goals"]) == 4 and len(options["activity_levels"]) == 3 and len(options["meals"]) == 4, "options", options)
 check(all(f["source"] == "usda" and f["fdc_id"] > 0 for f in options["foods"]) and options["activity_levels"][-1]["max_sessions"] is None, "options foods", options["foods"][:2])
+check(options["limits"]["imperial"]["weight"] == {"min": 66, "max": 660} and options["limits"]["age_years"] == {"min": 18, "max": 100}, "options limits", options["limits"])
 
 status, missing = call("GET", "/api/v1/nutrition/plan")
 check(status == 404 and missing["code"] == "NOT_FOUND", "no plan yet", missing)
