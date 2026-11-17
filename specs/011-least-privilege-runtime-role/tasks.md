@@ -62,4 +62,24 @@ description: "Implementation tasks for the least-privilege runtime database role
 - [x] T019 [A1] CI: `migrate` service gates the API; runtime URL for the DAO suite; round-trip step
 - [x] T020 [A1] Docs: `.env.example`, README, runbook (migration job, writing a migration), DATABASE_DESIGN §13, AGENTS/CLAUDE test commands
 - [x] T021 [A1] Parent workspace `docker-compose.yml`: runtime-role login at init, API as `gym_pulse_api`, owner for migrations (separate parent-repo change)
-- [ ] T022 [A1] Configure Railway pre-deploy `./migrate` at first hosted deploy (operator task)
+- [x] T022 [A1] Configure Railway pre-deploy `./migrate` at first hosted deploy (operator task). Missed at the first deploy; set by the owner in the Railway dashboard on 2026-11-17 after API #67 ran on the old schema. Not verifiable from the repository; Amendment A2 guards it.
+
+## Amendment A2 (2026-11-17)
+
+- [x] T023 [A2] Migration 048 `gym_pulse_private.schema_version()` with runtime-role `EXECUTE` only (FR-A2-003)
+- [x] T024 [A2] `internal/dbmigrate/version.go`: `LatestVersion`, `CheckCurrent`, `ErrSchemaBehind`; unit tests (FR-A2-001, FR-A2-002)
+- [x] T025 [A2] `cmd/server` calls `CheckCurrent` after the pool connects and exits on failure (FR-A2-001)
+- [x] T026 [A2] Integration: `internal/dbmigrate/version_integration_test.go`; runtime-role check in `internal/dao/runtime_role_integration_test.go`
+- [x] T027 [A2] `scripts/validate-supabase-security.sh` asserts the function's privileges
+- [x] T028 [A2] Docs: runbook (startup check, failure recovery), `DATABASE_DESIGN.md` row 048 and role table
+
+### Evidence (2026-11-17, scratch PostgreSQL 16)
+
+| Check | Result |
+| --- | --- |
+| `go test ./...` | pass |
+| `golangci-lint run` | 0 issues |
+| `go test -p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1` | pass (round trip, strict re-run, runtime role, version check) |
+| `./scripts/validate-database-design.sh` | pass |
+| `./scripts/validate-supabase-security.sh` | not run locally (`psql` is not installed); CI `smoke` runs it |
+| Release server started against a database that is behind | covered by the integration test of `CheckCurrent`; not exercised with a real staging or production boot |

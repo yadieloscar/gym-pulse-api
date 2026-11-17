@@ -110,6 +110,16 @@ func main() {
 	}
 	logger.Info("connected to database")
 
+	// A release server never migrates, so nothing above proves the schema
+	// matches this build. Refuse to serve on a schema that is behind or dirty:
+	// the platform then keeps the previous deployment running.
+	schemaVersion, err := dbmigrate.CheckCurrent(context.Background(), pool, dbmigrate.DefaultSource)
+	if err != nil {
+		logger.Error("database schema is not ready for this build", "error", err)
+		os.Exit(1)
+	}
+	logger.Info("schema version verified", "version", schemaVersion)
+
 	// Advisory locks must never consume the main query pool. A separate,
 	// bounded pool prevents N concurrent deletion/avatar operations from
 	// holding all N query connections while each waits for one more.

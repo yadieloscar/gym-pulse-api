@@ -1938,7 +1938,7 @@ subject before attaching identity to the request.
 | Role | Status | Privileges |
 |---|---|---|
 | Schema owner (`postgres` on Supabase, `DATABASE_MIGRATE_URL`) | Current | Owns every table and the private `gym_pulse_private` schema; used only by `./migrate` (`cmd/migrate`, the release pre-deploy step) and by development/test server startup. No request traffic |
-| `gym_pulse_api` (`DATABASE_URL`, `DATABASE_LOCK_URL`) | Current (026) | `USAGE` on `public` and `auth`; `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the 30 application tables; `SELECT` on `auth.users`; one permissive RLS policy per table. No superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB`, ownership, `CREATE` on `public`, or access to `schema_migrations` |
+| `gym_pulse_api` (`DATABASE_URL`, `DATABASE_LOCK_URL`) | Current (026) | `USAGE` on `public` and `auth`; `SELECT`, `INSERT`, `UPDATE`, `DELETE` on the 30 application tables; `SELECT` on `auth.users`; one permissive RLS policy per table. No superuser, `BYPASSRLS`, `CREATEROLE`, `CREATEDB`, ownership, `CREATE` on `public`, or access to `schema_migrations`. It may call `gym_pulse_private.schema_version()` (048), which returns only the ledger's version and dirty flag for the startup check |
 | `gym_pulse_readonly` | Target | Explicit read access for approved operational diagnostics; audited |
 | Supabase `anon`/`authenticated` | Current (016) | No application-table privileges because clients do not use the Data API |
 | Supabase service-role key | Current | Server secret for Auth Admin/Storage only; never shipped to the app |
@@ -2383,6 +2383,7 @@ Report one of:
 | 045 | `program_workouts.weekdays`, `programs.scheduled_through`, `scheduled_workouts.slot_date`, a weekday check, a partial unique slot index, and a planned-by-program index; no backfill and no row rewrite |
 | 046 | Data repair, no schema change: removes untouched future `scheduled_workouts` rows of a program whose `program_workout_id` is null (their workout was deleted under the older contract) and sets the active program's `scheduled_through` to the athlete's today, so the next read refills from tomorrow; past, started, and today's rows stay |
 | 047 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
+| 048 | No table change: `gym_pulse_private.schema_version()`, a `SECURITY DEFINER` function returning the migration ledger's `version` and `dirty`, executable by `gym_pulse_api` only; the server calls it at startup and refuses a schema that is behind or dirty |
 
 ## 19. Decision summary
 

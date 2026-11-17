@@ -161,6 +161,19 @@ and exits non-zero on any failure, so the platform aborts the deploy before a ne
   server container entirely, run `./migrate` from a separate one-off service instead.
 - **Startup log**: a release server logs `skipping startup migrations`; development and test
   servers still migrate at startup with `DATABASE_MIGRATE_URL` (default `DATABASE_URL`).
+- **Startup schema check**: every server then compares the applied schema version with the newest
+  migration in its image and logs `schema version verified`. When the schema is behind, dirty, or
+  has no migration applied, it logs `database schema is not ready for this build` and exits, so the
+  deploy fails and the previous deployment keeps serving. The usual cause is a missing pre-deploy
+  command: set it to `./migrate` and redeploy. The check reads through
+  `gym_pulse_private.schema_version()` (migration 048); the runtime role still cannot read
+  `schema_migrations`. A schema newer than the build is accepted, so a rollback to the previous
+  image starts normally. Rolling back to an image older than migration 048 skips the check, as
+  those builds do not have it.
+- **The pre-deploy command is a dashboard setting.** It is not in the repository: Railway's
+  Config as Code file (`railway.json`) is deprecated and honored only until 2026-12-01 (Railway
+  documentation, read 2026-11-17). Confirm the setting after creating or recreating a service; the
+  startup check above is what catches a miss.
 - **Failure**: a failed migration leaves `schema_migrations` dirty because each file runs as one
   transaction and rolls back, but golang-migrate records the attempt. Fix the cause, then clear the
   flag as the owner with `UPDATE schema_migrations SET dirty = false, version = <last good>` and

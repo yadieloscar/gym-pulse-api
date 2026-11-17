@@ -240,6 +240,25 @@ Captured with 300 athletes and 126,600 sessions loaded inside a rolled-back tran
 - `scripts/validate-database-design.sh` did not parse `ADD COLUMN IF NOT EXISTS` or
   `CREATE INDEX IF NOT EXISTS`, which strict migrations require. It now does.
 
+### Follow-up fix (2026-11-17): the unit-replacing save without a clock
+
+`programDAO.Replace` deletes every unit of a program and inserts the saved ones. Deleting a unit
+only clears `program_workout_id` on its sessions (`ON DELETE SET NULL`, kept so finished workouts
+survive), which is how production came to show sessions of a workout the program no longer had
+(repaired by migration 046). The service has used `ReplaceProgram` in
+`training_mutation_dao.go` since this feature, so `Replace` is reached only when no mutation DAO
+is wired, but it still produced that state. It now removes the program's untouched sessions dated
+after the athlete's today and moves the fill mark back to today, as 046 does, and takes the
+schedule lock. Restores FR-010 (saving the active program updates its future) on that path.
+
+- Test: `TestProgramReplaceLeavesNoSessionWithoutAUnit` in
+  `internal/dao/program_replace_integration_test.go` (pass, 2026-11-17).
+- Not changed: the `ON DELETE SET NULL` foreign key. `CASCADE` would delete finished and started
+  sessions with their unit, and the current save path already removes the future first.
+- Already enforced in the data: one active program per athlete, by the partial unique index
+  `idx_programs_one_active_per_user` from migration 014. Every path that activates a program
+  deactivates the other one first, inside the per-athlete program lock.
+
 ### Consistency analysis (2026-11-16, before implementation)
 
 Read-only pass over spec, plan, research, data model, contract draft, and tasks.
