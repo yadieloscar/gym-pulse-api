@@ -449,8 +449,8 @@ deleted. A client that sends no unit `id` therefore replaces every unit, as
 before.
 
 Saving the **active** program updates its scheduled workouts in the same
-transaction, for sessions that are `planned`, not started, and dated **after
-today** in the training-profile timezone:
+transaction, for sessions that are `planned`, not started, and dated **today
+or later** in the training-profile timezone:
 
 | Unit in the saved body | Its future sessions |
 | --- | --- |
@@ -460,8 +460,11 @@ today** in the training-profile timezone:
 | New | Laid out on its weekdays |
 | Unchanged | Untouched, so a session moved with `/move` keeps its date |
 
-Sessions that are in progress, finished, missed, or dated today or earlier
-never change. If the saved active program has no `weekdays` (an older client),
+These changes apply to planned, unstarted sessions dated **today or later**
+(since 1.12.1; before that, after today), so a workout added to today's
+weekday is on today. Sessions that are in progress, finished, missed, or
+dated before today never change, and a unit with a started session today does
+not get a second one. If the saved active program has no `weekdays` (an older client),
 the server places it at once from tomorrow, so the week is never left empty; a
 following `schedule/regenerate` yields the same schedule. A body with
 `active: true` for a program that was not active starts it from tomorrow: the

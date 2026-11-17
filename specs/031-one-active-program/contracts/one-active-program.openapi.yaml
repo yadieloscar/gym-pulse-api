@@ -22,7 +22,7 @@ paths:
     put:
       summary: >
         Unchanged route; units may carry id and weekdays. Saving the active program updates its
-        planned unstarted sessions dated after today in the same transaction.
+        planned unstarted sessions dated today or later in the same transaction.
       requestBody:
         content:
           application/json:

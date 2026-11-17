@@ -166,11 +166,11 @@ func (r *trainingMutationDAO) CreateProgram(ctx context.Context, userID uuid.UUI
 // ReplaceProgram saves a program. Units the request names by ID are updated in
 // place, so their sessions and one-off moves keep their unit; units without a
 // known ID are inserted and units the request omits are deleted. When the
-// program is active, its planned unstarted sessions dated after today follow
-// the save in this same transaction: a removed unit's sessions go, a unit with
-// new weekdays is laid out again, a unit with new content has its sessions
-// re-snapshotted, and an unchanged unit is left alone. Sessions that are
-// started, finished, missed, or dated today or earlier never change.
+// program is active, its planned unstarted sessions dated today or later
+// follow the save in this same transaction: a removed unit's sessions go, a
+// unit with new weekdays is laid out again, a unit with new content has its
+// sessions re-snapshotted, and an unchanged unit is left alone. Sessions that
+// are started, finished, missed, or dated before today never change.
 func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UUID, program *model.Program, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	tx, err := r.pool.Begin(ctx)
 	if err != nil {
@@ -228,10 +228,17 @@ func (r *trainingMutationDAO) ReplaceProgram(ctx context.Context, userID uuid.UU
 
 	keepStoredWeekdays(stored.Workouts, program.Workouts)
 	diff := model.DiffUnits(stored.Workouts, program.Workouts)
-	if err := replaceProgramUnits(ctx, tx, userID, program, diff, tomorrow); err != nil {
+	// An edit to the running program applies from today. A save that starts
+	// or stops the program, or one from a client older than weekdays (placed
+	// below), acts from tomorrow, the day the replaced sessions end.
+	from := tomorrow
+	if stored.Active && program.Active && (len(program.Workouts) == 0 || program.Placed()) {
+		from = today
+	}
+	if err := replaceProgramUnits(ctx, tx, userID, program, diff, from); err != nil {
 		return nil, false, err
 	}
-	if err := syncProgramSessions(ctx, tx, userID, stored, program, diff, availableDays, tomorrow, horizon); err != nil {
+	if err := syncProgramSessions(ctx, tx, userID, stored, program, diff, availableDays, from, tomorrow, horizon); err != nil {
 		return nil, false, err
 	}
 	record.ResourceID = &program.ID
@@ -296,11 +303,11 @@ func keepStoredWeekdays(stored, saved []model.ProgramWorkout) {
 }
 
 // replaceProgramUnits brings the stored units in line with the saved program.
-// It first removes the sessions of removed units, because deleting a unit
-// clears the unit reference on its sessions.
-func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, program *model.Program, diff model.UnitDiff, tomorrow string) error {
+// It first removes the sessions of removed units from the given date on,
+// because deleting a unit clears the unit reference on its sessions.
+func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, program *model.Program, diff model.UnitDiff, from string) error {
 	if len(diff.Removed) > 0 {
-		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id = ANY($2) AND sw.date >= $3 AND `+unstartedPlanned, userID, diff.Removed, tomorrow); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id = ANY($2) AND sw.date >= $3 AND `+unstartedPlanned, userID, diff.Removed, from); err != nil {
 			return fmt.Errorf("deleting sessions of removed units: %w", err)
 		}
 		if _, err := tx.Exec(ctx, `DELETE FROM program_workouts WHERE program_id=$1 AND id = ANY($2)`, program.ID, diff.Removed); err != nil {
@@ -375,9 +382,14 @@ func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, progr
 	return nil
 }
 
-// syncProgramSessions makes the planned unstarted sessions dated from
-// tomorrow on match the saved program.
-func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, stored, program *model.Program, diff model.UnitDiff, availableDays []int, tomorrow, horizon string) error {
+// syncProgramSessions makes the planned unstarted sessions match the saved
+// program. An edit to a running program applies from `from`, which is today,
+// so a workout added to today's weekday is on today; a session the athlete
+// has started is never selected, and the unit-and-slot uniqueness keeps a
+// started unit from getting a second session on its day. A save that starts
+// or stops a program acts from tomorrow, the day the other program's
+// sessions end.
+func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, stored, program *model.Program, diff model.UnitDiff, availableDays []int, from, tomorrow, horizon string) error {
 	if !program.Active {
 		if stored.Active {
 			// The save stopped the program: its future goes with it.
@@ -431,10 +443,10 @@ func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, store
 	relaid := append(append([]int{}, diff.Replaced...), diff.Added...)
 	for _, index := range relaid {
 		unit := &program.Workouts[index]
-		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, unit.ID, tomorrow); err != nil {
+		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_workout_id=$2 AND sw.date >= $3 AND `+unstartedPlanned, userID, unit.ID, from); err != nil {
 			return fmt.Errorf("deleting sessions of a moved unit: %w", err)
 		}
-		sessions, err := model.UnitSessions(program.ID, unit, tomorrow, through)
+		sessions, err := model.UnitSessions(program.ID, unit, from, through)
 		if err != nil {
 			return err
 		}
@@ -443,7 +455,7 @@ func syncProgramSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, store
 		}
 	}
 	for _, index := range diff.Resnapshot {
-		if err := resnapshotUnitSessions(ctx, tx, userID, &program.Workouts[index], tomorrow); err != nil {
+		if err := resnapshotUnitSessions(ctx, tx, userID, &program.Workouts[index], from); err != nil {
 			return err
 		}
 	}

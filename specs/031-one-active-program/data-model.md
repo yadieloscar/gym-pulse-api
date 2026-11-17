@@ -77,7 +77,7 @@ saved --DELETE--> gone          active --DELETE--> 409 CONFLICT
 | --- | --- | --- |
 | Fill | Inserts `planned` rows with `slot_date` after `scheduled_through` | Any existing row |
 | Start (apply) | Deletes `planned` rows with no active or completed workout session, dated on or after the start date | `in_progress`, `completed`, `incomplete`, `missed`, past dates |
-| Save active program | Deletes, inserts, or re-snapshots `planned` unstarted rows dated after today, per unit (R7) | The same set as above, plus rows of unchanged units |
+| Save active program | Deletes, inserts, or re-snapshots `planned` unstarted rows dated today or later, per unit (R7, Amendment A3) | The same set as above, plus rows of unchanged units |
 | Move | Updates `date` and `revision` of one `planned` unstarted row dated today or later | `slot_date`, every other row |
 | Remove program | Deletes that program's `planned` unstarted rows | Finished rows (their `program_id` becomes `NULL` by the existing foreign key) |
 
