@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
@@ -46,6 +47,28 @@ func (r *statsDAO) GetWeeklyCount(ctx context.Context, userID uuid.UUID, weekSta
 		return 0, fmt.Errorf("counting weekly logs: %w", err)
 	}
 	return count, nil
+}
+
+// PerformedDates returns each distinct date in the range on which the athlete
+// trained, by the same rule as GetWeeklyCount. The week streak reads a year of
+// weeks from one call instead of one call per week.
+func (r *statsDAO) PerformedDates(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]time.Time, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT date FROM day_logs WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND type_id <> 'rest'
+		UNION
+		SELECT date FROM workout_sessions ws WHERE user_id=$1 AND date BETWEEN $2 AND $3 AND status <> 'discarded'
+		  AND (status='completed' OR EXISTS (SELECT 1 FROM set_logs sl WHERE sl.workout_session_id=ws.id AND sl.completed=true))
+		UNION
+		SELECT date FROM sport_activities WHERE user_id=$1 AND date BETWEEN $2 AND $3`,
+		userID, from, to)
+	if err != nil {
+		return nil, fmt.Errorf("querying performed dates: %w", err)
+	}
+	dates, err := pgx.CollectRows(rows, pgx.RowTo[time.Time])
+	if err != nil {
+		return nil, fmt.Errorf("reading performed dates: %w", err)
+	}
+	return dates, nil
 }
 
 func (r *statsDAO) GetTotalWorkouts(ctx context.Context, userID uuid.UUID) (int, error) {

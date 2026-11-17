@@ -154,15 +154,31 @@ func (r *programDAO) List(ctx context.Context, userID uuid.UUID) ([]model.Progra
 	rows.Close()
 	// docs/CONTRACTS.md promises full Program objects here. Without this the
 	// list carried "workouts": null and the app's Plan screen crashed on it.
+	if len(programs) == 0 {
+		return programs, nil
+	}
+	// One round trip for every program's workouts instead of one per program.
+	batch := &pgx.Batch{}
 	for i := range programs {
-		workouts, err := loadProgramWorkouts(ctx, r.pool, userID, programs[i].ID)
+		batch.Queue(programWorkoutsQuery, userID, programs[i].ID)
+	}
+	results := r.pool.SendBatch(ctx, batch)
+	for i := range programs {
+		rows, err := results.Query()
 		if err != nil {
+			_ = results.Close()
+			return nil, fmt.Errorf("querying program workouts: %w", err)
+		}
+		workouts, err := scanProgramWorkouts(rows, false)
+		rows.Close()
+		if err != nil {
+			_ = results.Close()
 			return nil, err
 		}
-		if workouts == nil {
-			workouts = []model.ProgramWorkout{}
-		}
 		programs[i].Workouts = workouts
+	}
+	if err := results.Close(); err != nil {
+		return nil, fmt.Errorf("querying program workouts: %w", err)
 	}
 	return programs, nil
 }
@@ -190,8 +206,9 @@ func (r *programDAO) Get(ctx context.Context, userID, programID uuid.UUID) (*mod
 	return p, nil
 }
 
-func loadProgramWorkouts(ctx context.Context, q queryer, userID, programID uuid.UUID) ([]model.ProgramWorkout, error) {
-	rows, err := q.Query(ctx, `
+// programWorkoutsQuery lists one program's workouts with their exercises,
+// scoped to the owner.
+const programWorkoutsQuery = `
 		SELECT pw.id, pw.name, pw.preferred_weekday, pw.weekdays, pw.sequence_position,
 		       pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,
 		       pw.target_distance_meters, pw.sport_notes,
@@ -203,7 +220,10 @@ func loadProgramWorkouts(ctx context.Context, q queryer, userID, programID uuid.
 		JOIN programs p ON p.id = pw.program_id AND p.user_id=$1
 		LEFT JOIN program_exercises pe ON pe.program_workout_id = pw.id
 		WHERE pw.program_id=$2
-		ORDER BY pw.sequence_position, pe.exercise_order`, userID, programID)
+		ORDER BY pw.sequence_position, pe.exercise_order`
+
+func loadProgramWorkouts(ctx context.Context, q queryer, userID, programID uuid.UUID) ([]model.ProgramWorkout, error) {
+	rows, err := q.Query(ctx, programWorkoutsQuery, userID, programID)
 	if err != nil {
 		return nil, fmt.Errorf("querying program workouts: %w", err)
 	}

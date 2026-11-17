@@ -282,6 +282,38 @@ Not changed: a 60-day schedule read still runs about 56 statements (3.7 s throug
 proxy), and four malformed payloads (duplicate exercise order, unknown catalog id, an exercise
 with neither reps nor time, duplicate workout position) return 500 where 422 is intended.
 
+### Follow-up (2026-11-17): round-trip audit of reads and per-row writes
+
+After the save timeout the owner asked for the schedule read and the other endpoints to be
+checked for the same pattern. Method: the smoke suite and a seeded athlete (four programs, the
+active one laid out to the horizon) were run through a local proxy that adds 60 ms to every
+database round trip, and every loop that runs a statement per row was listed.
+
+| Path | Before | After |
+| --- | --- | --- |
+| `GET /schedule`, 60 days | 2314 ms, about 39 round trips | 385 ms, about 6 |
+| `GET /schedule`, the 5 weeks Today reads | 1352 ms | 381 ms |
+| `GET /participation`, 365 days (reads the schedule first) | 382 ms | 322 ms |
+| `GET /programs`, four programs | 386 ms | 195 ms |
+
+- Schedule read: the training profile was read once per unfinished session, including every
+  future one, and the range was listed twice. It is now read once, only sessions before the
+  athlete's today are finalized, and the second list runs only after a finalize.
+- Program list: one batch for every program's workouts instead of one query per program.
+- Week streak (`GET /stats`): one query per 52 weeks instead of one per week.
+- Batched writes: a day log's set logs and overrides, a saved workout's exercises, a food
+  search's catalog upsert, and the re-snapshot of a unit's sessions (three statements for any
+  number of sessions).
+
+No behavior, contract, or schema change. Tests: `internal/service/round_trips_test.go`,
+`internal/dao/stats_performed_dates_integration_test.go`; unit, integration, lint, and smoke pass.
+
+Left as found: every authenticated request spends one round trip confirming the identity still
+exists (a security rule); writes run 10 to 30 statements of transaction, lock, and idempotency
+work each; logging a saved meal and saving a meal insert one row per item; the legacy
+materialize and regenerate paths insert one session per statement; account deletion and the data
+export run a few dozen statements. Not verified against production.
+
 ### Consistency analysis (2026-11-16, before implementation)
 
 Read-only pass over spec, plan, research, data model, contract draft, and tasks.

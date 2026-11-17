@@ -88,18 +88,52 @@ func (s *scheduleService) List(ctx context.Context, userID uuid.UUID, from, to s
 	if err := model.ValidateDateRange(from, to); err != nil {
 		return nil, err
 	}
-	if err := s.ensureFilled(ctx, userID, to); err != nil {
-		return nil, err
+	// The profile gives the athlete's today for both the fill and the
+	// finalize pass. It is read once per request: every read here is a round
+	// trip to the database.
+	profile, profileErr := s.profiles.Get(ctx, userID)
+	if profileErr != nil && !isNotFound(profileErr) {
+		return nil, profileErr
+	}
+	if profileErr == nil {
+		if err := s.ensureFilledFor(ctx, userID, profile, to); err != nil {
+			return nil, err
+		}
 	}
 	workouts, err := s.schedules.List(ctx, userID, from, to)
 	if err != nil {
 		return nil, err
 	}
+	finalized := false
+	today := ""
 	for i := range workouts {
-		if err := s.lazyFinalize(ctx, userID, &workouts[i]); err != nil {
+		w := &workouts[i]
+		if w.FinalizedAt != nil {
+			continue
+		}
+		if profileErr != nil {
+			// An unfinalized session needs the saved timezone to be judged.
+			return nil, profileErr
+		}
+		if today == "" {
+			location, err := time.LoadLocation(profile.Timezone)
+			if err != nil {
+				return nil, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
+			}
+			today = s.now().In(location).Format("2006-01-02")
+		}
+		if w.Date >= today {
+			continue
+		}
+		if err := s.finalizePast(ctx, userID, w); err != nil {
 			return nil, err
 		}
+		finalized = true
 	}
+	if !finalized {
+		return workouts, nil
+	}
+	// A finalize changes status, revision, and participation; read them back.
 	return s.schedules.List(ctx, userID, from, to)
 }
 
@@ -534,18 +568,12 @@ func (s *scheduleService) resolve(ctx context.Context, userID, workoutID uuid.UU
 // ensureFilled keeps the active program scheduled ahead of today before a
 // read that reaches today or later. The schedule rolls forward on its own:
 // the athlete never has to change something to get next week.
-func (s *scheduleService) ensureFilled(ctx context.Context, userID uuid.UUID, to string) error {
+// ensureFilledFor extends the active program's sessions to the horizon when
+// the requested range reaches today or later.
+func (s *scheduleService) ensureFilledFor(ctx context.Context, userID uuid.UUID, profile *model.TrainingProfile, to string) error {
 	repo, ok := s.schedules.(dao.RollingScheduleDAO)
 	if !ok {
 		return nil
-	}
-	profile, err := s.profiles.Get(ctx, userID)
-	if isNotFound(err) {
-		// No profile means no timezone and no days to place on yet.
-		return nil
-	}
-	if err != nil {
-		return err
 	}
 	today := localToday(s.now(), profile.Timezone)
 	if to < today {
@@ -682,21 +710,9 @@ func deriveScheduledStatus(sets []model.ScheduledSet, finalized bool) string {
 	return model.WorkoutStatusPlanned
 }
 
-func (s *scheduleService) lazyFinalize(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout) error {
-	if w.FinalizedAt != nil {
-		return nil
-	}
-	profile, err := s.profiles.Get(ctx, userID)
-	if err != nil {
-		return err
-	}
-	location, err := time.LoadLocation(profile.Timezone)
-	if err != nil {
-		return &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
-	}
-	if w.Date >= s.now().In(location).Format("2006-01-02") {
-		return nil
-	}
+// finalizePast closes a session dated before the athlete's today that was
+// never finished: it becomes missed or completed from what was logged.
+func (s *scheduleService) finalizePast(ctx context.Context, userID uuid.UUID, w *model.ScheduledWorkout) error {
 	if s.mutations != nil {
 		operationKey := "lazy-finalize:" + w.ID.String()
 		hash, hashErr := hashPayload(struct {
@@ -706,13 +722,13 @@ func (s *scheduleService) lazyFinalize(ctx context.Context, userID uuid.UUID, w 
 		if hashErr != nil {
 			return hashErr
 		}
-		_, _, err = s.mutations.FinalizeScheduledWorkout(ctx, userID, w.ID, w.Revision, s.now(), model.IdempotencyRecord{
+		_, _, err := s.mutations.FinalizeScheduledWorkout(ctx, userID, w.ID, w.Revision, s.now(), model.IdempotencyRecord{
 			Scope: "scheduled-workouts/lazy-finalize", OperationKey: operationKey, RequestHash: hash,
 			ResponseStatus: 200, ResourceType: "scheduled_workout",
 		})
 		return err
 	}
-	_, err = s.finalizeLegacy(ctx, userID, w)
+	_, err := s.finalizeLegacy(ctx, userID, w)
 	return err
 }
 

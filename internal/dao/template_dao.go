@@ -153,21 +153,8 @@ func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.Wor
 	}
 	t.UserID = userID
 
-	for i := range t.Exercises {
-		e := &t.Exercises[i]
-		e.TemplateID = t.ID
-		e.SortOrder = i
-		err := tx.QueryRow(ctx, `
-			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-			RETURNING id`,
-			e.TemplateID, e.CatalogID, e.Name, e.SortOrder,
-			e.Sets, e.Reps, e.Weight, e.RestSeconds,
-			e.DurationMinutes, e.Intensity, e.Notes,
-		).Scan(&e.ID)
-		if err != nil {
-			return fmt.Errorf("inserting exercise: %w", err)
-		}
+	if err := insertTemplateExercises(ctx, tx, t); err != nil {
+		return err
 	}
 
 	return tx.Commit(ctx)
@@ -208,24 +195,43 @@ func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.Wor
 		return fmt.Errorf("deleting exercises: %w", err)
 	}
 
+	if err := insertTemplateExercises(ctx, tx, t); err != nil {
+		return err
+	}
+
+	return tx.Commit(ctx)
+}
+
+// insertTemplateExercises stores a saved workout's exercises in list order,
+// in one round trip.
+func insertTemplateExercises(ctx context.Context, tx pgx.Tx, t *model.WorkoutTemplate) error {
+	if len(t.Exercises) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
 	for i := range t.Exercises {
 		e := &t.Exercises[i]
 		e.TemplateID = t.ID
 		e.SortOrder = i
-		err := tx.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes)
 			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 			RETURNING id`,
 			e.TemplateID, e.CatalogID, e.Name, e.SortOrder,
 			e.Sets, e.Reps, e.Weight, e.RestSeconds,
-			e.DurationMinutes, e.Intensity, e.Notes,
-		).Scan(&e.ID)
-		if err != nil {
+			e.DurationMinutes, e.Intensity, e.Notes)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for i := range t.Exercises {
+		if err := results.QueryRow().Scan(&t.Exercises[i].ID); err != nil {
+			_ = results.Close()
 			return fmt.Errorf("inserting exercise: %w", err)
 		}
 	}
-
-	return tx.Commit(ctx)
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting exercises: %w", err)
+	}
+	return nil
 }
 
 func (r *templateDAO) Delete(ctx context.Context, userID, templateID uuid.UUID) error {

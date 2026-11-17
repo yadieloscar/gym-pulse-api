@@ -462,27 +462,30 @@ func resnapshotUnitSessions(ctx context.Context, tx pgx.Tx, userID uuid.UUID, un
 	if err != nil {
 		return fmt.Errorf("reading sessions to re-snapshot: %w", err)
 	}
-	sport := sportColumns(unit.Sport)
-	for _, id := range ids {
-		if _, err := tx.Exec(ctx, `
-			UPDATE scheduled_workouts SET name=$2, sequence_position=$3, kind=$4, sport_id=$5, sport_name=$6,
-			       target_duration_minutes=$7, target_distance_meters=$8, sport_notes=$9,
-			       revision=revision+1, updated_at=now()
-			WHERE id=$1`, id, unit.Name, unit.SequencePosition, model.NormalizeUnitKind(unit.Kind),
-			sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes); err != nil {
-			return fmt.Errorf("re-snapshotting session: %w", err)
-		}
-		if _, err := tx.Exec(ctx, `DELETE FROM scheduled_sets WHERE scheduled_workout_id=$1`, id); err != nil {
-			return fmt.Errorf("replacing session sets: %w", err)
-		}
-		if unit.IsSport() {
-			continue
-		}
-		if err := insertScheduledSets(ctx, tx, id, model.SnapshotScheduledSets(unit.Exercises)); err != nil {
-			return err
-		}
+	if len(ids) == 0 {
+		return nil
 	}
-	return nil
+	// Three round trips for every session of the unit, however many there are.
+	sport := sportColumns(unit.Sport)
+	if _, err := tx.Exec(ctx, `
+		UPDATE scheduled_workouts SET name=$2, sequence_position=$3, kind=$4, sport_id=$5, sport_name=$6,
+		       target_duration_minutes=$7, target_distance_meters=$8, sport_notes=$9,
+		       revision=revision+1, updated_at=now()
+		WHERE id = ANY($1)`, ids, unit.Name, unit.SequencePosition, model.NormalizeUnitKind(unit.Kind),
+		sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes); err != nil {
+		return fmt.Errorf("re-snapshotting sessions: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_sets WHERE scheduled_workout_id = ANY($1)`, ids); err != nil {
+		return fmt.Errorf("replacing session sets: %w", err)
+	}
+	if unit.IsSport() {
+		return nil
+	}
+	groups := make([]scheduledSetGroup, len(ids))
+	for i, id := range ids {
+		groups[i] = scheduledSetGroup{workoutID: id, sets: model.SnapshotScheduledSets(unit.Exercises)}
+	}
+	return insertScheduledSetGroups(ctx, tx, groups)
 }
 
 // DeleteProgram removes a saved program and its planned unstarted sessions.
