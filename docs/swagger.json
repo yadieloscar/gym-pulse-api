@@ -1071,6 +1071,69 @@
                 }
             }
         },
+        "/api/v1/nutrition/calculate": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Stores nothing. See docs/CONTRACTS.md \"Macro calculator\".",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Calculate estimated energy, macro targets, and a four-meal template",
+                "parameters": [
+                    {
+                        "description": "The athlete's numbers and preferences",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.CalculatorInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.NutritionPlan"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/calculator/options": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Read the macro calculator's foods, ranges, and defaults",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.CalculatorOptions"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nutrition/days": {
             "get": {
                 "security": [
@@ -2124,6 +2187,100 @@
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/plan": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Read the athlete's saved plan",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedNutritionPlan"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nutrition/profile": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The service recomputes the targets. expected_revision is the saved plan's revision, 0 when none exists.",
+                "tags": [
+                    "nutrition"
+                ],
+                "summary": "Save the calculator input as the athlete's plan",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "The athlete's numbers and preferences",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveNutritionProfileRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedNutritionPlan"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/model.SavedNutritionPlan"
                         }
                     },
                     "409": {
@@ -4657,6 +4814,218 @@
                 }
             }
         },
+        "model.CalculatorActivityOption": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "max_sessions": {
+                    "type": "integer"
+                },
+                "min_sessions": {
+                    "type": "integer"
+                },
+                "multiplier": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.CalculatorFood": {
+            "type": "object",
+            "properties": {
+                "fdc_id": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "per_100g": {
+                    "$ref": "#/definitions/model.PlanProvided"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "selectable": {
+                    "type": "boolean"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "step": {
+                    "type": "number"
+                },
+                "tags": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.CalculatorGoalOption": {
+            "type": "object",
+            "properties": {
+                "default_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "default_protein_g_per_lb": {
+                    "type": "number"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "max_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "min_adjustment_kcal": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.CalculatorInput": {
+            "type": "object",
+            "properties": {
+                "activity_level": {
+                    "type": "string"
+                },
+                "age_years": {
+                    "type": "integer"
+                },
+                "calorie_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "carb_cycling": {
+                    "type": "boolean"
+                },
+                "cardio_days": {
+                    "type": "integer"
+                },
+                "exclusions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fat_g_per_lb": {
+                    "type": "number"
+                },
+                "goal": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "meal_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.MealChoice"
+                    }
+                },
+                "preferred_carbs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_proteins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "protein_g_per_lb": {
+                    "type": "number"
+                },
+                "sex": {
+                    "type": "string"
+                },
+                "strength_days": {
+                    "type": "integer"
+                },
+                "unit_system": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.CalculatorMealOption": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.CalculatorOptions": {
+            "type": "object",
+            "properties": {
+                "activity_levels": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CalculatorActivityOption"
+                    }
+                },
+                "exclusions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fat_g_per_lb": {
+                    "$ref": "#/definitions/model.CalculatorRateRange"
+                },
+                "foods": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CalculatorFood"
+                    }
+                },
+                "goals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CalculatorGoalOption"
+                    }
+                },
+                "meals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.CalculatorMealOption"
+                    }
+                },
+                "protein_g_per_lb": {
+                    "$ref": "#/definitions/model.CalculatorRateRange"
+                }
+            }
+        },
+        "model.CalculatorRateRange": {
+            "type": "object",
+            "properties": {
+                "default": {
+                    "type": "number"
+                },
+                "max": {
+                    "type": "number"
+                },
+                "min": {
+                    "type": "number"
+                },
+                "step": {
+                    "type": "number"
+                }
+            }
+        },
         "model.CatalogExercise": {
             "type": "object",
             "properties": {
@@ -5385,6 +5754,95 @@
                 }
             }
         },
+        "model.ExportCalculatorProfile": {
+            "type": "object",
+            "properties": {
+                "activity_level": {
+                    "type": "string"
+                },
+                "age_years": {
+                    "type": "integer"
+                },
+                "bmr_kcal": {
+                    "type": "integer"
+                },
+                "calorie_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "carb_cycling": {
+                    "type": "boolean"
+                },
+                "carbs_g": {
+                    "type": "integer"
+                },
+                "cardio_days": {
+                    "type": "integer"
+                },
+                "exclusions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "fat_g": {
+                    "type": "integer"
+                },
+                "fat_g_per_lb": {
+                    "type": "number"
+                },
+                "goal": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "meal_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.MealChoice"
+                    }
+                },
+                "preferred_carbs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_proteins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "protein_g": {
+                    "type": "integer"
+                },
+                "protein_g_per_lb": {
+                    "type": "number"
+                },
+                "sex": {
+                    "type": "string"
+                },
+                "strength_days": {
+                    "type": "integer"
+                },
+                "target_kcal": {
+                    "type": "integer"
+                },
+                "tdee_kcal": {
+                    "type": "integer"
+                },
+                "unit_system": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
         "model.ExportExerciseSummary": {
             "type": "object",
             "properties": {
@@ -5478,6 +5936,14 @@
         "model.ExportNutrition": {
             "type": "object",
             "properties": {
+                "calculator_profile": {
+                    "description": "CalculatorProfile is the saved macro calculator plan, null when the\nathlete has not saved one.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/model.ExportCalculatorProfile"
+                        }
+                    ]
+                },
                 "days": {
                     "type": "array",
                     "items": {
@@ -6393,6 +6859,23 @@
                 }
             }
         },
+        "model.MealChoice": {
+            "type": "object",
+            "properties": {
+                "carb": {
+                    "type": "string"
+                },
+                "fat": {
+                    "type": "string"
+                },
+                "protein": {
+                    "type": "string"
+                },
+                "slot": {
+                    "type": "integer"
+                }
+            }
+        },
         "model.MealItemInput": {
             "type": "object",
             "properties": {
@@ -6536,6 +7019,47 @@
                 },
                 "updated_at": {
                     "type": "string"
+                }
+            }
+        },
+        "model.NutritionPlan": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "$ref": "#/definitions/model.PlanActivity"
+                },
+                "bmr_kcal": {
+                    "type": "integer"
+                },
+                "calorie_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "carb_cycling": {
+                    "$ref": "#/definitions/model.PlanCarbCycling"
+                },
+                "input": {
+                    "$ref": "#/definitions/model.CalculatorInput"
+                },
+                "macros": {
+                    "$ref": "#/definitions/model.PlanMacros"
+                },
+                "meal_templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PlanMealTemplate"
+                    }
+                },
+                "notices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "target_kcal": {
+                    "type": "integer"
+                },
+                "tdee_kcal": {
+                    "type": "integer"
                 }
             }
         },
@@ -6752,6 +7276,178 @@
                 }
             }
         },
+        "model.PlanActivity": {
+            "type": "object",
+            "properties": {
+                "level": {
+                    "type": "string"
+                },
+                "multiplier": {
+                    "type": "number"
+                },
+                "suggested_level": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.PlanCarbCycling": {
+            "type": "object",
+            "properties": {
+                "rest": {
+                    "$ref": "#/definitions/model.PlanDayMacros"
+                },
+                "rest_days": {
+                    "type": "integer"
+                },
+                "training": {
+                    "$ref": "#/definitions/model.PlanDayMacros"
+                },
+                "training_days": {
+                    "type": "integer"
+                },
+                "weekly_average_kcal": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.PlanDayMacros": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "integer"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "integer"
+                },
+                "protein_g": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.PlanMacro": {
+            "type": "object",
+            "properties": {
+                "g": {
+                    "type": "integer"
+                },
+                "kcal": {
+                    "type": "integer"
+                },
+                "pct": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.PlanMacros": {
+            "type": "object",
+            "properties": {
+                "carbs": {
+                    "$ref": "#/definitions/model.PlanMacro"
+                },
+                "fat": {
+                    "$ref": "#/definitions/model.PlanMacro"
+                },
+                "protein": {
+                    "$ref": "#/definitions/model.PlanMacro"
+                }
+            }
+        },
+        "model.PlanMeal": {
+            "type": "object",
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PlanMealItem"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "provided": {
+                    "$ref": "#/definitions/model.PlanProvided"
+                },
+                "slot": {
+                    "type": "integer"
+                },
+                "target": {
+                    "$ref": "#/definitions/model.PlanDayMacros"
+                }
+            }
+        },
+        "model.PlanMealItem": {
+            "type": "object",
+            "properties": {
+                "amount": {
+                    "type": "number"
+                },
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "fdc_id": {
+                    "type": "integer"
+                },
+                "food": {
+                    "type": "string"
+                },
+                "grams": {
+                    "type": "number"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "protein_g": {
+                    "type": "number"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "unit": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.PlanMealTemplate": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "integer"
+                },
+                "day_type": {
+                    "type": "string"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "integer"
+                },
+                "meals": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PlanMeal"
+                    }
+                },
+                "protein_g": {
+                    "type": "integer"
+                },
+                "provided": {
+                    "$ref": "#/definitions/model.PlanProvided"
+                }
+            }
+        },
         "model.PlanOverride": {
             "type": "object",
             "required": [
@@ -6766,6 +7462,23 @@
                 },
                 "template_id": {
                     "type": "string"
+                }
+            }
+        },
+        "model.PlanProvided": {
+            "type": "object",
+            "properties": {
+                "carbs_g": {
+                    "type": "number"
+                },
+                "energy_kcal": {
+                    "type": "integer"
+                },
+                "fat_g": {
+                    "type": "number"
+                },
+                "protein_g": {
+                    "type": "number"
                 }
             }
         },
@@ -7203,6 +7916,80 @@
                 }
             }
         },
+        "model.SaveNutritionProfileRequest": {
+            "type": "object",
+            "properties": {
+                "activity_level": {
+                    "type": "string"
+                },
+                "age_years": {
+                    "type": "integer"
+                },
+                "calorie_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "carb_cycling": {
+                    "type": "boolean"
+                },
+                "cardio_days": {
+                    "type": "integer"
+                },
+                "exclusions": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "fat_g_per_lb": {
+                    "type": "number"
+                },
+                "goal": {
+                    "type": "string"
+                },
+                "height": {
+                    "type": "number"
+                },
+                "meal_choices": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.MealChoice"
+                    }
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "preferred_carbs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "preferred_proteins": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "protein_g_per_lb": {
+                    "type": "number"
+                },
+                "sex": {
+                    "type": "string"
+                },
+                "strength_days": {
+                    "type": "integer"
+                },
+                "unit_system": {
+                    "type": "string"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
         "model.SaveNutritionTargetRequest": {
             "type": "object",
             "properties": {
@@ -7336,6 +8123,56 @@
                     "items": {
                         "$ref": "#/definitions/model.SavedMeal"
                     }
+                }
+            }
+        },
+        "model.SavedNutritionPlan": {
+            "type": "object",
+            "properties": {
+                "activity": {
+                    "$ref": "#/definitions/model.PlanActivity"
+                },
+                "bmr_kcal": {
+                    "type": "integer"
+                },
+                "calorie_adjustment_kcal": {
+                    "type": "integer"
+                },
+                "carb_cycling": {
+                    "$ref": "#/definitions/model.PlanCarbCycling"
+                },
+                "created_at": {
+                    "type": "string"
+                },
+                "input": {
+                    "$ref": "#/definitions/model.CalculatorInput"
+                },
+                "macros": {
+                    "$ref": "#/definitions/model.PlanMacros"
+                },
+                "meal_templates": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.PlanMealTemplate"
+                    }
+                },
+                "notices": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "target_kcal": {
+                    "type": "integer"
+                },
+                "tdee_kcal": {
+                    "type": "integer"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },

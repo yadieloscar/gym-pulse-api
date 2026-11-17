@@ -155,6 +155,22 @@ type ExportNutrition struct {
 	FoodEntries []ExportFoodEntry       `json:"food_entries"`
 	OwnFoods    []ExportOwnFood         `json:"own_foods"`
 	SavedMeals  []ExportSavedMeal       `json:"saved_meals"`
+	// CalculatorProfile is the saved macro calculator plan, null when the
+	// athlete has not saved one.
+	CalculatorProfile *ExportCalculatorProfile `json:"calculator_profile"`
+}
+
+// ExportCalculatorProfile is the athlete's saved macro calculator input and
+// the targets computed when they saved it.
+type ExportCalculatorProfile struct {
+	CalculatorInput
+	BMRKcal    int       `json:"bmr_kcal"`
+	TDEEKcal   int       `json:"tdee_kcal"`
+	TargetKcal int       `json:"target_kcal"`
+	ProteinG   int       `json:"protein_g"`
+	CarbsG     int       `json:"carbs_g"`
+	FatG       int       `json:"fat_g"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // ExportNutritionDay is one day's totals.

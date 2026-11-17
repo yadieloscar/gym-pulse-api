@@ -1357,6 +1357,103 @@ else
   bad "one active program acceptance failed" "$(echo "$oap_out" | tail -3 | head -c 600)"
 fi
 
+# ---------- 13m. macro calculator (contract 1.11.0) ----------
+step "13m. Macro calculator (contract 1.11.0): options → calculate (stores nothing) → cycling keeps the week → exclusions and a swap → save 201 → replay → stale 409 → read → export"
+mc_out=$(API="$API" TOKEN="$TOKEN" python3 - <<'PY' 2>&1
+import json, os, sys, urllib.request, urllib.error, uuid
+
+API, TOKEN = os.environ["API"], os.environ["TOKEN"]
+
+def call(method, path, body=None, key=None):
+    headers = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+    if key:
+        headers["Idempotency-Key"] = key
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(API + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request) as response:
+            raw = response.read()
+            return response.status, (json.loads(raw) if raw else None)
+    except urllib.error.HTTPError as error:
+        raw = error.read()
+        return error.code, (json.loads(raw) if raw else None)
+
+def check(condition, message, evidence=None):
+    if not condition:
+        print("FAIL: " + message + " :: " + json.dumps(evidence)[:400])
+        sys.exit(1)
+
+run = uuid.uuid4().hex[:8]
+base = {"unit_system": "imperial", "weight": 180, "height": 70, "age_years": 30, "sex": "male",
+        "strength_days": 4, "cardio_days": 1, "goal": "maintenance"}
+
+status, options = call("GET", "/api/v1/nutrition/calculator/options")
+check(status == 200 and len(options["goals"]) == 4 and len(options["activity_levels"]) == 3 and len(options["meals"]) == 4, "options", options)
+check(all(f["source"] == "usda" and f["fdc_id"] > 0 for f in options["foods"]) and options["activity_levels"][-1]["max_sessions"] is None, "options foods", options["foods"][:2])
+
+status, missing = call("GET", "/api/v1/nutrition/plan")
+check(status == 404 and missing["code"] == "NOT_FOUND", "no plan yet", missing)
+
+status, plan = call("POST", "/api/v1/nutrition/calculate", base)
+check(status == 200 and plan["bmr_kcal"] == 1783 and plan["tdee_kcal"] == 2763 and plan["target_kcal"] == 2763, "worked example energy", plan)
+macros = plan["macros"]
+check((macros["protein"]["g"], macros["carbs"]["g"], macros["fat"]["g"]) == (153, 405, 59) and sum(m["pct"] for m in macros.values()) == 100, "worked example macros", macros)
+check(plan["activity"] == {"suggested_level": "moderate", "level": "moderate", "multiplier": 1.55} and plan["notices"] == [] and plan["carb_cycling"] is None, "activity and notices", plan["activity"])
+meals = plan["meal_templates"][0]["meals"]
+check(len(plan["meal_templates"]) == 1 and [m["name"] for m in meals] == ["Breakfast", "Lunch", "Pre/Post-Workout Fuel", "Dinner"], "four meals", [m["name"] for m in meals])
+check(sum(m["target"]["protein_g"] for m in meals) == 153 and sum(m["target"]["carbs_g"] for m in meals) == 405 and sum(m["target"]["fat_g"] for m in meals) == 59, "meal targets sum to the day", [m["target"] for m in meals])
+check(meals[2]["target"]["carbs_g"] == max(m["target"]["carbs_g"] for m in meals), "meal 3 carries the most carbohydrate", [m["target"] for m in meals])
+status, still_missing = call("GET", "/api/v1/nutrition/plan")
+check(status == 404, "calculate stores nothing", still_missing)
+
+status, cycled = call("POST", "/api/v1/nutrition/calculate", dict(base, carb_cycling=True, goal="fat_loss"))
+cyc = cycled["carb_cycling"]
+check(status == 200 and cyc["training_days"] == 5 and cyc["rest_days"] == 2, "cycling days", cyc)
+check(5 * cyc["training"]["carbs_g"] + 2 * cyc["rest"]["carbs_g"] == 7 * cycled["macros"]["carbs"]["g"], "cycled week keeps the carbohydrate total", cyc)
+check(cyc["training"]["protein_g"] == cyc["rest"]["protein_g"] == cycled["macros"]["protein"]["g"] and cyc["training"]["fat_g"] == cyc["rest"]["fat_g"], "cycling leaves protein and fat alone", cyc)
+check([t["day_type"] for t in cycled["meal_templates"]] == ["training", "rest"] and cycled["calorie_adjustment_kcal"] == -400, "training and rest templates", cycled["calorie_adjustment_kcal"])
+
+tags = {f["id"]: f["tags"] for f in options["foods"]}
+status, filtered = call("POST", "/api/v1/nutrition/calculate", dict(base, exclusions=["dairy", "nuts", "rice"], preferred_carbs=["potatoes", "oats", "banana"], meal_choices=[{"slot": 2, "carb": "flour_tortillas"}]))
+served = [i["food"] for t in filtered["meal_templates"] for m in t["meals"] for i in m["items"]]
+check(status == 200 and not any(set(tags[f]) & {"dairy", "nuts", "rice"} for f in served), "exclusions never served", served)
+lunch = filtered["meal_templates"][0]["meals"][1]
+check("flour_tortillas" in [i["food"] for i in lunch["items"]] and "potatoes" not in [i["food"] for i in lunch["items"]], "swap applied to lunch only", lunch["items"])
+
+for field, bad in [("age_years", dict(base, age_years=17)), ("calorie_adjustment_kcal", dict(base, calorie_adjustment_kcal=-100)),
+                   ("meal_choices", dict(base, exclusions=["rice"], meal_choices=[{"slot": 2, "carb": "white_rice"}])), ("unit_system", dict(base, unit_system="stone"))]:
+    status, error = call("POST", "/api/v1/nutrition/calculate", bad)
+    check(status == 422 and error["code"] == "VALIDATION_ERROR" and error["details"]["field"] == field, "422 on " + field, error)
+
+key = "smoke-mc-" + run
+save = dict(base, carb_cycling=True, exclusions=["dairy"], expected_revision=0, operation_key=key)
+status, saved = call("PUT", "/api/v1/nutrition/profile", save, key)
+check(status == 201 and saved["revision"] == 1 and saved["target_kcal"] == 2763 and saved["input"]["exclusions"] == ["dairy"], "save 201", saved)
+status, replay = call("PUT", "/api/v1/nutrition/profile", save, key)
+check(status == 201 and replay == saved, "verbatim retry replays", replay)
+status, changed = call("PUT", "/api/v1/nutrition/profile", dict(save, weight=181), key)
+check(status == 409 and changed["code"] == "IDEMPOTENCY_CONFLICT", "changed payload under the same key", changed)
+status, header = call("PUT", "/api/v1/nutrition/profile", dict(save, operation_key=key + "-x"), "other")
+check(status == 422 and header["details"]["field"] == "Idempotency-Key", "header mismatch", header)
+status, stale = call("PUT", "/api/v1/nutrition/profile", dict(save, operation_key=key + "-stale"), key + "-stale")
+check(status == 409 and stale["code"] == "REVISION_CONFLICT" and stale["resource"]["revision"] == 1 and stale["resource"]["target_kcal"] == 2763, "stale revision carries the stored plan", stale)
+status, replaced = call("PUT", "/api/v1/nutrition/profile", dict(save, goal="muscle_gain", expected_revision=1, operation_key=key + "-b"), key + "-b")
+check(status == 200 and replaced["revision"] == 2 and replaced["target_kcal"] == 3063, "replace 200", replaced)
+status, read = call("GET", "/api/v1/nutrition/plan")
+check(status == 200 and read == replaced, "read returns the saved plan", read)
+
+status, export = call("GET", "/api/v1/export")
+profile = export["nutrition"]["calculator_profile"]
+check(status == 200 and export["schema_version"] == 1 and profile["goal"] == "muscle_gain" and profile["target_kcal"] == 3063 and profile["weight"] == 180, "export carries the saved plan", profile)
+print("OK")
+PY
+)
+if [ "$(echo "$mc_out" | tail -1)" = "OK" ]; then
+  ok "macro calculator: options listed USDA foods and ranges; the worked example matched by hand; calculating stored nothing; the cycled week kept its carbohydrate total with protein and fat unchanged; exclusions were never served and a swap changed one meal; four invalid inputs named their field; save created, replayed, refused a changed payload, a header mismatch, and a stale revision with the stored plan; replace advanced the revision; read and export returned the saved plan"
+else
+  bad "macro calculator acceptance failed" "$(echo "$mc_out" | tail -3 | head -c 600)"
+fi
+
 step "13b. A second user cannot read, change, or delete the first user's resources"
 # Requires OTHER_USER_ID in auth.users. CI and smoke-toggle.sh seed it; a bare
 # local run without the row skips this step with a notice, CI never does.

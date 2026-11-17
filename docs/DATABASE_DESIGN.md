@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **43 tables and 450 supported columns**. For the Supabase-managed
+The current inventory contains **44 tables and 477 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -1342,6 +1342,49 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 040.
 
+### Table: `public.nutrition_profiles`
+
+**Purpose**: The athlete's saved macro calculator plan: the numbers they entered and the targets the service computed when they saved. One row per athlete. Meal templates are never stored; they are rebuilt from the stored targets and the service's fixed USDA food list on every read.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `user_id` | `uuid` | not null | Authenticated owner; primary key | Account |
+| `unit_system` | `text` | not null | `imperial` or `metric`: the units `weight` and `height` were entered in | Operational |
+| `weight` | `numeric(5,1)` | not null | Body weight in pounds or kilograms | Health |
+| `height` | `numeric(4,1)` | not null | Height in total inches or centimetres | Health |
+| `age_years` | `smallint` | not null | Age when saved, 18–100 | Health |
+| `sex` | `text` | not null | `male` or `female`, for the resting-energy equation | Health |
+| `strength_days` | `smallint` | not null | Weekly strength training days, 0–7 | Health |
+| `cardio_days` | `smallint` | not null | Weekly cardio or sport days, 0–7 | Health |
+| `activity_level` | `text` | nullable | Athlete's override (`light`, `moderate`, `very`); null follows the suggestion | Health |
+| `goal` | `text` | not null | `fat_loss`, `recomp`, `maintenance`, or `muscle_gain` | Health |
+| `calorie_adjustment_kcal` | `integer` | not null | Chosen adjustment to maintenance energy | Health |
+| `protein_g_per_lb` | `numeric(3,2)` | not null | Chosen protein rate, 0.70–1.10 | Health |
+| `fat_g_per_lb` | `numeric(3,2)` | not null | Chosen fat rate, 0.25–0.45 | Health |
+| `carb_cycling` | `boolean` | not null; `false` | Whether a training/rest carbohydrate split is shown | Health |
+| `preferred_proteins` | `text[]` | not null; `{}` | Preferred protein food ids from the service's fixed list | Health |
+| `preferred_carbs` | `text[]` | not null; `{}` | Preferred carbohydrate food ids | Health |
+| `exclusions` | `text[]` | not null; `{}` | Exclusion tags (for example `dairy`) | Health |
+| `meal_choices` | `jsonb` | not null; `[]` | Up to four `{slot, protein?, carb?, fat?}` swaps | Health |
+| `bmr_kcal` | `integer` | not null | Resting energy computed at save | Health |
+| `tdee_kcal` | `integer` | not null | Maintenance energy computed at save | Health |
+| `target_kcal` | `integer` | not null | Target energy computed at save | Health |
+| `protein_g` | `integer` | not null | Protein target computed at save | Health |
+| `carbs_g` | `integer` | not null | Carbohydrate target computed at save | Health |
+| `fat_g` | `integer` | not null | Fat target computed at save | Health |
+| `revision` | `bigint` | not null; `1` | Optimistic revision; advances on every replace | Operational |
+| `created_at` | `timestamptz` | not null; `now()` | Record instant | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last save instant | Health |
+
+**Current constraints and indexes**
+
+- PK `user_id`; FK `user_id → auth.users(id) ON DELETE CASCADE`. No secondary index: every read and write is by owner.
+- Checks: closed sets for `unit_system`, `sex`, `activity_level`, `goal`; ranges for `weight` (30–660), `height` (48–244), `age_years`, both day counts, the adjustment (−500 to 400), and both rates; each list at most 20 entries; `meal_choices` is a JSON array of at most 4; energy values positive, gram values non-negative; `revision > 0`. The per-unit-system and per-goal ranges are enforced by the service.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Replaced in place under the `nutrition:` lock with an expected revision and the idempotency ledger; never written by a calculation, only by an athlete's save. Removed with the account. RLS, Data API revocation, and runtime-role provisioning through `gym_pulse_private.secure_table`.
+
+**Migration source**: 046.
+
 ### Table: `public.criteria_training_blocks`
 
 **Purpose**: Owner-scoped athlete-authored block, optionally associated with an owned program without changing its schedule.
@@ -1494,7 +1537,7 @@ The count is derived from the final state after migration 041, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals`, `nutrition_profiles` | Cascade | Removes all application-owned data |
 | `food_catalog` | `food_entries`, `saved_meal_items` | Restrict | Catalog rows are never deleted; entries and meal items keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `user_foods` | `saved_meal_items` | No action, deferred | A held own food cannot be deleted on its own; the identity cascade removes meal and food together |
@@ -1579,6 +1622,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Knee Kit days | `knee_kit_days`, idempotency | Owner range list oldest first and whole-day replacement; only the data export also reads it | Authoritative revisioned per-day fact; never counted, no guidance computed |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
 | Food logging | `food_catalog`, `user_foods`, `food_entries`, `food_barcode_misses`, `nutrition_days` | Search and barcode lookups, recents, day entries with the day as their sum | Shared published facts; owner-scoped entries with snapshot values; same-transaction rollup |
+| Macro calculator | `nutrition_profiles`, idempotency | Owner read by primary key; the data export also reads it | Athlete-saved input with the targets computed at save; templates rebuilt on read, never stored |
 | Saved meals | `saved_meals`, `saved_meal_items`, idempotency; logging writes `food_entries` and `nutrition_days` | Owner list with current food facts; the data export also reads it | Athlete-authored revisioned list; values never stored; logged entries carry no link back |
 | Criteria training blocks | Blocks, stages, exposures, transitions, idempotency | Authoritative progress and pending response counts | Athlete-authored record; no automatic plan mutation |
 | Account deletion | All user-owned roots, avatar storage, then auth provider | None | Retryable destructive workflow |
@@ -2337,6 +2381,7 @@ Report one of:
 | 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 | 042 | Settings palette gains `irisViolet`; column default becomes `voltLime`; no stored row changes |
 | 045 | `program_workouts.weekdays`, `programs.scheduled_through`, `scheduled_workouts.slot_date`, a weekday check, a partial unique slot index, and a planned-by-program index; no backfill and no row rewrite |
+| 046 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
 
 ## 19. Decision summary
 
