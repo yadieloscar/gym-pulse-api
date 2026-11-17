@@ -58,7 +58,7 @@ four routes, export and account-deletion additions, contract and schema document
   no athlete data. Biometrics are never logged.
 - [x] **Idempotent evolution**: `PUT /nutrition/profile` uses `Idempotency-Key` = `operation_key`,
   ledger replay, and `expected_revision` (0 when none) with `REVISION_CONFLICT`. Forward migration
-  046 creates one table; down drops it; no existing data is touched.
+  047 creates one table; down drops it; no existing data is touched.
 - [x] **Executable evidence**: tests named in `tasks.md` precede each implementation task; service
   coverage stays ≥ 90%; smoke step added.
 - [x] **Simple Go boundaries**: handler → service → DAO; the arithmetic lives in a dependency-free
@@ -110,7 +110,7 @@ fast-digesting. A `meal_choices` entry overrides selection for its role.
 ### Compatibility and rollout
 
 Additive. Started on `feat/031-one-active-program` (API #67) because migrations must be contiguous
-and #67 held 045; #67 merged on 2026-11-16 and main is merged in, so this is 046 on main. Older apps never call the routes. The app probes
+and #67 held 045; #67 merged on 2026-11-16 and main is merged in, so this is 047 on main (API #69 took 046 on 2026-11-17 and this migration was renumbered, no SQL change). Older apps never call the routes. The app probes
 the options route and hides the calculator on `404`.
 
 ## Complexity Tracking

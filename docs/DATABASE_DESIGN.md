@@ -1383,7 +1383,7 @@ policies and existing Data API roles have table privileges revoked.
 
 **Ownership/lifecycle**: Private to the authenticated owner. Replaced in place under the `nutrition:` lock with an expected revision and the idempotency ledger; never written by a calculation, only by an athlete's save. Removed with the account. RLS, Data API revocation, and runtime-role provisioning through `gym_pulse_private.secure_table`.
 
-**Migration source**: 046.
+**Migration source**: 047.
 
 ### Table: `public.criteria_training_blocks`
 
@@ -2381,7 +2381,8 @@ Report one of:
 | 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 | 042 | Settings palette gains `irisViolet`; column default becomes `voltLime`; no stored row changes |
 | 045 | `program_workouts.weekdays`, `programs.scheduled_through`, `scheduled_workouts.slot_date`, a weekday check, a partial unique slot index, and a planned-by-program index; no backfill and no row rewrite |
-| 046 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
+| 046 | Data repair, no schema change: removes untouched future `scheduled_workouts` rows of a program whose `program_workout_id` is null (their workout was deleted under the older contract) and sets the active program's `scheduled_through` to the athlete's today, so the next read refills from tomorrow; past, started, and today's rows stay |
+| 047 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
 
 ## 19. Decision summary
 

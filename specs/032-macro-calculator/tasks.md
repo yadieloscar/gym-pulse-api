@@ -6,7 +6,7 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 
 ## Phase 1: Setup
 
-- [X] T001 Fetch origin, confirm 046 is the next migration after `feat/031-one-active-program`, record a green `go test ./...` baseline
+- [X] T001 (renumbered 2026-11-17: API #69 merged first and took 046, so this migration is 047; no SQL change, gates re-run) Fetch origin, confirm 046 is the next migration after `feat/031-one-active-program`, record a green `go test ./...` baseline
 
 ## Phase 2: Calculation package (US1, US2)
 
@@ -31,7 +31,7 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 
 ## Phase 5: Save and read (US5)
 
-- [X] T014 [US5] `migrations/046_create_nutrition_profiles.up.sql` and `.down.sql`; `docs/DATABASE_DESIGN.md`; `./scripts/validate-database-design.sh`
+- [X] T014 [US5] `migrations/047_create_nutrition_profiles.up.sql` and `.down.sql`; `docs/DATABASE_DESIGN.md`; `./scripts/validate-database-design.sh`
 - [X] T015 [US5] Service and handler tests for save (201/200, stale revision, key mismatch, replay) and read (200, 404)
 - [X] T016 [US5] Implement `internal/dao/nutrition_profile_dao.go` and the service and handler methods (FR-011, FR-012)
 - [X] T017 [US5] Integration test `internal/dao/nutrition_profile_integration_test.go`: create, replace, stale revision, replay, idempotency conflict, cascade on identity deletion
@@ -52,7 +52,7 @@ Tests are required by the constitution (Principle IV) and by SC-001..SC-005.
 | `golangci-lint run` | Passed, 0 issues |
 | `./scripts/validate-database-design.sh` | Passed: 44 tables, 477 columns |
 | `swag init` | Regenerated; `docs/` committed |
-| Integration `-p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate` | Passed against an isolated migrated database (version 46, runtime role present) |
+| Integration `-p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate` | Passed against an isolated migrated database (version 47 after the renumbering, runtime role present) |
 | `scripts/smoke.sh` | 41 passed, 0 failed against an image built from this branch (isolated stack, API as `gym_pulse_api`, migrate job first); step 13m is new |
 | `scripts/validate-supabase-security.sh` | Passed on the same database |
 | `./scripts/smoke-toggle.sh` | Not run: it tests the shared dev stack's image, not this branch. The same `smoke.sh` ran against this branch's image instead |

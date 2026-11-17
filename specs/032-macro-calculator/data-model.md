@@ -1,6 +1,6 @@
 # Data Model: Macro calculator and meal template
 
-## Table `public.nutrition_profiles` (migration 046)
+## Table `public.nutrition_profiles` (migration 047)
 
 One row per athlete: the calculator inputs they saved and the targets computed at that save.
 
