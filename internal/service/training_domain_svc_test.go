@@ -75,7 +75,7 @@ func TestMaterializeSnapshotsAndRequiredCompletionRules(t *testing.T) {
 			}},
 		}},
 	}
-	workouts, err := materializeProgram(program, "2026-07-20", "2026-07-26")
+	workouts, _, err := layoutSessions(program, []int{1}, "2026-07-20", "2026-07-26")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,6 +111,9 @@ type adoptionMutationStub struct {
 	records  []model.IdempotencyRecord
 	now      time.Time
 	calls    int
+	// deleted records DeleteProgram calls; deleteErr is what they return.
+	deleted   []uuid.UUID
+	deleteErr error
 }
 
 func (s *adoptionMutationStub) AdoptLegacy(_ context.Context, _ uuid.UUID, now time.Time, record model.IdempotencyRecord) (*model.AdoptLegacyProgramResponse, bool, error) {
@@ -126,17 +129,22 @@ func (s *adoptionMutationStub) PutTrainingProfile(_ context.Context, _ uuid.UUID
 	return profile, false, nil
 }
 
-func (s *adoptionMutationStub) CreateProgram(_ context.Context, _ uuid.UUID, program *model.Program, record model.IdempotencyRecord) (*model.Program, bool, error) {
+func (s *adoptionMutationStub) CreateProgram(_ context.Context, _ uuid.UUID, program *model.Program, _ time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	s.records = append(s.records, record)
 	program.ID = uuid.New()
 	program.Revision = 1
 	return program, false, nil
 }
 
-func (s *adoptionMutationStub) ReplaceProgram(_ context.Context, _ uuid.UUID, program *model.Program, expected int64, record model.IdempotencyRecord) (*model.Program, bool, error) {
+func (s *adoptionMutationStub) ReplaceProgram(_ context.Context, _ uuid.UUID, program *model.Program, expected int64, _ time.Time, record model.IdempotencyRecord) (*model.Program, bool, error) {
 	s.records = append(s.records, record)
 	program.Revision = expected + 1
 	return program, false, nil
+}
+
+func (s *adoptionMutationStub) DeleteProgram(_ context.Context, _, programID uuid.UUID, _ time.Time) error {
+	s.deleted = append(s.deleted, programID)
+	return s.deleteErr
 }
 
 func (*adoptionMutationStub) ReplaceScheduledWorkout(context.Context, uuid.UUID, *model.ScheduledWorkout, int64, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
@@ -370,12 +378,15 @@ func TestMaterializeSportUnitSnapshotsTargetWithoutSets(t *testing.T) {
 			{ID: uuid.New(), Kind: model.UnitKindSport, Name: "Long ride", SequencePosition: 2, Sport: &model.SportTarget{SportID: "cycling", SportName: "Cycling", TargetDurationMinutes: 90, TargetDistanceMeters: &distance, Notes: &note}},
 		},
 	}
-	workouts, err := model.MaterializeProgramForWeekdays(program, []int{1, 3}, "2026-10-26", "2026-11-01")
+	workouts, placement, err := layoutSessions(program, []int{1, 3}, "2026-10-26", "2026-11-01")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(workouts) != 2 {
 		t.Fatalf("want 2 scheduled units, got %d", len(workouts))
+	}
+	if len(placement) != 2 {
+		t.Fatalf("an unplaced program must report its placement, got %d units", len(placement))
 	}
 	gym, ride := workouts[0], workouts[1]
 	if gym.Kind != model.UnitKindExercises || gym.Sport != nil || len(gym.RequiredSets) != 2 {

@@ -14,7 +14,7 @@
 go test ./...
 GYMPULSE_TEST_DATABASE_URL='postgres://gympulse:gympulse@127.0.0.1:15432/gympulse?sslmode=disable' \
 GYMPULSE_TEST_RUNTIME_DATABASE_URL='postgres://gym_pulse_api:gym_pulse_api@127.0.0.1:15432/gympulse?sslmode=disable' \
-  go test -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
+  go test -p 1 -race -tags=integration ./internal/dao ./internal/dbmigrate -count=1 -timeout=5m
 ./scripts/validate-database-design.sh
 ./scripts/smoke-toggle.sh
 govulncheck ./...
@@ -35,5 +35,5 @@ govulncheck ./...
 | Q7 | Move a planned session to the next day; replay the request; move a completed session; move to yesterday. | Date and revision change once; replay returns the same body; 409 `CONFLICT`; 422 with `details.field = "date"`. |
 | Q8 | On active Q: move one Legs session, then `PUT` with Push on `[2]`, one more set on Pull, a new unit on `[7]`, and volleyball removed, sending unit IDs. | Future Push on Tuesdays; future Pull snapshots carry the new set; the new unit appears; volleyball sessions gone; the moved Legs session keeps its date; today's sessions unchanged. |
 | Q9 | `DELETE /programs/{id}` for inactive P that has finished sessions; then for active Q. | 204, finished sessions keep their names; 409 `CONFLICT`. |
-| Q10 | Use another athlete's program, unit, and session IDs in every new field and route. | Shared 404 or 422; nothing changes. |
+| Q10 | Use another athlete's program, unit, and session IDs in every new field and route. | Shared 404 for programs and sessions; a foreign unit ID becomes a new unit in the caller's own program; the owner's data is unchanged. |
 | Q11 | Send pre-feature bodies: create, replace without unit IDs then regenerate, materialize twice, preview and apply with `proposed_profile` and `to`. | All succeed; no duplicate sessions; create then "transition with `program_id`" gives the same first week as before this feature. |

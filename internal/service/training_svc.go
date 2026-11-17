@@ -33,6 +33,7 @@ type ProgramService interface {
 	CloneStarter(ctx context.Context, userID uuid.UUID, req model.CloneStarterProgramRequest) (*model.Program, error)
 	AdoptLegacy(ctx context.Context, userID uuid.UUID, req model.AdoptLegacyProgramRequest) (*model.AdoptLegacyProgramResponse, error)
 	Update(ctx context.Context, userID, programID uuid.UUID, req model.UpdateProgramRequest) (*model.Program, error)
+	Delete(ctx context.Context, userID, programID uuid.UUID) error
 }
 
 type trainingProfileService struct {
@@ -201,16 +202,26 @@ func (s *programService) Create(ctx context.Context, userID uuid.UUID, req model
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
 		return nil, err
 	}
+	if err := model.ValidateUnitWeekdays(req.Workouts); err != nil {
+		return nil, err
+	}
 	if err := validateRoadmap(req.Roadmap); err != nil {
 		return nil, err
 	}
-	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: true, Workouts: req.Workouts}
+	if req.Roadmap == nil {
+		// The roadmap is optional on the wire and NOT NULL in storage.
+		req.Roadmap = map[string]any{}
+	}
+	// Saving starts the program only for clients that do not say otherwise;
+	// active false saves it beside the program the athlete follows.
+	active := req.Active == nil || *req.Active
+	p := &model.Program{Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: active, Workouts: req.Workouts}
 	if s.mutations != nil {
 		hash, err := hashPayload(req)
 		if err != nil {
 			return nil, err
 		}
-		result, _, err := s.mutations.CreateProgram(ctx, userID, p, model.IdempotencyRecord{
+		result, _, err := s.mutations.CreateProgram(ctx, userID, p, s.now(), model.IdempotencyRecord{
 			Scope: "programs/create", OperationKey: req.OperationKey, RequestHash: hash,
 			ResponseStatus: 201, ResourceType: "program",
 		})
@@ -302,8 +313,15 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 	if err := validateProgramShape(req.PrimaryGoal, req.Workouts); err != nil {
 		return nil, err
 	}
+	if err := model.ValidateUnitWeekdays(req.Workouts); err != nil {
+		return nil, err
+	}
 	if err := validateRoadmap(req.Roadmap); err != nil {
 		return nil, err
+	}
+	if req.Roadmap == nil {
+		// The roadmap is optional on the wire and NOT NULL in storage.
+		req.Roadmap = map[string]any{}
 	}
 	p := &model.Program{ID: programID, Name: req.Name, PrimaryGoal: req.PrimaryGoal, Roadmap: req.Roadmap, Active: req.Active, Workouts: req.Workouts}
 	if s.mutations != nil {
@@ -314,7 +332,7 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		if err != nil {
 			return nil, err
 		}
-		result, _, err := s.mutations.ReplaceProgram(ctx, userID, p, req.ExpectedRevision, model.IdempotencyRecord{
+		result, _, err := s.mutations.ReplaceProgram(ctx, userID, p, req.ExpectedRevision, s.now(), model.IdempotencyRecord{
 			Scope: "programs/update", OperationKey: req.OperationKey, RequestHash: hash,
 			ResponseStatus: 200, ResourceType: "program", ResourceID: &programID,
 		})
@@ -324,6 +342,15 @@ func (s *programService) Update(ctx context.Context, userID, programID uuid.UUID
 		return nil, err
 	}
 	return p, nil
+}
+
+// Delete removes a saved program the athlete is not following, together with
+// its planned unstarted sessions. Finished workouts stay in history.
+func (s *programService) Delete(ctx context.Context, userID, programID uuid.UUID) error {
+	if s.mutations == nil {
+		return errTrainingMutationsUnavailable
+	}
+	return s.mutations.DeleteProgram(ctx, userID, programID, s.now())
 }
 
 func cloneStarterWorkouts(src []model.ProgramWorkout) []model.ProgramWorkout {

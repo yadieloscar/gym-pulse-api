@@ -182,7 +182,7 @@ func TestReleaseResolutionSurvivesScheduleReplacement(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, _, err := f.schedules.RegenerateIdempotent(f.ctx, f.userID, f.program.ID, program.Revision, "2026-10-01", "2026-10-31",
-		[]model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-20")}, &model.RegenerateScheduleResponse{}, releaseRecord("schedule/regenerate")); err != nil {
+		nil, []model.ScheduledWorkout{releaseWorkout(f.program.ID, "2026-10-20")}, &model.RegenerateScheduleResponse{}, releaseRecord("schedule/regenerate")); err != nil {
 		t.Fatal(err)
 	}
 	kept := f.load(t, missed.ID)

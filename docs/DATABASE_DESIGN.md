@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **43 tables and 447 supported columns**. For the Supabase-managed
+The current inventory contains **43 tables and 450 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -638,6 +638,7 @@ versions remain addressable for copy provenance.
 | `revision` | `bigint` | not null; `1` | Optimistic concurrency revision | Operational |
 | `created_at` | `timestamptz` | not null; `now()` | Creation instant | Private |
 | `updated_at` | `timestamptz` | not null; `now()` | Last replacement/activation | Private |
+| `scheduled_through` | `date` | nullable | Last date the schedule fill covered; only moves forward | Operational |
 
 **Current constraints and indexes**
 
@@ -649,10 +650,13 @@ versions remain addressable for copy provenance.
 - **Gap**: `starter_program_id` and `starter_version` may be independently null/non-null.
 
 **Mutation model**: Create/replace takes a per-user program advisory lock, deactivates the prior
-active program when necessary, changes the revision, and replaces all child workouts/exercises.
+active program when necessary, and changes the revision. Replace updates the units the request
+names by `id` in place, inserts the rest, and deletes units the request omits; when the program is
+active it also updates that program's planned unstarted sessions in the same transaction.
 
 **Migration sources**: `012_create_training_domain`; one-active invariant added by
-`014_guided_experience_contracts`.
+`014_guided_experience_contracts`; `scheduled_through` added by
+`045_program_weekdays_and_rolling_schedule`.
 
 ### Table: `public.program_workouts`
 
@@ -671,6 +675,7 @@ active program when necessary, changes the revision, and replaces all child work
 | `target_duration_minutes` | `integer` | nullable | Planned duration of a sport unit | Health |
 | `target_distance_meters` | `integer` | nullable | Planned distance of a distance-sport unit | Health |
 | `sport_notes` | `text` | nullable | Planned note of a sport unit | Health |
+| `weekdays` | `smallint[]` | nullable | ISO weekdays the unit sits on; null while the unit is unplaced | Health |
 
 **Current constraints and indexes**
 
@@ -680,8 +685,10 @@ active program when necessary, changes the revision, and replaces all child work
 - Weekday 1–7 when present; sequence position `> 0`.
 - `kind IN ('exercises', 'sport')`; `program_workouts_sport_kind_check` requires `sport_id`, `sport_name`, and `target_duration_minutes` exactly when `kind = 'sport'` and allows `target_distance_meters` and `sport_notes` only then. Sport id is a 1–64 lowercase slug, name 1–80, duration 1–1440, distance 1–1,000,000, notes 1–2,000.
 - A sport unit has no `program_exercises` rows; an exercises unit has at least one (application-enforced).
+- `program_workouts_weekdays_check`: `weekdays` is null or holds 1–7 values from 1–7. Uniqueness and ascending order of the values, and "all units placed or none", are application-enforced.
 
-**Migration source**: `012_create_training_domain`, `027_add_planned_sport_sessions`.
+**Migration source**: `012_create_training_domain`, `027_add_planned_sport_sessions`,
+`045_program_weekdays_and_rolling_schedule`.
 
 ### Table: `public.program_exercises`
 
@@ -744,6 +751,7 @@ active program when necessary, changes the revision, and replaces all child work
 | `target_duration_minutes` | `integer` | nullable | Planned duration snapshot | Health |
 | `target_distance_meters` | `integer` | nullable | Planned distance snapshot | Health |
 | `sport_notes` | `text` | nullable | Planned note snapshot | Health |
+| `slot_date` | `date` | nullable | Layout date the program fill generated this session for; never updated, including by a move; null on recover copies, off-plan sessions, and rows older than migration 045 | Operational |
 
 **Current constraints and indexes**
 
@@ -753,6 +761,8 @@ active program when necessary, changes the revision, and replaces all child work
 - Status: `planned|in_progress|completed|incomplete|missed`; revision `> 0`. A sport session only ever holds `planned`, `completed`, or `missed` (application-enforced).
 - `kind IN ('exercises', 'sport')`; `scheduled_workouts_sport_kind_check` mirrors the `program_workouts` pair rule. A sport row has no `scheduled_sets`; its completion is the `sport_activities` row whose `scheduled_workout_id` points at it.
 - Named index `idx_scheduled_workouts_user_date(user_id, date)`.
+- Partial unique `uq_scheduled_workouts_unit_slot(program_workout_id, slot_date) WHERE program_workout_id IS NOT NULL AND slot_date IS NOT NULL`: one session per program unit per layout date, so the fill is idempotent and a moved session's slot is never refilled.
+- Partial index `idx_scheduled_workouts_program_planned(program_id, date) WHERE status = 'planned'` for program start, edit, and removal.
 - Resolution: `skipped|recovered`; `scheduled_workouts_resolution_check` limits values and `scheduled_workouts_resolution_pair` requires `resolution` and `resolved_at` to be both null or both set.
 - Migration `020` backfilled `recovered` from `idempotency_records` rows with scope `schedule/recover`, marking the missed source each recovery copied.
 - **Gap**: no DB check ties finalized states to `finalized_at`.
@@ -1606,6 +1616,8 @@ snapshot; `set_logs` is the preferred per-set history.
 | `programs` | `idx_programs_user(user_id)` | User program list/activation |
 | `programs` | `idx_programs_one_active_per_user(user_id)` partial unique | One active program invariant |
 | `scheduled_workouts` | `idx_scheduled_workouts_user_date(user_id, date)` | Date-range schedule and regeneration |
+| `scheduled_workouts` | `uq_scheduled_workouts_unit_slot(program_workout_id, slot_date)` partial | One filled session per program unit per layout date |
+| `scheduled_workouts` | `idx_scheduled_workouts_program_planned(program_id, date)` partial | Replacing or removing a program's planned sessions |
 | `workout_sessions` | `idx_workout_sessions_user_date(user_id, date)` | Date-range session list |
 | `day_participation` | `idx_day_participation_user_date(user_id, date)` | Date-range participation/streak |
 | `sport_activities` | `idx_sport_activities_user_date` | Owner/date/creation/ID history order |
@@ -2324,6 +2336,7 @@ Report one of:
 | 040 | `saved_meals` and `saved_meal_items` (athlete-saved lists of foods; no stored values), unique name and item indexes, RLS and role revocation, runtime-role grants and policies |
 | 041 | Nullable `section` (four fixed day headings) on `food_entries` and `saved_meals`; no default, no backfill, no index |
 | 042 | Settings palette gains `irisViolet`; column default becomes `voltLime`; no stored row changes |
+| 045 | `program_workouts.weekdays`, `programs.scheduled_through`, `scheduled_workouts.slot_date`, a weekday check, a partial unique slot index, and a planned-by-program index; no backfill and no row rewrite |
 
 ## 19. Decision summary
 

@@ -212,6 +212,11 @@ definitions:
     type: object
   model.CreateProgramRequest:
     properties:
+      active:
+        description: |-
+          Active false saves the program without starting it. Omitted means true,
+          which is what clients older than contract 1.10.0 rely on.
+        type: boolean
       name:
         maxLength: 200
         minLength: 1
@@ -1283,6 +1288,20 @@ definitions:
       section:
         $ref: '#/definitions/model.MealSection'
     type: object
+  model.MoveScheduledWorkoutRequest:
+    properties:
+      date:
+        type: string
+      expected_revision:
+        minimum: 1
+        type: integer
+      operation_key:
+        type: string
+    required:
+    - date
+    - expected_revision
+    - operation_key
+    type: object
   model.NutritionDay:
     properties:
       carbs_g:
@@ -1562,6 +1581,10 @@ definitions:
         type: integer
       sport:
         $ref: '#/definitions/model.SportTarget'
+      weekdays:
+        items:
+          type: integer
+        type: array
     type: object
   model.ProposedTrainingProfile:
     properties:
@@ -4260,6 +4283,8 @@ paths:
     put:
       consumes:
       - application/json
+      description: Removes an owned program that is not active, with its planned unstarted
+        sessions. Finished workouts stay in history. The active program returns 409.
       parameters:
       - description: Stable operation key
         in: header
@@ -4272,6 +4297,11 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/model.UpdateProgramRequest'
+      - description: Program ID
+        in: path
+        name: id
+        required: true
+        type: string
       produces:
       - application/json
       responses:
@@ -4279,11 +4309,23 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/model.Program'
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.apiError'
       security:
       - BearerAuth: []
-      summary: Update program
+      - BearerAuth: []
+      summary: Remove a saved program
       tags:
       - goal-training
+      - Programs
   /api/v1/programs/adopt-legacy:
     post:
       consumes:
@@ -4448,18 +4490,40 @@ paths:
       - goal-training
   /api/v1/scheduled-workouts/{id}:
     delete:
-      description: Permanently removes a past or finalized scheduled workout with
-        its performed sets, linked workout sessions, and Apple Health export record,
-        then recomputes that day's participation. A linked sport activity stays in
-        history unlinked. The workout already written to Apple Health is not removed
-        from the device.
+      consumes:
+      - application/json
+      description: |-
+        Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.
+        Moves one planned, unstarted workout or sport session to a date from today through the next eight weeks. Only that session changes; the program's weekdays stay as they are.
       parameters:
       - description: Scheduled workout ID
         in: path
         name: id
         required: true
         type: string
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Must equal operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Move operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.MoveScheduledWorkoutRequest'
+      produces:
+      - application/json
       responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
         "204":
           description: No Content
         "404":
@@ -4467,8 +4531,7 @@ paths:
           schema:
             $ref: '#/definitions/handler.apiError'
         "409":
-          description: CONFLICT for today's or a future unfinished workout; ACTIVE_SESSION_CONFLICT
-            while a linked session is active
+          description: Conflict
           schema:
             $ref: '#/definitions/handler.apiError'
         "422":
@@ -4477,9 +4540,11 @@ paths:
             $ref: '#/definitions/handler.apiError'
       security:
       - BearerAuth: []
-      summary: Delete a past scheduled workout
+      - BearerAuth: []
+      summary: Move a planned scheduled workout to another date
       tags:
       - goal-training
+      - Schedule
     patch:
       consumes:
       - application/json
@@ -5202,6 +5267,53 @@ paths:
       summary: Health check
       tags:
       - health
+  /programs/{id}:
+    delete:
+      consumes:
+      - application/json
+      description: Removes an owned program that is not active, with its planned unstarted
+        sessions. Finished workouts stay in history. The active program returns 409.
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Program replacement
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.UpdateProgramRequest'
+      - description: Program ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.Program'
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      - BearerAuth: []
+      summary: Remove a saved program
+      tags:
+      - goal-training
+      - Programs
   /ready:
     get:
       description: Returns 200 when required dependencies are available, otherwise
@@ -5224,6 +5336,63 @@ paths:
       summary: Readiness check
       tags:
       - health
+  /scheduled-workouts/{id}/move:
+    post:
+      consumes:
+      - application/json
+      description: |-
+        Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.
+        Moves one planned, unstarted workout or sport session to a date from today through the next eight weeks. Only that session changes; the program's weekdays stay as they are.
+      parameters:
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Scheduled workout ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Must equal operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Move operation
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.MoveScheduledWorkoutRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handler.apiError'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            $ref: '#/definitions/handler.apiError'
+      security:
+      - BearerAuth: []
+      - BearerAuth: []
+      summary: Move a planned scheduled workout to another date
+      tags:
+      - goal-training
+      - Schedule
 securityDefinitions:
   BearerAuth:
     description: JWT Bearer token — prefix value with "Bearer "

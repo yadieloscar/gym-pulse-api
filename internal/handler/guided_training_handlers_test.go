@@ -83,6 +83,10 @@ func (guidedScheduleService) Unskip(context.Context, uuid.UUID, uuid.UUID, model
 	return &model.ScheduledWorkout{}, nil
 }
 
+func (guidedScheduleService) Move(_ context.Context, _ uuid.UUID, id uuid.UUID, req model.MoveScheduledWorkoutRequest) (*model.ScheduledWorkout, error) {
+	return &model.ScheduledWorkout{ID: id, Date: req.Date, Status: model.WorkoutStatusPlanned, Revision: req.ExpectedRevision + 1, RequiredSets: []model.ScheduledSet{}, ExtraSets: []model.PerformedSet{}}, nil
+}
+func (guidedProgramService) Delete(context.Context, uuid.UUID, uuid.UUID) error { return nil }
 func (guidedScheduleService) Delete(context.Context, uuid.UUID, uuid.UUID) error {
 	return nil
 }
@@ -203,9 +207,26 @@ func TestGuidedTrainingHandlersSuccessPaths(t *testing.T) {
 		program.Update(w, guidedHandlerRequest(t, http.MethodPut, "/", model.UpdateProgramRequest{}, userID, operationKey, params))
 	})
 
+	assertGuidedStatus(t, http.StatusNoContent, func(w http.ResponseWriter) {
+		program.Delete(w, guidedHandlerRequest(t, http.MethodDelete, "/", nil, userID, "", params))
+	})
+	assertGuidedStatus(t, http.StatusBadRequest, func(w http.ResponseWriter) {
+		program.Delete(w, guidedHandlerRequest(t, http.MethodDelete, "/", nil, userID, "", nil))
+	})
+
 	schedule := NewScheduleHandler(guidedScheduleService{})
 	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
 		schedule.List(w, guidedHandlerRequest(t, http.MethodGet, "/?from=2026-07-20&to=2026-07-26", nil, userID, "", nil))
+	})
+	assertGuidedStatus(t, http.StatusOK, func(w http.ResponseWriter) {
+		schedule.Move(w, guidedHandlerRequest(t, http.MethodPost, "/", model.MoveScheduledWorkoutRequest{Date: "2026-07-21", ExpectedRevision: 1, OperationKey: operationKey}, userID, operationKey, params))
+	})
+	// The Idempotency-Key header must equal the body's operation_key.
+	assertGuidedStatus(t, http.StatusUnprocessableEntity, func(w http.ResponseWriter) {
+		schedule.Move(w, guidedHandlerRequest(t, http.MethodPost, "/", model.MoveScheduledWorkoutRequest{Date: "2026-07-21", ExpectedRevision: 1, OperationKey: "another-key"}, userID, operationKey, params))
+	})
+	assertGuidedStatus(t, http.StatusBadRequest, func(w http.ResponseWriter) {
+		schedule.Move(w, guidedHandlerRequest(t, http.MethodPost, "/", model.MoveScheduledWorkoutRequest{}, userID, operationKey, nil))
 	})
 	assertGuidedStatus(t, http.StatusCreated, func(w http.ResponseWriter) {
 		schedule.Materialize(w, guidedHandlerRequest(t, http.MethodPost, "/", model.MaterializeScheduleRequest{OperationKey: operationKey}, userID, operationKey, nil))

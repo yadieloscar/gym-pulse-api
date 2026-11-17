@@ -208,7 +208,7 @@ func main() {
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	savedMealSvc := service.NewSavedMealService(savedMealRepo, trainingProfileRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
-	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, planTransitionRepo, v)
+	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, trainingProfileRepo, planTransitionRepo, v)
 	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).
 	draftGenerator := service.NewRulesDraftGenerator()
 	if cfg.ProgramGenerationUsesModel() {

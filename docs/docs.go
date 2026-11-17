@@ -2938,8 +2938,12 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "BearerAuth": []
                     }
                 ],
+                "description": "Removes an owned program that is not active, with its planned unstarted sessions. Finished workouts stay in history. The active program returns 409.",
                 "consumes": [
                     "application/json"
                 ],
@@ -2947,9 +2951,10 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "goal-training"
+                    "goal-training",
+                    "Programs"
                 ],
-                "summary": "Update program",
+                "summary": "Remove a saved program",
                 "parameters": [
                     {
                         "type": "string",
@@ -2966,6 +2971,13 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/model.UpdateProgramRequest"
                         }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Program ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -2973,6 +2985,21 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/model.Program"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
                         }
                     }
                 }
@@ -3154,13 +3181,23 @@ const docTemplate = `{
                 "security": [
                     {
                         "BearerAuth": []
+                    },
+                    {
+                        "BearerAuth": []
                     }
                 ],
-                "description": "Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.",
-                "tags": [
-                    "goal-training"
+                "description": "Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.\nMoves one planned, unstarted workout or sport session to a date from today through the next eight weeks. Only that session changes; the program's weekdays stay as they are.",
+                "consumes": [
+                    "application/json"
                 ],
-                "summary": "Delete a past scheduled workout",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training",
+                    "Schedule"
+                ],
+                "summary": "Move a planned scheduled workout to another date",
                 "parameters": [
                     {
                         "type": "string",
@@ -3168,9 +3205,38 @@ const docTemplate = `{
                         "name": "id",
                         "in": "path",
                         "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Must equal operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Move operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.MoveScheduledWorkoutRequest"
+                        }
                     }
                 ],
                 "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    },
                     "204": {
                         "description": "No Content"
                     },
@@ -3181,7 +3247,7 @@ const docTemplate = `{
                         }
                     },
                     "409": {
-                        "description": "CONFLICT for today's or a future unfinished workout; ACTIVE_SESSION_CONFLICT while a linked session is active",
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handler.apiError"
                         }
@@ -4328,6 +4394,78 @@ const docTemplate = `{
                 }
             }
         },
+        "/programs/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes an owned program that is not active, with its planned unstarted sessions. Finished workouts stay in history. The active program returns 409.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training",
+                    "Programs"
+                ],
+                "summary": "Remove a saved program",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Program replacement",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.UpdateProgramRequest"
+                        }
+                    },
+                    {
+                        "type": "string",
+                        "description": "Program ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.Program"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    }
+                }
+            }
+        },
         "/ready": {
             "get": {
                 "description": "Returns 200 when required dependencies are available, otherwise 503.",
@@ -4355,6 +4493,91 @@ const docTemplate = `{
                             "additionalProperties": {
                                 "type": "string"
                             }
+                        }
+                    }
+                }
+            }
+        },
+        "/scheduled-workouts/{id}/move": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Permanently removes a past or finalized scheduled workout with its performed sets, linked workout sessions, and Apple Health export record, then recomputes that day's participation. A linked sport activity stays in history unlinked. The workout already written to Apple Health is not removed from the device.\nMoves one planned, unstarted workout or sport session to a date from today through the next eight weeks. Only that session changes; the program's weekdays stay as they are.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training",
+                    "Schedule"
+                ],
+                "summary": "Move a planned scheduled workout to another date",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Scheduled workout ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Must equal operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Move operation",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.MoveScheduledWorkoutRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    },
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "$ref": "#/definitions/handler.apiError"
                         }
                     }
                 }
@@ -4677,6 +4900,10 @@ const docTemplate = `{
                 "workouts"
             ],
             "properties": {
+                "active": {
+                    "description": "Active false saves the program without starting it. Omitted means true,\nwhich is what clients older than contract 1.10.0 rely on.",
+                    "type": "boolean"
+                },
                 "name": {
                     "type": "string",
                     "maxLength": 200,
@@ -6260,6 +6487,26 @@ const docTemplate = `{
                 }
             }
         },
+        "model.MoveScheduledWorkoutRequest": {
+            "type": "object",
+            "required": [
+                "date",
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
         "model.NutritionDay": {
             "type": "object",
             "properties": {
@@ -6678,6 +6925,12 @@ const docTemplate = `{
                 },
                 "sport": {
                     "$ref": "#/definitions/model.SportTarget"
+                },
+                "weekdays": {
+                    "type": "array",
+                    "items": {
+                        "type": "integer"
+                    }
                 }
             }
         },

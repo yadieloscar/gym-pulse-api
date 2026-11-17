@@ -102,6 +102,7 @@ func New(
 					r.Route("/{id}", func(r chi.Router) {
 						r.Get("/", programHandler.Get)
 						r.Put("/", programHandler.Update)
+						r.Delete("/", programHandler.Delete)
 					})
 				})
 				r.Get("/schedule", scheduleHandler.List)
@@ -122,6 +123,7 @@ func New(
 					r.Post("/complete", scheduleHandler.Complete)
 					r.Post("/skip", scheduleHandler.Skip)
 					r.Post("/unskip", scheduleHandler.Unskip)
+					r.Post("/move", scheduleHandler.Move)
 				})
 				r.Route("/workout-sessions", func(r chi.Router) {
 					r.Get("/", workoutSessionHandler.List)

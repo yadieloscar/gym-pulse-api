@@ -3,10 +3,13 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
+	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
@@ -42,9 +45,28 @@ type transitionApplyStub struct {
 	workouts []model.ScheduledWorkout
 }
 
-func (s *transitionApplyStub) Apply(_ context.Context, _ uuid.UUID, _ int64, _ *model.TrainingProfile, target *model.Program, _, _, _, _ string) (uuid.UUID, []model.ScheduledWorkout, bool, error) {
+func (*transitionApplyStub) Replayed(context.Context, uuid.UUID, string, string, string, string) (*dao.PlanTransitionResult, bool, error) {
+	return nil, false, nil
+}
+
+func (s *transitionApplyStub) Apply(_ context.Context, _ uuid.UUID, apply dao.PlanTransitionApply) (*dao.PlanTransitionResult, error) {
 	s.calls++
-	return target.ID, s.workouts, false, nil
+	return &dao.PlanTransitionResult{ProgramID: apply.Target.ID, Workouts: s.workouts}, nil
+}
+
+// newTransitionServiceAt builds the plan-transition service with its clock
+// fixed at midnight UTC of today, so tests can use stable dates.
+func newTransitionServiceAt(today string, starters dao.StarterProgramDAO, programs dao.ProgramDAO, profiles dao.TrainingProfileDAO, transitions dao.PlanTransitionDAO) PlanTransitionService {
+	svc, ok := NewPlanTransitionService(starters, programs, profiles, transitions, validator.New()).(*planTransitionService)
+	if !ok {
+		panic("unexpected plan transition service implementation")
+	}
+	fixed, err := time.Parse(time.DateOnly, today)
+	if err != nil {
+		panic(err)
+	}
+	svc.now = func() time.Time { return fixed }
+	return svc
 }
 
 func TestGuidedTransitionPreviewIsNonPersistentAndApplyUsesExactWeekdays(t *testing.T) {
@@ -55,9 +77,9 @@ func TestGuidedTransitionPreviewIsNonPersistentAndApplyUsesExactWeekdays(t *test
 	}}
 	starter := model.StarterProgram{ID: uuid.New(), Name: "Starter", PrimaryGoal: model.GoalStrength}
 	apply := &transitionApplyStub{}
-	svc := NewPlanTransitionService(transitionStarterStub{starter}, transitionProgramStub{program}, apply, validator.New())
+	svc := newTransitionServiceAt("2026-07-01", transitionStarterStub{starter}, transitionProgramStub{program}, &trainingProfileRepoStub{}, apply)
 	userID := uuid.New()
-	req := model.PreviewPlanTransitionRequest{ProposedProfile: model.ProposedTrainingProfile{PrimaryGoal: model.GoalStrength, AvailableDays: []int{2}, UsualActivity: "light", Experience: "intermediate", Equipment: []string{"barbell"}, SessionDurationMinutes: 60, Timezone: "America/New_York", Preferences: map[string]any{}}, ProgramID: &program.ID, From: "2026-07-20", To: "2026-08-03"}
+	req := model.PreviewPlanTransitionRequest{ProposedProfile: &model.ProposedTrainingProfile{PrimaryGoal: model.GoalStrength, AvailableDays: []int{2}, UsualActivity: "light", Experience: "intermediate", Equipment: []string{"barbell"}, SessionDurationMinutes: 60, Timezone: "America/New_York", Preferences: map[string]any{}}, ProgramID: &program.ID, From: "2026-07-20", To: "2026-08-03"}
 	preview, err := svc.Preview(context.Background(), userID, req)
 	if err != nil {
 		t.Fatal(err)
@@ -65,8 +87,14 @@ func TestGuidedTransitionPreviewIsNonPersistentAndApplyUsesExactWeekdays(t *test
 	if apply.calls != 0 {
 		t.Fatal("preview persisted changes")
 	}
-	if len(preview.ScheduledWorkouts) != 2 || preview.ScheduledWorkouts[0].Date != "2026-07-21" || preview.ScheduledWorkouts[1].Date != "2026-07-28" {
-		t.Fatalf("exact weekday mapping failed: %+v", preview.ScheduledWorkouts)
+	// Two units on one available day both sit on that day, every week.
+	got := []string{}
+	for _, workout := range preview.ScheduledWorkouts {
+		got = append(got, workout.Date+" "+workout.Name)
+	}
+	want := []string{"2026-07-21 A", "2026-07-21 B", "2026-07-28 A", "2026-07-28 B"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("exact weekday mapping = %v, want %v", got, want)
 	}
 	apply.workouts = preview.ScheduledWorkouts
 	_, err = svc.Apply(context.Background(), userID, model.ApplyPlanTransitionRequest{PreviewPlanTransitionRequest: req, PreviewToken: preview.PreviewToken, OperationKey: "apply-1", ExpectedProfileRevision: 2})

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -131,7 +132,7 @@ func loadStarterWorkouts(ctx context.Context, q queryer, starterID uuid.UUID) ([
 func (r *programDAO) List(ctx context.Context, userID uuid.UUID) ([]model.Program, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT id, starter_program_id, starter_version, name, primary_goal, roadmap,
-		       active, revision, created_at, updated_at
+		       active, revision, created_at, updated_at, to_char(scheduled_through, 'YYYY-MM-DD')
 		FROM programs WHERE user_id=$1 ORDER BY created_at`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("querying programs: %w", err)
@@ -141,7 +142,7 @@ func (r *programDAO) List(ctx context.Context, userID uuid.UUID) ([]model.Progra
 	for rows.Next() {
 		var p model.Program
 		if err := rows.Scan(&p.ID, &p.StarterProgramID, &p.StarterVersion, &p.Name,
-			&p.PrimaryGoal, &p.Roadmap, &p.Active, &p.Revision, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			&p.PrimaryGoal, &p.Roadmap, &p.Active, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.ScheduledThrough); err != nil {
 			return nil, fmt.Errorf("scanning program: %w", err)
 		}
 		programs = append(programs, p)
@@ -170,10 +171,10 @@ func (r *programDAO) Get(ctx context.Context, userID, programID uuid.UUID) (*mod
 	p := &model.Program{}
 	err := r.pool.QueryRow(ctx, `
 		SELECT id, starter_program_id, starter_version, name, primary_goal, roadmap,
-		       active, revision, created_at, updated_at
+		       active, revision, created_at, updated_at, to_char(scheduled_through, 'YYYY-MM-DD')
 		FROM programs WHERE id=$1 AND user_id=$2`, programID, userID).Scan(
 		&p.ID, &p.StarterProgramID, &p.StarterVersion, &p.Name, &p.PrimaryGoal,
-		&p.Roadmap, &p.Active, &p.Revision, &p.CreatedAt, &p.UpdatedAt,
+		&p.Roadmap, &p.Active, &p.Revision, &p.CreatedAt, &p.UpdatedAt, &p.ScheduledThrough,
 	)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, &model.NotFoundError{Message: "program not found"}
@@ -191,7 +192,7 @@ func (r *programDAO) Get(ctx context.Context, userID, programID uuid.UUID) (*mod
 
 func loadProgramWorkouts(ctx context.Context, q queryer, userID, programID uuid.UUID) ([]model.ProgramWorkout, error) {
 	rows, err := q.Query(ctx, `
-		SELECT pw.id, pw.name, pw.preferred_weekday, pw.sequence_position,
+		SELECT pw.id, pw.name, pw.preferred_weekday, pw.weekdays, pw.sequence_position,
 		       pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,
 		       pw.target_distance_meters, pw.sport_notes,
 		       pe.id, pe.catalog_id, pe.source_starter_exercise_id, pe.name,
@@ -238,9 +239,10 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 			var (
 				name, category, modality *string
 				order, targetSets        *int
+				weekdays                 []int32
 			)
 			err := rows.Scan(
-				&workout.ID, &workout.Name, &workout.PreferredWeekday, &workout.SequencePosition,
+				&workout.ID, &workout.Name, &workout.PreferredWeekday, &weekdays, &workout.SequencePosition,
 				&workout.Kind, &sport.ID, &sport.Name, &sport.DurationMinutes, &sport.DistanceMeters, &sport.Notes,
 				&exerciseID, &exercise.CatalogID, &exercise.SourceStarterExerciseID,
 				&name, &category, &modality, &order,
@@ -256,6 +258,7 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 			}
 			workout.Kind = model.NormalizeUnitKind(workout.Kind)
 			workout.Sport = sport.target()
+			workout.Weekdays = weekdayList(weekdays)
 		}
 		idx, ok := byID[workout.ID]
 		if !ok {
@@ -324,10 +327,16 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return err
 	}
+	replaced := false
 	if p.Active {
-		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+		if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID)
+		if err != nil {
 			return fmt.Errorf("deactivating prior program: %w", err)
 		}
+		replaced = tag.RowsAffected() > 0
 	}
 
 	err = tx.QueryRow(ctx, `
@@ -341,6 +350,11 @@ func (r *programDAO) Create(ctx context.Context, userID uuid.UUID, p *model.Prog
 	}
 	if err := insertProgramWorkouts(ctx, tx, p.ID, p.Workouts); err != nil {
 		return err
+	}
+	if replaced {
+		if err := takeOverFromTomorrow(ctx, tx, userID, p.ID, time.Now()); err != nil {
+			return err
+		}
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing program create: %w", err)
@@ -357,16 +371,24 @@ func (r *programDAO) CreateIdempotent(ctx context.Context, userID uuid.UUID, p *
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return nil, false, err
 	}
+	if p.Active {
+		if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+			return nil, false, err
+		}
+	}
 	var replay model.Program
 	if found, err := findIdempotency(ctx, tx, userID, record.Scope, record.OperationKey, record.RequestHash, &replay); err != nil {
 		return nil, false, err
 	} else if found {
 		return &replay, true, nil
 	}
+	replaced := false
 	if p.Active {
-		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID); err != nil {
+		tag, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true`, userID)
+		if err != nil {
 			return nil, false, fmt.Errorf("deactivating prior program: %w", err)
 		}
+		replaced = tag.RowsAffected() > 0
 	}
 	err = tx.QueryRow(ctx, `INSERT INTO programs (user_id, starter_program_id, starter_version, name, primary_goal, roadmap, active) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, revision, created_at, updated_at`, userID, p.StarterProgramID, p.StarterVersion, p.Name, p.PrimaryGoal, p.Roadmap, p.Active).Scan(&p.ID, &p.Revision, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
@@ -374,6 +396,11 @@ func (r *programDAO) CreateIdempotent(ctx context.Context, userID uuid.UUID, p *
 	}
 	if err := insertProgramWorkouts(ctx, tx, p.ID, p.Workouts); err != nil {
 		return nil, false, err
+	}
+	if replaced {
+		if err := takeOverFromTomorrow(ctx, tx, userID, p.ID, time.Now()); err != nil {
+			return nil, false, err
+		}
 	}
 	record.ResourceID, record.ResourceRevision = &p.ID, &p.Revision
 	if err := insertIdempotency(ctx, tx, userID, record, p); err != nil {
@@ -435,25 +462,59 @@ func insertProgramWorkouts(ctx context.Context, tx pgx.Tx, programID uuid.UUID, 
 		sport := sportColumns(w.Sport)
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,
-				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING id`,
+				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes, weekdays)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
 			programID, w.Name, w.PreferredWeekday, w.SequencePosition,
-			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes).Scan(&w.ID); err != nil {
+			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes,
+			weekdayColumn(w.Weekdays)).Scan(&w.ID); err != nil {
 			return fmt.Errorf("inserting program workout: %w", err)
 		}
-		for j := range w.Exercises {
-			e := &w.Exercises[j]
-			if err := tx.QueryRow(ctx, `
-				INSERT INTO program_exercises (
-					program_workout_id, catalog_id, source_starter_exercise_id, name,
-					category, modality, exercise_order, target_sets, target_reps,
-					target_weight, target_duration_seconds, rest_seconds, notes)
-				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-				w.ID, e.CatalogID, e.SourceStarterExerciseID, e.Name, e.Category,
-				e.Modality, e.ExerciseOrder, e.TargetSets, e.TargetReps, e.TargetWeight,
-				e.TargetDurationSeconds, e.RestSeconds, e.Notes).Scan(&e.ID); err != nil {
-				return fmt.Errorf("inserting program exercise: %w", err)
-			}
+		if err := insertProgramExercises(ctx, tx, w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// weekdayList converts a scanned smallint array to the model list. A NULL
+// column yields a nil list, which means the unit is unplaced.
+func weekdayList(column []int32) model.WeekdayList {
+	if column == nil {
+		return nil
+	}
+	list := make(model.WeekdayList, len(column))
+	for index, day := range column {
+		list[index] = int(day)
+	}
+	return list
+}
+
+// weekdayColumn converts the model list to a smallint array parameter; an
+// unplaced unit stores NULL.
+func weekdayColumn(list model.WeekdayList) []int16 {
+	if len(list) == 0 {
+		return nil
+	}
+	column := make([]int16, len(list))
+	for index, day := range list {
+		column[index] = int16(day)
+	}
+	return column
+}
+
+func insertProgramExercises(ctx context.Context, tx pgx.Tx, w *model.ProgramWorkout) error {
+	for j := range w.Exercises {
+		e := &w.Exercises[j]
+		if err := tx.QueryRow(ctx, `
+			INSERT INTO program_exercises (
+				program_workout_id, catalog_id, source_starter_exercise_id, name,
+				category, modality, exercise_order, target_sets, target_reps,
+				target_weight, target_duration_seconds, rest_seconds, notes)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+			w.ID, e.CatalogID, e.SourceStarterExerciseID, e.Name, e.Category,
+			e.Modality, e.ExerciseOrder, e.TargetSets, e.TargetReps, e.TargetWeight,
+			e.TargetDurationSeconds, e.RestSeconds, e.Notes).Scan(&e.ID); err != nil {
+			return fmt.Errorf("inserting program exercise: %w", err)
 		}
 	}
 	return nil

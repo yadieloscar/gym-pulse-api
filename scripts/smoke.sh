@@ -1225,6 +1225,138 @@ else
   bad "saved meals acceptance failed (food=$sm_food_status create=$sm_create_status replay=$sm_create_replay_status dup=$sm_dup_status empty=$sm_empty_status list=$sm_list_status log=$sm_log_status log_replay=$sm_log_replay_status override=$sm_override_status bad_item=$sm_bad_item_status unknown_item=$sm_unknown_item_status future=$sm_future_status day=$sm_day_status update=$sm_update_status stale=$sm_stale_status delete=$sm_delete_status gone=$sm_gone_status after=$sm_after_status move=$sm_move_status move_stale=$sm_move_stale_status move_bad=$sm_move_bad_status clear=$sm_clear_status entry_section=$sm_entry_section_status entry_bad_section=$sm_entry_bad_section_status)" "$(echo "$sm_create_body $sm_log_body $sm_bad_item_body" | head -c 600)"
 fi
 
+step "13l. One active program (contract 1.10.0): save without starting → preview → start → weekdays hold → move → edit a weekday → remove the old program"
+# Runs last among the program steps because it changes which program is active.
+oap_out=$(API="$API" TOKEN="$TOKEN" python3 - <<'PY' 2>&1
+import json, os, sys, urllib.request, urllib.error, datetime, uuid
+
+API, TOKEN = os.environ["API"], os.environ["TOKEN"]
+
+def call(method, path, body=None, key=None):
+    headers = {"Authorization": "Bearer " + TOKEN, "Content-Type": "application/json"}
+    if key:
+        headers["Idempotency-Key"] = key
+    data = json.dumps(body).encode() if body is not None else None
+    request = urllib.request.Request(API + path, data=data, method=method, headers=headers)
+    try:
+        with urllib.request.urlopen(request) as response:
+            raw = response.read()
+            return response.status, (json.loads(raw) if raw else None)
+    except urllib.error.HTTPError as error:
+        raw = error.read()
+        return error.code, (json.loads(raw) if raw else None)
+
+def check(condition, message, evidence=None):
+    if not condition:
+        print("FAIL: " + message + " :: " + json.dumps(evidence)[:400])
+        sys.exit(1)
+
+def weekday(date):
+    return datetime.date.fromisoformat(date).isoweekday()
+
+run = uuid.uuid4().hex[:8]
+today = datetime.datetime.now(datetime.timezone.utc).date()
+tomorrow = (today + datetime.timedelta(days=1)).isoformat()
+exercise = {"name": "Squat", "category": "legs", "modality": "strength", "exercise_order": 1, "target_sets": 2, "target_reps": 5}
+
+status, programs = call("GET", "/api/v1/programs")
+check(status == 200, "program list", programs)
+previous = [p for p in programs["programs"] if p["active"]]
+check(all(isinstance(u.get("weekdays"), list) for p in programs["programs"] for u in p["workouts"]), "every unit carries a weekdays array", programs)
+
+# Save without starting.
+key = "smoke-oap-save-" + run
+status, saved = call("POST", "/api/v1/programs", {
+    "name": "Smoke week " + run, "primary_goal": "strength", "active": False, "operation_key": key,
+    "workouts": [
+        {"name": "Push", "sequence_position": 1, "weekdays": [1], "exercises": [exercise]},
+        {"name": "Pull", "sequence_position": 2, "weekdays": [3, 5], "exercises": [exercise]},
+        {"kind": "sport", "name": "Volleyball", "sequence_position": 3, "weekdays": [6],
+         "sport": {"sport_id": "volleyball", "sport_name": "Volleyball", "target_duration_minutes": 90}},
+    ]}, key)
+check(status == 201 and saved["active"] is False, "save with active:false", saved)
+check([u["weekdays"] for u in saved["workouts"]] == [[1], [3, 5], [6]], "weekdays stored", saved)
+status, programs = call("GET", "/api/v1/programs")
+check([p["id"] for p in programs["programs"] if p["active"]] == [p["id"] for p in previous], "saving changed the active program", programs)
+
+status, bad = call("POST", "/api/v1/programs", {"name": "Bad", "primary_goal": "strength", "active": False, "operation_key": "smoke-oap-bad-" + run,
+    "workouts": [{"name": "Push", "sequence_position": 1, "weekdays": [8], "exercises": [exercise]}]}, "smoke-oap-bad-" + run)
+check(status == 422 and bad["details"]["field"] == "workouts", "weekday 8 must be 422 workouts", bad)
+
+# Preview writes nothing; apply starts.
+request = {"program_id": saved["id"], "from": tomorrow}
+status, preview = call("POST", "/api/v1/plan-transitions/preview", request)
+check(status == 200 and preview["start_date"] == tomorrow and preview["off_availability"] is not None, "preview", preview)
+check(preview["proposed_profile"] is None, "preview without a proposed profile", preview)
+check((preview["replaces_program"] or {}).get("id") == (previous[0]["id"] if previous else None), "replaces_program", preview)
+check(all(weekday(w["date"]) in {"Push": [1], "Pull": [3, 5], "Volleyball": [6]}[w["name"]] for w in preview["scheduled_workouts"]), "preview weekdays", preview)
+status, programs = call("GET", "/api/v1/programs")
+check([p["id"] for p in programs["programs"] if p["active"]] == [p["id"] for p in previous], "preview changed the active program", programs)
+
+key = "smoke-oap-start-" + run
+apply_body = dict(request, preview_token=preview["preview_token"], operation_key=key)
+status, applied = call("POST", "/api/v1/plan-transitions/apply", apply_body, key)
+check(status == 200 and applied["target_program"]["id"] == saved["id"] and applied["target_program"]["active"], "apply", applied)
+status, replay = call("POST", "/api/v1/plan-transitions/apply", apply_body, key)
+check(status == 200 and replay["target_program"]["id"] == saved["id"], "apply replay", replay)
+
+# Five weeks ahead, with no further request: every session on its weekdays.
+end = (today + datetime.timedelta(days=35)).isoformat()
+status, schedule = call("GET", "/api/v1/schedule?from=%s&to=%s" % (tomorrow, end))
+check(status == 200, "schedule read", schedule)
+mine = [w for w in schedule["scheduled_workouts"] if w.get("program_id") == saved["id"]]
+others = [w for w in schedule["scheduled_workouts"] if w.get("program_id") != saved["id"] and w["status"] == "planned"]
+check(len(mine) >= 19 and not others, "the started program owns the future", {"mine": len(mine), "others": others[:2]})
+check(all(weekday(w["date"]) in {"Push": [1], "Pull": [3, 5], "Volleyball": [6]}[w["name"]] for w in mine), "sessions sit on their weekdays", mine[:5])
+check(len({(w["program_workout_id"], w["date"]) for w in mine}) == len(mine), "no duplicate unit-day", mine[:5])
+
+# Move one session; only it changes.
+session = next(w for w in mine if w["name"] == "Pull")
+target = (datetime.date.fromisoformat(session["date"]) + datetime.timedelta(days=1)).isoformat()
+key = "smoke-oap-move-" + run
+move = {"date": target, "expected_revision": session["revision"], "operation_key": key}
+status, moved = call("POST", "/api/v1/scheduled-workouts/%s/move" % session["id"], move, key)
+check(status == 200 and moved["date"] == target and moved["revision"] == session["revision"] + 1, "move", moved)
+status, again = call("POST", "/api/v1/scheduled-workouts/%s/move" % session["id"], move, key)
+check(status == 200 and again == moved, "move replay", again)
+key = "smoke-oap-move-stale-" + run
+status, stale = call("POST", "/api/v1/scheduled-workouts/%s/move" % session["id"], {"date": target, "expected_revision": session["revision"], "operation_key": key}, key)
+check(status == 409 and stale["code"] == "REVISION_CONFLICT" and stale["resource"]["id"] == session["id"], "stale move", stale)
+key = "smoke-oap-move-past-" + run
+status, past = call("POST", "/api/v1/scheduled-workouts/%s/move" % session["id"], {"date": "2020-01-01", "expected_revision": moved["revision"], "operation_key": key}, key)
+check(status == 422 and past["details"]["field"] == "date", "move into the past", past)
+
+# Edit one weekday; the moved session of another unit stays where it is.
+status, current = call("GET", "/api/v1/programs/" + saved["id"])
+units = current["workouts"]
+next(u for u in units if u["name"] == "Push")["weekdays"] = [2]
+key = "smoke-oap-edit-" + run
+status, edited = call("PUT", "/api/v1/programs/" + saved["id"], {"name": current["name"], "primary_goal": current["primary_goal"], "roadmap": current["roadmap"],
+    "active": True, "workouts": units, "expected_revision": current["revision"], "operation_key": key}, key)
+check(status == 200 and [u["id"] for u in edited["workouts"]] == [u["id"] for u in units], "edit keeps unit ids", edited)
+status, schedule = call("GET", "/api/v1/schedule?from=%s&to=%s" % (tomorrow, end))
+after = [w for w in schedule["scheduled_workouts"] if w.get("program_id") == saved["id"]]
+push_days = {weekday(w["date"]) for w in after if w["name"] == "Push" and w["date"] > tomorrow}
+check(push_days == {2}, "Push moved to Tuesdays", sorted(push_days))
+check(any(w["id"] == session["id"] and w["date"] == target for w in after), "the one-off move survived the edit", [w for w in after if w["id"] == session["id"]])
+
+# The active program cannot be removed; the replaced one can.
+status, conflict = call("DELETE", "/api/v1/programs/" + saved["id"])
+check(status == 409 and conflict["code"] == "CONFLICT" and conflict["resource"]["id"] == saved["id"], "remove active", conflict)
+if previous:
+    status, _ = call("DELETE", "/api/v1/programs/" + previous[0]["id"])
+    check(status == 204, "remove the replaced program", status)
+    status, gone = call("DELETE", "/api/v1/programs/" + previous[0]["id"])
+    check(status == 404, "remove again", gone)
+print("OK")
+PY
+)
+if [ "$(echo "$oap_out" | tail -1)" = "OK" ]; then
+  ok "one active program: saved without starting; preview wrote nothing; start replayed; five weeks sat on their weekdays with no duplicates; a move changed one session, replayed, and refused a stale revision and a past date; a weekday edit kept unit ids and the moved session; the active program could not be removed and the replaced one could"
+else
+  bad "one active program acceptance failed" "$(echo "$oap_out" | tail -3 | head -c 600)"
+fi
+
 step "13b. A second user cannot read, change, or delete the first user's resources"
 # Requires OTHER_USER_ID in auth.users. CI and smoke-toggle.sh seed it; a bare
 # local run without the row skips this step with a notice, CI never does.

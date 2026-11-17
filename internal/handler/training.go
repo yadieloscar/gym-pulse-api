@@ -236,6 +236,28 @@ func (h *ProgramHandler) AdoptLegacy(w http.ResponseWriter, r *http.Request) {
 // @Success 200 {object} model.Program
 // @Security BearerAuth
 // @Router /api/v1/programs/{id} [put]
+// Delete removes a saved program the athlete is not following.
+// @Summary Remove a saved program
+// @Description Removes an owned program that is not active, with its planned unstarted sessions. Finished workouts stay in history. The active program returns 409.
+// @Tags Programs
+// @Security BearerAuth
+// @Param id path string true "Program ID"
+// @Success 204
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError
+// @Router /programs/{id} [delete]
+func (h *ProgramHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	if err := h.svc.Delete(r.Context(), middleware.MustGetUserID(r.Context()), id); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *ProgramHandler) Update(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathUUID(w, r, "id")
 	if !ok {
@@ -494,6 +516,38 @@ func (h *ScheduleHandler) Unskip(w http.ResponseWriter, r *http.Request) {
 // @Failure 422 {object} apiError
 // @Security BearerAuth
 // @Router /api/v1/scheduled-workouts/{id} [delete]
+// Move changes the date of one planned, unstarted scheduled workout.
+// @Summary Move a planned scheduled workout to another date
+// @Description Moves one planned, unstarted workout or sport session to a date from today through the next eight weeks. Only that session changes; the program's weekdays stay as they are.
+// @Tags Schedule
+// @Accept json
+// @Produce json
+// @Security BearerAuth
+// @Param id path string true "Scheduled workout ID"
+// @Param Idempotency-Key header string true "Must equal operation_key"
+// @Param body body model.MoveScheduledWorkoutRequest true "Move operation"
+// @Success 200 {object} model.ScheduledWorkout
+// @Failure 404 {object} apiError
+// @Failure 409 {object} apiError
+// @Failure 422 {object} apiError
+// @Router /scheduled-workouts/{id}/move [post]
+func (h *ScheduleHandler) Move(w http.ResponseWriter, r *http.Request) {
+	id, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	var req model.MoveScheduledWorkoutRequest
+	if !decodeMutation(w, r, &req, "") {
+		return
+	}
+	req.OperationKey = normalizedOperationKey(r, req.OperationKey)
+	if !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.Move(r.Context(), middleware.MustGetUserID(r.Context()), id, req)
+	respond(w, resource, err, http.StatusOK)
+}
+
 func (h *ScheduleHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	id, ok := pathUUID(w, r, "id")
 	if !ok {
