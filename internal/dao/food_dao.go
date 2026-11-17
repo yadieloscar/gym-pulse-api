@@ -66,6 +66,11 @@ type querier interface {
 
 func (r *foodDAO) UpsertCatalogFoods(ctx context.Context, foods []model.Food) ([]model.Food, error) {
 	saved := make([]model.Food, 0, len(foods))
+	if len(foods) == 0 {
+		return saved, nil
+	}
+	// A search returns a page of foods; they are stored in one round trip.
+	batch := &pgx.Batch{}
 	for _, food := range foods {
 		servings, err := json.Marshal(food.Servings)
 		if err != nil {
@@ -81,8 +86,7 @@ func (r *foodDAO) UpsertCatalogFoods(ctx context.Context, foods []model.Food) ([
 		if food.GTIN != "" {
 			gtin = &food.GTIN
 		}
-		var row model.Food
-		err = scanCatalogFood(r.pool.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO food_catalog (id, source, source_id, data_type, gtin, name, brand,
 				energy_kcal_100g, protein_g_100g, carbs_g_100g, fat_g_100g, servings, fetched_at)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
@@ -94,11 +98,19 @@ func (r *foodDAO) UpsertCatalogFoods(ctx context.Context, foods []model.Food) ([
 			RETURNING `+catalogColumns,
 			food.ID, food.Source, food.SourceID, dataType, gtin, food.Name, food.Brand,
 			food.Per100g.EnergyKcal, food.Per100g.ProteinG, food.Per100g.CarbsG, food.Per100g.FatG,
-			string(servings), food.FetchedAt), &row)
-		if err != nil {
+			string(servings), food.FetchedAt)
+	}
+	results := r.pool.SendBatch(ctx, batch)
+	for range foods {
+		var row model.Food
+		if err := scanCatalogFood(results.QueryRow(), &row); err != nil {
+			_ = results.Close()
 			return nil, fmt.Errorf("upserting catalog food: %w", err)
 		}
 		saved = append(saved, row)
+	}
+	if err := results.Close(); err != nil {
+		return nil, fmt.Errorf("upserting catalog foods: %w", err)
 	}
 	return saved, nil
 }

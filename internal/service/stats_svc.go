@@ -109,14 +109,24 @@ func (s *statsService) GetVolume(ctx context.Context, userID uuid.UUID, weeksPar
 	return series, nil
 }
 
+// performedDatesLister is implemented by a stats repository that can return
+// every trained date of a range in one query.
+type performedDatesLister interface {
+	PerformedDates(ctx context.Context, userID uuid.UUID, from, to time.Time) ([]time.Time, error)
+}
+
+// streakChunkWeeks is how many weeks one query covers. A longer streak reads
+// another chunk.
+const streakChunkWeeks = 52
+
 func (s *statsService) calculateStreak(ctx context.Context, userID uuid.UUID, goal int) (int, error) {
 	streak := 0
 	currentMonday := model.MondayOfWeek(time.Now())
 	checkWeek := currentMonday
+	weekCount := s.weeklyCounter(ctx, userID)
 
 	for {
-		sunday := checkWeek.AddDate(0, 0, 6)
-		count, err := s.statsRepo.GetWeeklyCount(ctx, userID, checkWeek, sunday)
+		count, err := weekCount(checkWeek)
 		if err != nil {
 			return 0, err
 		}
@@ -141,4 +151,34 @@ func (s *statsService) calculateStreak(ctx context.Context, userID uuid.UUID, go
 	}
 
 	return streak, nil
+}
+
+// weeklyCounter returns how many days the athlete trained in the week that
+// starts on a given Monday. It reads a year of weeks per database round trip
+// when the repository supports it; the streak used to cost one round trip
+// per week.
+func (s *statsService) weeklyCounter(ctx context.Context, userID uuid.UUID) func(monday time.Time) (int, error) {
+	lister, ok := s.statsRepo.(performedDatesLister)
+	if !ok {
+		return func(monday time.Time) (int, error) {
+			return s.statsRepo.GetWeeklyCount(ctx, userID, monday, monday.AddDate(0, 0, 6))
+		}
+	}
+	const day = "2006-01-02"
+	counts := map[string]int{}
+	var loadedFrom time.Time
+	return func(monday time.Time) (int, error) {
+		if loadedFrom.IsZero() || monday.Before(loadedFrom) {
+			from := monday.AddDate(0, 0, -7*(streakChunkWeeks-1))
+			dates, err := lister.PerformedDates(ctx, userID, from, monday.AddDate(0, 0, 6))
+			if err != nil {
+				return 0, err
+			}
+			for _, date := range dates {
+				counts[model.MondayOfWeek(date).Format(day)]++
+			}
+			loadedFrom = from
+		}
+		return counts[monday.Format(day)], nil
+	}
 }

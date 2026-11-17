@@ -186,10 +186,15 @@ func (r *logDAO) getSetLogs(ctx context.Context, dayLogID uuid.UUID) ([]model.Se
 // insertOverrides writes only exercise references owned by the day-log user.
 // A templated log also requires the exercise to belong to that template.
 func insertOverrides(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, overrides []model.ExerciseOverride) error {
+	if len(overrides) == 0 {
+		return nil
+	}
+	// One round trip for the whole day instead of one per exercise.
+	batch := &pgx.Batch{}
 	for i := range overrides {
 		o := &overrides[i]
 		o.DayLogID = dayLogID
-		err := tx.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO exercise_overrides (
 				day_log_id, exercise_id, actual_sets, actual_reps,
 				actual_weight, notes, skipped
@@ -203,14 +208,21 @@ func insertOverrides(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, overrid
 			WHERE e.id = $2
 			RETURNING id`,
 			o.DayLogID, o.ExerciseID, o.ActualSets, o.ActualReps,
-			o.ActualWeight, o.Notes, o.Skipped,
-		).Scan(&o.ID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "overrides"}
-		}
+			o.ActualWeight, o.Notes, o.Skipped)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for i := range overrides {
+		err := results.QueryRow().Scan(&overrides[i].ID)
 		if err != nil {
+			_ = results.Close()
+			if errors.Is(err, pgx.ErrNoRows) {
+				return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "overrides"}
+			}
 			return fmt.Errorf("inserting override: %w", err)
 		}
+	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting overrides: %w", err)
 	}
 	return nil
 }
@@ -218,12 +230,17 @@ func insertOverrides(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, overrid
 // insertSetLogs writes the day's sets within the caller's transaction. Callers
 // delete existing rows first (replace semantics), mirroring overrides. The
 // immutable exercise snapshot is derived server-side from the owned exercise;
-// released clients do not send those training-domain columns.
+// released clients do not send those training-domain columns. The rows go in
+// one round trip: a finished workout is a few dozen sets.
 func insertSetLogs(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, setLogs []model.SetLog) error {
+	if len(setLogs) == 0 {
+		return nil
+	}
+	batch := &pgx.Batch{}
 	for i := range setLogs {
 		s := &setLogs[i]
 		s.DayLogID = dayLogID
-		err := tx.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO set_logs (
 				day_log_id, exercise_id, is_extra,
 				exercise_name, exercise_category, exercise_modality,
@@ -244,14 +261,21 @@ func insertSetLogs(ctx context.Context, tx pgx.Tx, dayLogID uuid.UUID, setLogs [
 			RETURNING id`,
 			s.DayLogID, s.ExerciseID, s.SetIndex,
 			s.TargetReps, s.TargetWeight, s.ActualReps, s.ActualWeight,
-			s.DurationSeconds, s.Completed,
-		).Scan(&s.ID)
-		if errors.Is(err, pgx.ErrNoRows) {
-			return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "set_logs"}
-		}
+			s.DurationSeconds, s.Completed)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for i := range setLogs {
+		err := results.QueryRow().Scan(&setLogs[i].ID)
 		if err != nil {
+			_ = results.Close()
+			if errors.Is(err, pgx.ErrNoRows) {
+				return &model.ValidationError{Message: "exercise does not belong to this workout", Field: "set_logs"}
+			}
 			return fmt.Errorf("inserting set log: %w", err)
 		}
+	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting set logs: %w", err)
 	}
 	return nil
 }
