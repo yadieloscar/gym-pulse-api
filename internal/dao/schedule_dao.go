@@ -580,21 +580,49 @@ func (r *scheduleDAO) ReplaceSnapshot(ctx context.Context, userID uuid.UUID, w *
 }
 
 func insertScheduledSets(ctx context.Context, tx pgx.Tx, workoutID uuid.UUID, sets []model.ScheduledSet) error {
-	for i := range sets {
-		s := &sets[i]
-		err := tx.QueryRow(ctx, `
-			INSERT INTO scheduled_sets (
-				scheduled_workout_id, program_exercise_id, catalog_id, exercise_name,
-				exercise_category, exercise_modality, exercise_order, set_index,
-				target_reps, target_weight, target_duration_seconds, rest_seconds, notes)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
-			workoutID, s.ProgramExerciseID, s.CatalogID, s.ExerciseName,
-			s.ExerciseCategory, s.ExerciseModality, s.ExerciseOrder, s.SetIndex,
-			s.TargetReps, s.TargetWeight, s.TargetDurationSeconds, s.RestSeconds, s.Notes,
-		).Scan(&s.ID)
-		if err != nil {
-			return fmt.Errorf("inserting scheduled set: %w", err)
+	return insertScheduledSetGroups(ctx, tx, []scheduledSetGroup{{workoutID: workoutID, sets: sets}})
+}
+
+// scheduledSetGroup is the required sets of one scheduled workout.
+type scheduledSetGroup struct {
+	workoutID uuid.UUID
+	sets      []model.ScheduledSet
+}
+
+// insertScheduledSetGroups stores the required sets of many scheduled
+// workouts in one round trip. Laying a program out writes hundreds of sets,
+// and one statement per set made a save outlast the client's timeout when the
+// database is in another region.
+func insertScheduledSetGroups(ctx context.Context, tx pgx.Tx, groups []scheduledSetGroup) error {
+	batch := &pgx.Batch{}
+	for _, group := range groups {
+		for i := range group.sets {
+			s := &group.sets[i]
+			batch.Queue(`
+				INSERT INTO scheduled_sets (
+					scheduled_workout_id, program_exercise_id, catalog_id, exercise_name,
+					exercise_category, exercise_modality, exercise_order, set_index,
+					target_reps, target_weight, target_duration_seconds, rest_seconds, notes)
+				VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
+				group.workoutID, s.ProgramExerciseID, s.CatalogID, s.ExerciseName,
+				s.ExerciseCategory, s.ExerciseModality, s.ExerciseOrder, s.SetIndex,
+				s.TargetReps, s.TargetWeight, s.TargetDurationSeconds, s.RestSeconds, s.Notes)
 		}
+	}
+	if batch.Len() == 0 {
+		return nil
+	}
+	results := tx.SendBatch(ctx, batch)
+	for _, group := range groups {
+		for i := range group.sets {
+			if err := results.QueryRow().Scan(&group.sets[i].ID); err != nil {
+				_ = results.Close()
+				return fmt.Errorf("inserting scheduled set: %w", err)
+			}
+		}
+	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting scheduled sets: %w", err)
 	}
 	return nil
 }

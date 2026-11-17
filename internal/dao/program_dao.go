@@ -533,9 +533,14 @@ func weekdayColumn(list model.WeekdayList) []int16 {
 }
 
 func insertProgramExercises(ctx context.Context, tx pgx.Tx, w *model.ProgramWorkout) error {
+	if len(w.Exercises) == 0 {
+		return nil
+	}
+	// One round trip for the whole workout instead of one per exercise.
+	batch := &pgx.Batch{}
 	for j := range w.Exercises {
 		e := &w.Exercises[j]
-		if err := tx.QueryRow(ctx, `
+		batch.Queue(`
 			INSERT INTO program_exercises (
 				program_workout_id, catalog_id, source_starter_exercise_id, name,
 				category, modality, exercise_order, target_sets, target_reps,
@@ -543,9 +548,17 @@ func insertProgramExercises(ctx context.Context, tx pgx.Tx, w *model.ProgramWork
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
 			w.ID, e.CatalogID, e.SourceStarterExerciseID, e.Name, e.Category,
 			e.Modality, e.ExerciseOrder, e.TargetSets, e.TargetReps, e.TargetWeight,
-			e.TargetDurationSeconds, e.RestSeconds, e.Notes).Scan(&e.ID); err != nil {
+			e.TargetDurationSeconds, e.RestSeconds, e.Notes)
+	}
+	results := tx.SendBatch(ctx, batch)
+	for j := range w.Exercises {
+		if err := results.QueryRow().Scan(&w.Exercises[j].ID); err != nil {
+			_ = results.Close()
 			return fmt.Errorf("inserting program exercise: %w", err)
 		}
+	}
+	if err := results.Close(); err != nil {
+		return fmt.Errorf("inserting program exercises: %w", err)
 	}
 	return nil
 }
