@@ -303,6 +303,23 @@ BEGIN
     IF findings IS NOT NULL THEN
         RAISE EXCEPTION 'Data API roles can call gym_pulse_private.auth_user_exists: %', findings;
     END IF;
+    -- The startup schema check calls gym_pulse_private.schema_version
+    -- (migration 048); the ledger table itself stays closed to the role.
+    IF to_regprocedure('gym_pulse_private.schema_version()') IS NULL
+        OR NOT has_function_privilege(runtime_role, 'gym_pulse_private.schema_version()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'runtime role % cannot call gym_pulse_private.schema_version', runtime_role;
+    END IF;
+    IF has_function_privilege('public', 'gym_pulse_private.schema_version()', 'EXECUTE') THEN
+        RAISE EXCEPTION 'gym_pulse_private.schema_version is executable by PUBLIC';
+    END IF;
+    SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname)
+    INTO findings
+    FROM pg_roles r
+    WHERE r.rolname IN ('anon', 'authenticated', 'service_role')
+      AND has_function_privilege(r.rolname, 'gym_pulse_private.schema_version()', 'EXECUTE');
+    IF findings IS NOT NULL THEN
+        RAISE EXCEPTION 'Data API roles can call gym_pulse_private.schema_version: %', findings;
+    END IF;
     SELECT string_agg(a.attname, ', ' ORDER BY a.attname)
     INTO findings
     FROM pg_attribute a

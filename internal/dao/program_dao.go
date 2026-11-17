@@ -421,6 +421,9 @@ func (r *programDAO) Replace(ctx context.Context, userID uuid.UUID, p *model.Pro
 	if err := lockUserDomain(ctx, tx, programLockNamespace, userID); err != nil {
 		return err
 	}
+	if err := lockUserDomain(ctx, tx, scheduleLockNamespace, userID); err != nil {
+		return err
+	}
 	if p.Active {
 		if _, err := tx.Exec(ctx, `UPDATE programs SET active=false, revision=revision+1, updated_at=now() WHERE user_id=$1 AND active=true AND id<>$2`, userID, p.ID); err != nil {
 			return fmt.Errorf("deactivating prior program: %w", err)
@@ -443,6 +446,9 @@ func (r *programDAO) Replace(ctx context.Context, userID uuid.UUID, p *model.Pro
 	if err != nil {
 		return fmt.Errorf("updating program: %w", err)
 	}
+	if err := clearReplacedProgramFuture(ctx, tx, userID, p.ID); err != nil {
+		return err
+	}
 	if _, err := tx.Exec(ctx, `DELETE FROM program_workouts WHERE program_id=$1`, p.ID); err != nil {
 		return fmt.Errorf("replacing program workouts: %w", err)
 	}
@@ -451,6 +457,30 @@ func (r *programDAO) Replace(ctx context.Context, userID uuid.UUID, p *model.Pro
 	}
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing program update: %w", err)
+	}
+	return nil
+}
+
+// clearReplacedProgramFuture removes a program's untouched sessions dated
+// after the athlete's today, before Replace deletes every unit. Deleting a
+// unit only clears the unit reference on its sessions, and a session without
+// a unit is one no later save or fill can find: it would stay on the calendar
+// under a workout the program no longer has (migration 046 repaired those).
+// The fill mark moves back to today so the next read lays the new units out.
+// Today's, past, started, and finished sessions stay as history.
+func clearReplacedProgramFuture(ctx context.Context, tx pgx.Tx, userID, programID uuid.UUID) error {
+	var today string
+	if err := tx.QueryRow(ctx, `
+		SELECT to_char((now() AT TIME ZONE COALESCE(
+			(SELECT timezone FROM training_profiles WHERE user_id=$1), 'UTC'))::date, 'YYYY-MM-DD')`,
+		userID).Scan(&today); err != nil {
+		return fmt.Errorf("reading the athlete's date: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM scheduled_workouts sw WHERE sw.user_id=$1 AND sw.program_id=$2 AND sw.date > $3 AND `+unstartedPlanned, userID, programID, today); err != nil {
+		return fmt.Errorf("deleting sessions of replaced program units: %w", err)
+	}
+	if _, err := tx.Exec(ctx, `UPDATE programs SET scheduled_through=$3 WHERE id=$1 AND user_id=$2 AND scheduled_through > $3`, programID, userID, today); err != nil {
+		return fmt.Errorf("resetting the replaced program's schedule watermark: %w", err)
 	}
 	return nil
 }

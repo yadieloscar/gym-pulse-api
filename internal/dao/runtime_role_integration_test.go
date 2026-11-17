@@ -15,6 +15,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/gym-pulse/gym-pulse-api/internal/dbmigrate"
 )
 
 const runtimeRoleName = "gym_pulse_api"
@@ -91,6 +93,16 @@ func TestRuntimeRoleReachesEveryApplicationTable(t *testing.T) {
 		t.Errorf("runtime role cannot call gym_pulse_private.auth_user_exists: %v", err)
 	} else if exists {
 		t.Error("auth_user_exists reported a random id as existing")
+	}
+
+	// The startup schema check runs as this role through the owner's
+	// schema_version (migration 048), against the real migration files.
+	version, err := dbmigrate.CheckCurrent(ctx, runtime, "file://../../migrations")
+	if err != nil {
+		t.Errorf("runtime role cannot verify the schema version: %v", err)
+	}
+	if version < 48 {
+		t.Errorf("schema version = %d, want at least 48", version)
 	}
 }
 

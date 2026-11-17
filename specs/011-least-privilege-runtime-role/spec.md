@@ -117,6 +117,7 @@ of grant and policy SQL.
   step shares the service's variables, so "migrate when the URL is set" would re-run on every boot.
 - Q: Can the server check the schema version itself? → A: No. The runtime role deliberately cannot
   read `schema_migrations` (FR-002); the deploy-blocking pre-deploy step is the guarantee.
+  **Superseded by Amendment A2 (2026-11-17):** the server checks through an owner function.
 - Q: Where does the table helper live? → A: In a private schema `gym_pulse_private` that no client
   role can use, so the Supabase Data API never exposes it. It runs as the caller (the migrator).
 - Q: Does the whole DAO suite move to the runtime role? → A: No. Its fixtures insert into
@@ -162,6 +163,54 @@ of grant and policy SQL.
 - The CI smoke stack runs the image's `./migrate` as its own service, the API starts only after
   it exits 0, and `validate-supabase-security.sh` still passes.
 - No public contract change; `docs/CONTRACTS.md` is unchanged.
+
+## Amendment A2: the server refuses a schema that is behind (2026-11-17)
+
+**Why:** A1 made the pre-deploy step the only guarantee that the schema matches the build, and
+that step is a platform setting outside the repository (task T022). On 2026-11-17 it was not set
+on Railway. API #67 deployed, the server logged `skipping startup migrations`, and every program
+request returned 500 because a column from migration 045 did not exist. The owner then set the
+pre-deploy command by hand and asked for the schema setup to be reassessed.
+
+### Clarifications
+
+- Q: How does a role that cannot read `schema_migrations` learn the version? → A: Through
+  `gym_pulse_private.schema_version()` (migration 048), a `SECURITY DEFINER` function owned by the
+  schema owner that returns only `version` and `dirty`. FR-002 holds: the role still has no
+  privilege on the table.
+- Q: What does the build compare against? → A: The highest version among the migration files in
+  the image (`migrations/`, the same files `./migrate` applies).
+- Q: Is a database newer than the build accepted? → A: Yes. `./migrate` runs before the new server
+  starts while the previous build still serves, and a rollback runs an older build on the newer
+  schema; migrations are required to stay compatible with the released build.
+- Q: Does this replace the pre-deploy step? → A: No. The server still never migrates in staging
+  and production. The check turns a missing or failed pre-deploy step into a failed deploy (the
+  previous deployment keeps serving) instead of a running server that fails per request.
+- Q: Is the pre-deploy command committed as `railway.json`? → A: No. Railway's documentation marks
+  Config as Code as deprecated, with existing files honored only until 2026-12-01 (read
+  2026-11-17). The setting stays a dashboard step in the runbook; this amendment is the guard.
+
+### Requirements
+
+- **FR-A2-001:** Before serving, in every environment, the server reads the applied schema version
+  and exits non-zero with one clear log line when the version is lower than the newest migration
+  the build ships, when the ledger is dirty, when no migration is applied, or when the version
+  function does not exist yet.
+- **FR-A2-002:** A schema newer than the build is accepted.
+- **FR-A2-003:** The runtime role gains `EXECUTE` on `gym_pulse_private.schema_version()` only.
+  `PUBLIC` and the Supabase Data API roles cannot call it, and the role's privileges on
+  `public.schema_migrations` are unchanged (none).
+- **FR-A2-004:** No public contract change; `docs/CONTRACTS.md` is unchanged.
+
+### Acceptance
+
+- Unit tests cover current, newer, behind, dirty, empty-ledger, missing-function, and unreadable
+  migration-file cases.
+- An integration test stages a database at version 47, at the newest version, one version short,
+  and dirty, and gets refusal, acceptance, refusal, refusal.
+- The runtime-role integration test verifies the schema as `gym_pulse_api` and still shows
+  `SELECT version FROM public.schema_migrations` denied.
+- `validate-supabase-security.sh` asserts the function's privileges.
 
 ## Assumptions
 
