@@ -1,0 +1,142 @@
+# Additive changes to the program, schedule, and plan-transition contract.
+# docs/CONTRACTS.md stays the client-facing source of truth; this file is the design draft for it.
+openapi: 3.1.0
+info:
+  title: One active program on fixed weekdays
+  version: 1.10.0-draft
+paths:
+  /api/v1/programs:
+    get:
+      summary: Unchanged query; every unit gains weekdays (always an array).
+    post:
+      summary: Unchanged route; optional active (default true) and unit weekdays.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                active: { type: boolean, default: true }
+                workouts:
+                  items: { $ref: "#/components/schemas/ProgramUnitInput" }
+  /api/v1/programs/{id}:
+    put:
+      summary: >
+        Unchanged route; units may carry id and weekdays. Saving the active program updates its
+        planned unstarted sessions dated after today in the same transaction.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                workouts:
+                  items: { $ref: "#/components/schemas/ProgramUnitInput" }
+      responses:
+        "422": { description: "VALIDATION_ERROR, details.field = workouts (bad weekdays, mixed placed and unplaced units, or a unit id that is not in this program)" }
+    delete:
+      summary: Remove a saved program and its planned unstarted sessions.
+      responses:
+        "204": { description: Removed }
+        "404": { description: Missing or foreign program (shared NOT_FOUND shape) }
+        "409": { description: "CONFLICT; the program is active. resource is the program." }
+  /api/v1/schedule:
+    get:
+      summary: >
+        Unchanged query and response. For an active program, sessions exist for every date from
+        today through today + 56 inside the requested range without a prior mutation.
+  /api/v1/plan-transitions/preview:
+    post:
+      summary: The single start preview. proposed_profile and to become optional.
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/PlanTransitionRequest" }
+      responses:
+        "200":
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PlanTransitionPreview" }
+        "422": { description: "VALIDATION_ERROR, details.field = available_days when an unplaced target has no days to place on" }
+  /api/v1/plan-transitions/apply:
+    post:
+      summary: >
+        The single start. Repeats the preview request with preview_token and operation_key.
+        expected_profile_revision is required only when proposed_profile is present.
+  /api/v1/scheduled-workouts/{id}/move:
+    post:
+      summary: Move one planned, unstarted session to another date.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              required: [date, expected_revision, operation_key]
+              properties:
+                date: { type: string, format: date }
+                expected_revision: { type: integer }
+                operation_key: { type: string }
+      responses:
+        "200": { description: The full ScheduledWorkout at its new date and revision }
+        "404": { description: Missing or foreign session (shared NOT_FOUND shape) }
+        "409": { description: "CONFLICT with resource (session is started, finished, missed, or in the past), or a stale revision" }
+        "422": { description: "VALIDATION_ERROR, details.field = date (before today or after today + 56)" }
+components:
+  schemas:
+    ProgramUnitInput:
+      description: The existing unit shape plus the fields below.
+      properties:
+        id:
+          type: [string, "null"]
+          format: uuid
+          description: PUT only. Names an existing unit of this program to update in place.
+        weekdays:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 7 }
+          minItems: 1
+          maxItems: 7
+          uniqueItems: true
+          description: Omitted = unplaced; the server places the program once on first use.
+    ProgramUnit:
+      description: The existing unit shape plus weekdays.
+      required: [weekdays]
+      properties:
+        weekdays:
+          type: array
+          items: { type: integer, minimum: 1, maximum: 7 }
+          description: Always present. Ascending. Empty while the unit is unplaced.
+        preferred_weekday:
+          type: [integer, "null"]
+          description: Unchanged field. The first weekday of a placed unit.
+    PlanTransitionRequest:
+      properties:
+        proposed_profile:
+          type: [object, "null"]
+          description: Optional. Omitted = the training profile is not changed.
+        program_id: { type: [string, "null"], format: uuid }
+        starter_program_id: { type: [string, "null"], format: uuid }
+        starter_version: { type: [integer, "null"] }
+        from: { type: string, format: date }
+        to:
+          type: [string, "null"]
+          format: date
+          description: Optional. Bounds the returned scheduled_workouts only; default from + 27.
+    PlanTransitionPreview:
+      description: The existing preview shape plus the fields below.
+      required: [off_availability, start_date, replaces_program]
+      properties:
+        start_date:
+          type: string
+          format: date
+          description: max(from, today) in the profile timezone.
+        replaces_program:
+          type: [object, "null"]
+          description: The active program this start would replace; null when none or the same.
+          properties:
+            id: { type: string, format: uuid }
+            name: { type: string }
+        off_availability:
+          type: array
+          description: Always present. Placed units of the target with a weekday outside available_days.
+          items:
+            properties:
+              program_workout_id: { type: [string, "null"], format: uuid }
+              name: { type: string }
+              weekdays: { type: array, items: { type: integer } }
