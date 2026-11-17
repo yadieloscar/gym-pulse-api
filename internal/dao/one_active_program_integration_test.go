@@ -479,7 +479,7 @@ func TestMoveRefusesStaleStartedFinishedAndPastSessions(t *testing.T) {
 	}
 }
 
-// Q8: saving the active program updates its future per unit, in one save.
+// Q8: saving the active program updates today and its future per unit, in one save.
 func TestSavingTheActiveProgramUpdatesItsFuturePerUnit(t *testing.T) {
 	f := newReleaseFixture(t)
 	program := f.startOwnWeek(t)
@@ -504,7 +504,7 @@ func TestSavingTheActiveProgramUpdatesItsFuturePerUnit(t *testing.T) {
 		}
 		edited.Workouts = append(edited.Workouts, unit)
 	}
-	core := weekUnit("Core", 9, 7)
+	core := weekUnit("Core", 9, 1, 7)
 	edited.Workouts = append(edited.Workouts, core)
 	for index := range edited.Workouts {
 		edited.Workouts[index].SequencePosition = index + 1
@@ -525,12 +525,13 @@ func TestSavingTheActiveProgramUpdatesItsFuturePerUnit(t *testing.T) {
 
 	got := f.sessionsOf(t, program.ID, fillToday)
 	week := []string{
-		"2026-11-16 Push",      // today is never changed
-		"2026-11-17 Push",      // Push now on Tuesdays
+		"2026-11-16 Core",      // the new unit lands today, a Monday
+		"2026-11-17 Push",      // Push now on Tuesdays; today's unstarted Push went with it
 		"2026-11-18 Pull",      // kept, re-snapshotted
 		"2026-11-19 Bike ride", // unchanged
 		"2026-11-21 Legs",      // the one-off move survives
-		"2026-11-22 Core",      // the new unit
+		"2026-11-22 Core",
+		"2026-11-23 Core",
 		"2026-11-24 Push",
 		"2026-11-25 Pull",
 		"2026-11-26 Bike ride",
@@ -565,6 +566,36 @@ func TestSavingTheActiveProgramUpdatesItsFuturePerUnit(t *testing.T) {
 	}
 	if after := f.snapshot(t); after != before {
 		t.Fatal("a refused save changed the database")
+	}
+}
+
+// A session the athlete has started today stays as it is, and its unit does
+// not get a second session on the same day.
+func TestSavingTheActiveProgramKeepsASessionStartedToday(t *testing.T) {
+	f := newReleaseFixture(t)
+	program := f.startOwnWeek(t)
+	push := f.sessionOn(t, program.ID, fillToday, "Push")
+	f.exec(t, `INSERT INTO workout_sessions (user_id,date,name,status,scheduled_workout_id) VALUES ($1,$2,'Push','active',$3)`, f.userID, fillToday, push.ID)
+
+	edited := &model.Program{ID: program.ID, Name: program.Name, PrimaryGoal: program.PrimaryGoal, Roadmap: program.Roadmap, Active: true}
+	for _, unit := range program.Workouts {
+		if unit.Name == "Push" {
+			unit.Weekdays = model.WeekdayList{1, 2} // Monday stays, Tuesday is new
+		}
+		edited.Workouts = append(edited.Workouts, unit)
+	}
+	if _, _, err := f.mutations.ReplaceProgram(f.ctx, f.userID, edited, program.Revision, saveNoon, releaseRecord("programs/update")); err != nil {
+		t.Fatal(err)
+	}
+
+	if kept := f.load(t, push.ID); kept.Date != fillToday || kept.Revision != push.Revision {
+		t.Fatalf("the started session changed: %+v", kept)
+	}
+	if n := f.count(t, `SELECT count(*) FROM scheduled_workouts WHERE user_id=$1 AND name='Push' AND date=$2`, f.userID, fillToday); n != 1 {
+		t.Fatalf("today holds %d Push sessions, want the one that was started", n)
+	}
+	if next := f.sessionOn(t, program.ID, "2026-11-17", "Push"); next.Status != model.WorkoutStatusPlanned {
+		t.Fatalf("the new Tuesday session = %+v", next)
 	}
 }
 

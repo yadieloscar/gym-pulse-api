@@ -250,7 +250,8 @@ volleyball, and today's in-progress session is unchanged.
 **Acceptance Scenarios**:
 
 1. **Given** the active program, **When** it is saved with changed weekdays, **Then** its unstarted
-   planned sessions from tomorrow onward match the new week in the same transaction.
+   planned sessions from today onward match the new week in the same transaction (Amendment A3).
+   A workout added to today's weekday is on today.
 2. **Given** changed exercises on a unit, **When** the program is saved, **Then** that unit's
    unstarted future sessions snapshot the new targets and earlier sessions keep theirs.
 3. **Given** a one-off move of a unit that was not edited, **When** another unit is edited,
@@ -356,8 +357,11 @@ the program list, the sessions remain with their names, and removing the active 
 
 - **FR-014**: A new mutation MUST move one planned, unstarted session to a date from today through
   the filled range, with `expected_revision` and `operation_key`. It MUST change only that session.
-- **FR-015**: Saving the active program MUST update its unstarted planned sessions from tomorrow
-  onward to match the saved week and targets, in the same transaction as the save.
+- **FR-015**: Saving the active program MUST update its unstarted planned sessions from today
+  onward to match the saved week and targets, in the same transaction as the save. A session the
+  athlete has started, finished, or missed MUST NOT change, and a unit with a started session
+  today MUST NOT get a second session on that day. A save that starts or stops the program, or a
+  save from a client older than weekdays, still acts from tomorrow (Amendment A3).
 - **FR-016**: A one-off move MUST survive a program save unless that unit was removed or its
   weekdays changed.
 
@@ -432,3 +436,17 @@ the program list, the sessions remain with their names, and removing the active 
 ## Open Questions for the Owner
 
 None. All were answered on 2026-11-16 and are recorded under Clarifications.
+
+## Amendment A3: edits to the running program apply today (2026-11-17)
+
+**Owner decision (2026-11-17):** "It should land the same day if I'm adding it today, obviously
+nothing in the past." The owner added a workout to Tuesday on a Tuesday and Plan showed Rest.
+
+- Saving the active program now changes its planned, unstarted sessions dated **today or later**
+  (was: after today). Acceptance scenario 1 of User Story 6 and FR-015 are updated in place.
+- Unchanged: past dates; sessions that are started, finished, or missed; a save that starts or
+  stops a program; a save from a client older than weekdays; starting a program with a preview.
+- A unit that already has a started session today keeps that one session. The unique
+  `(program_workout_id, slot_date)` index refuses a second.
+- No schema change and no new field. Contract 1.12.1 records the changed date range.
+

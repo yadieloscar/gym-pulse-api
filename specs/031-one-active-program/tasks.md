@@ -314,6 +314,16 @@ work each; logging a saved meal and saving a meal insert one row per item; the l
 materialize and regenerate paths insert one session per statement; account deletion and the data
 export run a few dozen statements. Not verified against production.
 
+### Amendment A3: edits apply today (2026-11-17)
+
+- [X] `ReplaceProgram` passes today as the first changed date when the program was and stays
+  active and carries weekdays; start, stop, and older-client saves keep tomorrow.
+- [X] `TestSavingTheActiveProgramUpdatesItsFuturePerUnit` expects the new unit on today and the
+  moved unit's unstarted session gone from today.
+- [X] `TestSavingTheActiveProgramKeepsASessionStartedToday` covers a started session and the
+  no-second-session rule.
+- [X] Spec FR-015, User Story 6 scenario 1, data model, contract draft, and `docs/CONTRACTS.md`.
+
 ### Consistency analysis (2026-11-16, before implementation)
 
 Read-only pass over spec, plan, research, data model, contract draft, and tasks.
