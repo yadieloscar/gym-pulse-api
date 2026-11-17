@@ -51,6 +51,170 @@ definitions:
       weight:
         type: number
     type: object
+  model.CalculatorActivityOption:
+    properties:
+      id:
+        type: string
+      max_sessions:
+        type: integer
+      min_sessions:
+        type: integer
+      multiplier:
+        type: number
+    type: object
+  model.CalculatorFood:
+    properties:
+      fdc_id:
+        type: integer
+      id:
+        type: string
+      name:
+        type: string
+      per_100g:
+        $ref: '#/definitions/model.PlanProvided'
+      role:
+        type: string
+      selectable:
+        type: boolean
+      source:
+        type: string
+      step:
+        type: number
+      tags:
+        items:
+          type: string
+        type: array
+      unit:
+        type: string
+    type: object
+  model.CalculatorGoalOption:
+    properties:
+      default_adjustment_kcal:
+        type: integer
+      default_protein_g_per_lb:
+        type: number
+      id:
+        type: string
+      max_adjustment_kcal:
+        type: integer
+      min_adjustment_kcal:
+        type: integer
+    type: object
+  model.CalculatorInput:
+    properties:
+      activity_level:
+        type: string
+      age_years:
+        type: integer
+      calorie_adjustment_kcal:
+        type: integer
+      carb_cycling:
+        type: boolean
+      cardio_days:
+        type: integer
+      exclusions:
+        items:
+          type: string
+        type: array
+      fat_g_per_lb:
+        type: number
+      goal:
+        type: string
+      height:
+        type: number
+      meal_choices:
+        items:
+          $ref: '#/definitions/model.MealChoice'
+        type: array
+      preferred_carbs:
+        items:
+          type: string
+        type: array
+      preferred_proteins:
+        items:
+          type: string
+        type: array
+      protein_g_per_lb:
+        type: number
+      sex:
+        type: string
+      strength_days:
+        type: integer
+      unit_system:
+        type: string
+      weight:
+        type: number
+    type: object
+  model.CalculatorLimits:
+    properties:
+      age_years:
+        $ref: '#/definitions/model.CalculatorRange'
+      imperial:
+        $ref: '#/definitions/model.CalculatorUnitLimits'
+      metric:
+        $ref: '#/definitions/model.CalculatorUnitLimits'
+    type: object
+  model.CalculatorMealOption:
+    properties:
+      name:
+        type: string
+      slot:
+        type: integer
+    type: object
+  model.CalculatorOptions:
+    properties:
+      activity_levels:
+        items:
+          $ref: '#/definitions/model.CalculatorActivityOption'
+        type: array
+      exclusions:
+        items:
+          type: string
+        type: array
+      fat_g_per_lb:
+        $ref: '#/definitions/model.CalculatorRateRange'
+      foods:
+        items:
+          $ref: '#/definitions/model.CalculatorFood'
+        type: array
+      goals:
+        items:
+          $ref: '#/definitions/model.CalculatorGoalOption'
+        type: array
+      limits:
+        $ref: '#/definitions/model.CalculatorLimits'
+      meals:
+        items:
+          $ref: '#/definitions/model.CalculatorMealOption'
+        type: array
+      protein_g_per_lb:
+        $ref: '#/definitions/model.CalculatorRateRange'
+    type: object
+  model.CalculatorRange:
+    properties:
+      max:
+        type: number
+      min:
+        type: number
+    type: object
+  model.CalculatorRateRange:
+    properties:
+      default:
+        type: number
+      max:
+        type: number
+      min:
+        type: number
+      step:
+        type: number
+    type: object
+  model.CalculatorUnitLimits:
+    properties:
+      height:
+        $ref: '#/definitions/model.CalculatorRange'
+      weight:
+        $ref: '#/definitions/model.CalculatorRange'
+    type: object
   model.CatalogExercise:
     properties:
       category:
@@ -549,6 +713,65 @@ definitions:
       weight:
         type: number
     type: object
+  model.ExportCalculatorProfile:
+    properties:
+      activity_level:
+        type: string
+      age_years:
+        type: integer
+      bmr_kcal:
+        type: integer
+      calorie_adjustment_kcal:
+        type: integer
+      carb_cycling:
+        type: boolean
+      carbs_g:
+        type: integer
+      cardio_days:
+        type: integer
+      exclusions:
+        items:
+          type: string
+        type: array
+      fat_g:
+        type: integer
+      fat_g_per_lb:
+        type: number
+      goal:
+        type: string
+      height:
+        type: number
+      meal_choices:
+        items:
+          $ref: '#/definitions/model.MealChoice'
+        type: array
+      preferred_carbs:
+        items:
+          type: string
+        type: array
+      preferred_proteins:
+        items:
+          type: string
+        type: array
+      protein_g:
+        type: integer
+      protein_g_per_lb:
+        type: number
+      sex:
+        type: string
+      strength_days:
+        type: integer
+      target_kcal:
+        type: integer
+      tdee_kcal:
+        type: integer
+      unit_system:
+        type: string
+      updated_at:
+        type: string
+      weight:
+        type: number
+    type: object
   model.ExportExerciseSummary:
     properties:
       actual_reps:
@@ -610,6 +833,12 @@ definitions:
     type: object
   model.ExportNutrition:
     properties:
+      calculator_profile:
+        allOf:
+        - $ref: '#/definitions/model.ExportCalculatorProfile'
+        description: |-
+          CalculatorProfile is the saved macro calculator plan, null when the
+          athlete has not saved one.
       days:
         items:
           $ref: '#/definitions/model.ExportNutritionDay'
@@ -1229,6 +1458,17 @@ definitions:
     - program_id
     - to
     type: object
+  model.MealChoice:
+    properties:
+      carb:
+        type: string
+      fat:
+        type: string
+      protein:
+        type: string
+      slot:
+        type: integer
+    type: object
   model.MealItemInput:
     properties:
       amount:
@@ -1326,6 +1566,33 @@ definitions:
         $ref: '#/definitions/model.NutritionSource'
       updated_at:
         type: string
+    type: object
+  model.NutritionPlan:
+    properties:
+      activity:
+        $ref: '#/definitions/model.PlanActivity'
+      bmr_kcal:
+        type: integer
+      calorie_adjustment_kcal:
+        type: integer
+      carb_cycling:
+        $ref: '#/definitions/model.PlanCarbCycling'
+      input:
+        $ref: '#/definitions/model.CalculatorInput'
+      macros:
+        $ref: '#/definitions/model.PlanMacros'
+      meal_templates:
+        items:
+          $ref: '#/definitions/model.PlanMealTemplate'
+        type: array
+      notices:
+        items:
+          type: string
+        type: array
+      target_kcal:
+        type: integer
+      tdee_kcal:
+        type: integer
     type: object
   model.NutritionRange:
     properties:
@@ -1470,6 +1737,118 @@ definitions:
       target_weight:
         type: number
     type: object
+  model.PlanActivity:
+    properties:
+      level:
+        type: string
+      multiplier:
+        type: number
+      suggested_level:
+        type: string
+    type: object
+  model.PlanCarbCycling:
+    properties:
+      rest:
+        $ref: '#/definitions/model.PlanDayMacros'
+      rest_days:
+        type: integer
+      training:
+        $ref: '#/definitions/model.PlanDayMacros'
+      training_days:
+        type: integer
+      weekly_average_kcal:
+        type: integer
+    type: object
+  model.PlanDayMacros:
+    properties:
+      carbs_g:
+        type: integer
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: integer
+      protein_g:
+        type: integer
+    type: object
+  model.PlanMacro:
+    properties:
+      g:
+        type: integer
+      kcal:
+        type: integer
+      pct:
+        type: integer
+    type: object
+  model.PlanMacros:
+    properties:
+      carbs:
+        $ref: '#/definitions/model.PlanMacro'
+      fat:
+        $ref: '#/definitions/model.PlanMacro'
+      protein:
+        $ref: '#/definitions/model.PlanMacro'
+    type: object
+  model.PlanMeal:
+    properties:
+      items:
+        items:
+          $ref: '#/definitions/model.PlanMealItem'
+        type: array
+      name:
+        type: string
+      provided:
+        $ref: '#/definitions/model.PlanProvided'
+      slot:
+        type: integer
+      target:
+        $ref: '#/definitions/model.PlanDayMacros'
+    type: object
+  model.PlanMealItem:
+    properties:
+      amount:
+        type: number
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      fdc_id:
+        type: integer
+      food:
+        type: string
+      grams:
+        type: number
+      name:
+        type: string
+      protein_g:
+        type: number
+      role:
+        type: string
+      source:
+        type: string
+      unit:
+        type: string
+    type: object
+  model.PlanMealTemplate:
+    properties:
+      carbs_g:
+        type: integer
+      day_type:
+        type: string
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: integer
+      meals:
+        items:
+          $ref: '#/definitions/model.PlanMeal'
+        type: array
+      protein_g:
+        type: integer
+      provided:
+        $ref: '#/definitions/model.PlanProvided'
+    type: object
   model.PlanOverride:
     properties:
       date:
@@ -1480,6 +1859,17 @@ definitions:
         type: string
     required:
     - date
+    type: object
+  model.PlanProvided:
+    properties:
+      carbs_g:
+        type: number
+      energy_kcal:
+        type: integer
+      fat_g:
+        type: number
+      protein_g:
+        type: number
     type: object
   model.PlanResponse:
     properties:
@@ -1768,6 +2158,55 @@ definitions:
       source:
         $ref: '#/definitions/model.NutritionSource'
     type: object
+  model.SaveNutritionProfileRequest:
+    properties:
+      activity_level:
+        type: string
+      age_years:
+        type: integer
+      calorie_adjustment_kcal:
+        type: integer
+      carb_cycling:
+        type: boolean
+      cardio_days:
+        type: integer
+      exclusions:
+        items:
+          type: string
+        type: array
+      expected_revision:
+        type: integer
+      fat_g_per_lb:
+        type: number
+      goal:
+        type: string
+      height:
+        type: number
+      meal_choices:
+        items:
+          $ref: '#/definitions/model.MealChoice'
+        type: array
+      operation_key:
+        type: string
+      preferred_carbs:
+        items:
+          type: string
+        type: array
+      preferred_proteins:
+        items:
+          type: string
+        type: array
+      protein_g_per_lb:
+        type: number
+      sex:
+        type: string
+      strength_days:
+        type: integer
+      unit_system:
+        type: string
+      weight:
+        type: number
+    type: object
   model.SaveNutritionTargetRequest:
     properties:
       carbs_g:
@@ -1856,6 +2295,39 @@ definitions:
         items:
           $ref: '#/definitions/model.SavedMeal'
         type: array
+    type: object
+  model.SavedNutritionPlan:
+    properties:
+      activity:
+        $ref: '#/definitions/model.PlanActivity'
+      bmr_kcal:
+        type: integer
+      calorie_adjustment_kcal:
+        type: integer
+      carb_cycling:
+        $ref: '#/definitions/model.PlanCarbCycling'
+      created_at:
+        type: string
+      input:
+        $ref: '#/definitions/model.CalculatorInput'
+      macros:
+        $ref: '#/definitions/model.PlanMacros'
+      meal_templates:
+        items:
+          $ref: '#/definitions/model.PlanMealTemplate'
+        type: array
+      notices:
+        items:
+          type: string
+        type: array
+      revision:
+        type: integer
+      target_kcal:
+        type: integer
+      tdee_kcal:
+        type: integer
+      updated_at:
+        type: string
     type: object
   model.ScheduledSet:
     properties:
@@ -3138,6 +3610,44 @@ paths:
       summary: Update a day log
       tags:
       - logs
+  /api/v1/nutrition/calculate:
+    post:
+      description: Stores nothing. See docs/CONTRACTS.md "Macro calculator".
+      parameters:
+      - description: The athlete's numbers and preferences
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.CalculatorInput'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.NutritionPlan'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Calculate estimated energy, macro targets, and a four-meal template
+      tags:
+      - nutrition
+  /api/v1/nutrition/calculator/options:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.CalculatorOptions'
+      security:
+      - BearerAuth: []
+      summary: Read the macro calculator's foods, ranges, and defaults
+      tags:
+      - nutrition
   /api/v1/nutrition/days:
     get:
       parameters:
@@ -3834,6 +4344,66 @@ paths:
       security:
       - BearerAuth: []
       summary: Replace a saved meal's name and items; days already logged do not change
+      tags:
+      - nutrition
+  /api/v1/nutrition/plan:
+    get:
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedNutritionPlan'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Read the athlete's saved plan
+      tags:
+      - nutrition
+  /api/v1/nutrition/profile:
+    put:
+      description: The service recomputes the targets. expected_revision is the saved
+        plan's revision, 0 when none exists.
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: The athlete's numbers and preferences
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveNutritionProfileRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.SavedNutritionPlan'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/model.SavedNutritionPlan'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save the calculator input as the athlete's plan
       tags:
       - nutrition
   /api/v1/nutrition/target:

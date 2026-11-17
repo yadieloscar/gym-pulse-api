@@ -165,6 +165,7 @@ func main() {
 	foodRepo := dao.NewFoodDAO(pool)
 	foodEntryRepo := dao.NewFoodEntryDAO(pool)
 	savedMealRepo := dao.NewSavedMealDAO(pool)
+	nutritionProfileRepo := dao.NewNutritionProfileDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
 	programGenerationRepo := dao.NewProgramGenerationDAO(pool, cfg.ProgramGenerationTimeout+generationLedgerMargin)
 	idempotencyRepo := dao.NewIdempotencyDAO(pool)
@@ -207,6 +208,7 @@ func main() {
 	openFoodFactsSource := service.NewOpenFoodFactsSource(cfg.OpenFoodFactsBaseURL, cfg.FoodSourceUserAgent, nil)
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	savedMealSvc := service.NewSavedMealService(savedMealRepo, trainingProfileRepo)
+	nutritionPlanSvc := service.NewNutritionPlanService(nutritionProfileRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, trainingProfileRepo, planTransitionRepo, v)
 	// The rules engine serves drafts by default; the model path is opt-in (spec 016 FR-001).
@@ -249,12 +251,13 @@ func main() {
 	nutritionHandler := handler.NewNutritionHandler(nutritionSvc)
 	foodHandler := handler.NewFoodHandler(foodSvc)
 	savedMealHandler := handler.NewSavedMealHandler(savedMealSvc)
+	nutritionPlanHandler := handler.NewNutritionPlanHandler(nutritionPlanSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler)
+	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler, nutritionPlanHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

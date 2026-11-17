@@ -53,6 +53,7 @@ func (r *exportDAO) Export(ctx context.Context, userID uuid.UUID, exportedAt tim
 		readExportFoodEntries,
 		readExportOwnFoods,
 		readExportSavedMeals,
+		readExportCalculatorProfile,
 		readExportKneeKitDays,
 	}
 	for _, read := range readers {
@@ -484,5 +485,29 @@ func readExportKneeKitDays(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out
 		return fmt.Errorf("scanning export knee kit days: %w", err)
 	}
 	out.KneeKitDays = append(out.KneeKitDays, days...)
+	return nil
+}
+
+func readExportCalculatorProfile(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
+	profile, err := scanNutritionProfile(tx.QueryRow(ctx, `
+		SELECT `+nutritionProfileColumns+`
+		FROM nutrition_profiles
+		WHERE user_id=$1`, userID))
+	if errors.Is(err, pgx.ErrNoRows) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("querying calculator profile for export: %w", err)
+	}
+	out.Nutrition.CalculatorProfile = &model.ExportCalculatorProfile{
+		CalculatorInput: profile.Input,
+		BMRKcal:         profile.BMRKcal,
+		TDEEKcal:        profile.TDEEKcal,
+		TargetKcal:      profile.TargetKcal,
+		ProteinG:        profile.ProteinG,
+		CarbsG:          profile.CarbsG,
+		FatG:            profile.FatG,
+		UpdatedAt:       profile.UpdatedAt,
+	}
 	return nil
 }
