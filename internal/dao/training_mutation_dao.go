@@ -774,7 +774,7 @@ func loadLegacyWeeklyAssignments(ctx context.Context, tx pgx.Tx, userID uuid.UUI
 		       wt.created_at, wt.updated_at,
 		       e.id, e.template_id, e.catalog_id, e.name, e.sort_order,
 		       e.sets, e.reps, e.weight, e.rest_seconds, e.duration_minutes,
-		       e.intensity, e.notes
+		       e.duration_seconds, e.intensity, e.notes
 		FROM weekly_plans wp
 		JOIN workout_templates wt ON wt.id=wp.template_id AND wt.user_id=wp.user_id
 		JOIN exercises e ON e.template_id=wt.id
@@ -797,7 +797,7 @@ func loadLegacyWeeklyAssignments(ctx context.Context, tx pgx.Tx, userID uuid.UUI
 			&template.CreatedAt, &template.UpdatedAt,
 			&exercise.ID, &exercise.TemplateID, &exercise.CatalogID, &exercise.Name,
 			&exercise.SortOrder, &exercise.Sets, &exercise.Reps, &exercise.Weight,
-			&exercise.RestSeconds, &exercise.DurationMinutes, &exercise.Intensity, &exercise.Notes,
+			&exercise.RestSeconds, &exercise.DurationMinutes, &exercise.DurationSeconds, &exercise.Intensity, &exercise.Notes,
 		); err != nil {
 			return nil, fmt.Errorf("scanning owned legacy weekly plan: %w", err)
 		}

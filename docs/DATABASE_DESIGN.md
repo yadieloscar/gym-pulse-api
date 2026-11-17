@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **44 tables and 477 supported columns**. For the Supabase-managed
+The current inventory contains **44 tables and 480 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -337,10 +337,15 @@ migration 034 adds `sub_pattern` for 20 entries and four power entries (83 rows)
 | `subtype_id` | `text` | not null; `'general'` | Workout subtype | Health |
 | `created_at` | `timestamptz` | not null; `now()` | Creation instant | Private |
 | `updated_at` | `timestamptz` | not null; `now()` | Last replacement instant | Private |
+| `warmup_routine_id` | `text` | nullable | Stretching routine the athlete chose to open the workout; `NULL` lets the app pick by body area | Health |
+| `cooldown_routine_id` | `text` | nullable | Stretching routine the athlete chose to close the workout; `NULL` lets the app pick by body area | Health |
 
 **Current constraints and indexes**
 
 - Primary key: `id`.
+- Checks `workout_templates_warmup_routine_id_check` and
+  `workout_templates_cooldown_routine_id_check`: `NULL`, or a 1–64 character lowercase slug.
+  Routines are bundled in the app, so the slug is not a foreign key (049).
 - Named indexes `idx_templates_user(user_id)` and
   `idx_templates_user_type(user_id, type_id)`.
 - Type and subtype vocabularies are service-validated, not database-checked.
@@ -349,7 +354,7 @@ migration 034 adds `sub_pattern` for 20 entries and four power entries (83 rows)
 **Mutation model**: Updating a template replaces all child exercise rows in one transaction. Past
 scheduled/performed snapshots do not change.
 
-**Migration source**: `001_create_workout_templates`.
+**Migration sources**: `001_create_workout_templates`, `049_timed_exercises_and_workout_routines`.
 
 ### Table: `public.exercises`
 
@@ -369,18 +374,22 @@ scheduled/performed snapshots do not change.
 | `catalog_id` | `uuid` | nullable | Catalog provenance | Public |
 | `duration_minutes` | `integer` | nullable | Cardio duration target | Health |
 | `intensity` | `text` | nullable | Cardio intensity | Health |
+| `duration_seconds` | `integer` | nullable | Seconds per set of a hold or stretch | Health |
 
 **Current constraints and indexes**
 
 - Primary key: `id`.
+- Check `exercises_duration_seconds_check`: `NULL` or 1–3600 (049).
 - FK `template_id → workout_templates(id) ON DELETE CASCADE`.
 - FK `catalog_id → exercise_catalog(id) ON DELETE SET NULL`.
 - Check: `intensity IN ('easy', 'moderate', 'hard')`.
 - Named index `idx_exercises_template(template_id)`.
-- Strength-versus-cardio exclusivity and positive targets are service-validated, not
-  database-checked.
+- That an exercise is exactly one of strength (sets and reps), timed (sets and
+  `duration_seconds`), or cardio (`duration_minutes`), and positive targets, are
+  service-validated, not database-checked.
 
-**Migration sources**: `002_create_exercises`, `009_alter_exercises_cardio`.
+**Migration sources**: `002_create_exercises`, `009_alter_exercises_cardio`,
+`049_timed_exercises_and_workout_routines`.
 
 ### Table: `public.day_logs`
 
@@ -455,7 +464,7 @@ goal-based workout session.
 | `target_weight` | `numeric(7,2)` | nullable | Captured weight target | Health |
 | `actual_reps` | `integer` | nullable | Performed repetitions | Health |
 | `actual_weight` | `numeric(7,2)` | nullable | Performed weight | Health |
-| `duration_seconds` | `integer` | nullable | Performed cardio duration | Health |
+| `duration_seconds` | `integer` | nullable | Performed duration: a cardio set, or a timed hold or stretch | Health |
 | `completed` | `boolean` | not null; `false` | Counts as performed | Health |
 | `logged_at` | `timestamptz` | not null; `now()` | Last insert/upsert instant | Health |
 | `workout_session_id` | `uuid` | nullable | Goal-based parent | Health |
@@ -2384,6 +2393,7 @@ Report one of:
 | 046 | Data repair, no schema change: removes untouched future `scheduled_workouts` rows of a program whose `program_workout_id` is null (their workout was deleted under the older contract) and sets the active program's `scheduled_through` to the athlete's today, so the next read refills from tomorrow; past, started, and today's rows stay |
 | 047 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
 | 048 | No table change: `gym_pulse_private.schema_version()`, a `SECURITY DEFINER` function returning the migration ledger's `version` and `dirty`, executable by `gym_pulse_api` only; the server calls it at startup and refuses a schema that is behind or dirty |
+| 049 | `exercises.duration_seconds` (seconds per set of a hold or stretch, 1–3600) and `workout_templates.warmup_routine_id` / `cooldown_routine_id` (the stretching routines the athlete chose for a saved workout; 1–64 character slugs, `NULL` for the automatic pick). Additive; no row rewritten |
 
 ## 19. Decision summary
 

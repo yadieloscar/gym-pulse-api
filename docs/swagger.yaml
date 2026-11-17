@@ -318,6 +318,10 @@ definitions:
         type: string
       duration_minutes:
         type: integer
+      duration_seconds:
+        maximum: 3600
+        minimum: 1
+        type: integer
       intensity:
         enum:
         - easy
@@ -433,6 +437,8 @@ definitions:
     type: object
   model.CreateTemplateRequest:
     properties:
+      cooldown_routine_id:
+        type: string
       exercises:
         items:
           $ref: '#/definitions/model.CreateExerciseRequest'
@@ -444,6 +450,12 @@ definitions:
       subtype_id:
         type: string
       type_id:
+        type: string
+      warmup_routine_id:
+        description: |-
+          A routine field that is absent keeps the stored choice on PUT, so a
+          client older than contract 1.13.0 does not clear it. Null or "" clears
+          the choice back to automatic.
         type: string
     required:
     - name
@@ -636,6 +648,9 @@ definitions:
       catalog_id:
         type: string
       duration_minutes:
+        type: integer
+      duration_seconds:
+        description: DurationSeconds is the seconds per set of a hold or stretch.
         type: integer
       id:
         type: string
@@ -1002,6 +1017,8 @@ definitions:
     type: object
   model.ExportTemplate:
     properties:
+      cooldown_routine_id:
+        type: string
       created_at:
         type: string
       exercises:
@@ -1018,10 +1035,14 @@ definitions:
         type: string
       updated_at:
         type: string
+      warmup_routine_id:
+        type: string
     type: object
   model.ExportTemplateExercise:
     properties:
       duration_minutes:
+        type: integer
+      duration_seconds:
         type: integer
       intensity:
         type: string
@@ -2900,6 +2921,8 @@ definitions:
     type: object
   model.WorkoutTemplate:
     properties:
+      cooldown_routine_id:
+        type: string
       created_at:
         type: string
       exercises:
@@ -2917,6 +2940,11 @@ definitions:
       type_id:
         type: string
       updated_at:
+        type: string
+      warmup_routine_id:
+        description: |-
+          WarmupRoutineID and CooldownRoutineID name the stretching routines the
+          athlete chose for this workout. Null means the app picks by body area.
         type: string
     required:
     - name

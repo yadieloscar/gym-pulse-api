@@ -156,6 +156,23 @@ func TestLegacyWeeklyPlanPreservesRepeatedTemplateAssignments(t *testing.T) {
 	}
 }
 
+// A timed hold in a legacy weekly plan stays strength work, timed per set.
+func TestLegacyWeeklyPlanKeepsATimedHoldTimed(t *testing.T) {
+	sets, seconds := 2, 30
+	template := WorkoutTemplate{
+		ID: uuid.New(), Name: "Legs", TypeID: "legs", SubtypeID: "general",
+		Exercises: []Exercise{{ID: uuid.New(), Name: "Couch stretch", SortOrder: 0, Sets: &sets, DurationSeconds: &seconds}},
+	}
+	program, _, err := ProgramFromLegacyWeeklyPlan(GoalGeneralHealth, []LegacyWeeklyAssignment{{Weekday: 2, Template: template}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := program.Workouts[0].Exercises[0]
+	if got.Modality != "strength" || got.TargetSets != 2 || got.TargetReps != nil || got.TargetDurationSeconds == nil || *got.TargetDurationSeconds != 30 {
+		t.Fatalf("timed exercise = %+v", got)
+	}
+}
+
 func TestNextFutureWeekUsesAthleteTimezone(t *testing.T) {
 	// Sunday evening in New York is already Monday UTC. The athlete's local
 	// calendar must still choose the immediately upcoming local Monday.

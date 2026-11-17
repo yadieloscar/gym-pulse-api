@@ -83,11 +83,11 @@ func (r *templateDAO) List(ctx context.Context, userID uuid.UUID, typeFilter, su
 func (r *templateDAO) GetByID(ctx context.Context, userID, templateID uuid.UUID) (*model.WorkoutTemplate, error) {
 	t := &model.WorkoutTemplate{}
 	err := r.pool.QueryRow(ctx, `
-		SELECT id, user_id, name, type_id, subtype_id, created_at, updated_at
+		SELECT id, user_id, name, type_id, subtype_id, warmup_routine_id, cooldown_routine_id, created_at, updated_at
 		FROM workout_templates
 		WHERE id = $1 AND user_id = $2`,
 		templateID, userID,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.TypeID, &t.SubtypeID, &t.CreatedAt, &t.UpdatedAt)
+	).Scan(&t.ID, &t.UserID, &t.Name, &t.TypeID, &t.SubtypeID, &t.WarmupRoutineID, &t.CooldownRoutineID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, &model.NotFoundError{Message: "template not found"}
@@ -105,7 +105,7 @@ func (r *templateDAO) GetByID(ctx context.Context, userID, templateID uuid.UUID)
 
 func (r *templateDAO) getExercises(ctx context.Context, templateID uuid.UUID) ([]model.Exercise, error) {
 	rows, err := r.pool.Query(ctx, `
-		SELECT id, template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes
+		SELECT id, template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, duration_seconds, intensity, notes
 		FROM exercises
 		WHERE template_id = $1
 		ORDER BY sort_order`,
@@ -122,7 +122,7 @@ func (r *templateDAO) getExercises(ctx context.Context, templateID uuid.UUID) ([
 		if err := rows.Scan(
 			&e.ID, &e.TemplateID, &e.CatalogID, &e.Name, &e.SortOrder,
 			&e.Sets, &e.Reps, &e.Weight, &e.RestSeconds,
-			&e.DurationMinutes, &e.Intensity, &e.Notes,
+			&e.DurationMinutes, &e.DurationSeconds, &e.Intensity, &e.Notes,
 		); err != nil {
 			return nil, fmt.Errorf("scanning exercise: %w", err)
 		}
@@ -143,10 +143,10 @@ func (r *templateDAO) Create(ctx context.Context, userID uuid.UUID, t *model.Wor
 	defer tx.Rollback(ctx)
 
 	err = tx.QueryRow(ctx, `
-		INSERT INTO workout_templates (user_id, name, type_id, subtype_id)
-		VALUES ($1, $2, $3, $4)
+		INSERT INTO workout_templates (user_id, name, type_id, subtype_id, warmup_routine_id, cooldown_routine_id)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		RETURNING id, created_at, updated_at`,
-		userID, t.Name, t.TypeID, t.SubtypeID,
+		userID, t.Name, t.TypeID, t.SubtypeID, t.WarmupRoutineID, t.CooldownRoutineID,
 	).Scan(&t.ID, &t.CreatedAt, &t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("inserting template: %w", err)
@@ -181,10 +181,10 @@ func (r *templateDAO) Update(ctx context.Context, userID uuid.UUID, t *model.Wor
 
 	err = tx.QueryRow(ctx, `
 		UPDATE workout_templates
-		SET name = $1, type_id = $2, subtype_id = $3, updated_at = now()
+		SET name = $1, type_id = $2, subtype_id = $3, warmup_routine_id = $6, cooldown_routine_id = $7, updated_at = now()
 		WHERE id = $4 AND user_id = $5
 		RETURNING updated_at`,
-		t.Name, t.TypeID, t.SubtypeID, t.ID, userID,
+		t.Name, t.TypeID, t.SubtypeID, t.ID, userID, t.WarmupRoutineID, t.CooldownRoutineID,
 	).Scan(&t.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("updating template: %w", err)
@@ -214,12 +214,12 @@ func insertTemplateExercises(ctx context.Context, tx pgx.Tx, t *model.WorkoutTem
 		e.TemplateID = t.ID
 		e.SortOrder = i
 		batch.Queue(`
-			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, intensity, notes)
-			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			INSERT INTO exercises (template_id, catalog_id, name, sort_order, sets, reps, weight, rest_seconds, duration_minutes, duration_seconds, intensity, notes)
+			VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 			RETURNING id`,
 			e.TemplateID, e.CatalogID, e.Name, e.SortOrder,
 			e.Sets, e.Reps, e.Weight, e.RestSeconds,
-			e.DurationMinutes, e.Intensity, e.Notes)
+			e.DurationMinutes, e.DurationSeconds, e.Intensity, e.Notes)
 	}
 	results := tx.SendBatch(ctx, batch)
 	for i := range t.Exercises {

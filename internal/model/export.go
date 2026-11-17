@@ -105,13 +105,15 @@ type ExportExerciseSummary struct {
 
 // ExportTemplate is a saved workout with its exercises in order.
 type ExportTemplate struct {
-	ID        uuid.UUID                `json:"id"`
-	Name      string                   `json:"name"`
-	TypeID    string                   `json:"type_id"`
-	SubtypeID string                   `json:"subtype_id"`
-	CreatedAt time.Time                `json:"created_at"`
-	UpdatedAt time.Time                `json:"updated_at"`
-	Exercises []ExportTemplateExercise `json:"exercises"`
+	ID                uuid.UUID                `json:"id"`
+	Name              string                   `json:"name"`
+	TypeID            string                   `json:"type_id"`
+	SubtypeID         string                   `json:"subtype_id"`
+	WarmupRoutineID   *string                  `json:"warmup_routine_id"`
+	CooldownRoutineID *string                  `json:"cooldown_routine_id"`
+	CreatedAt         time.Time                `json:"created_at"`
+	UpdatedAt         time.Time                `json:"updated_at"`
+	Exercises         []ExportTemplateExercise `json:"exercises"`
 }
 
 // ExportTemplateExercise is one prescribed exercise in a template.
@@ -122,6 +124,7 @@ type ExportTemplateExercise struct {
 	Weight          *float64 `json:"weight"`
 	RestSeconds     *int     `json:"rest_seconds"`
 	DurationMinutes *int     `json:"duration_minutes"`
+	DurationSeconds *int     `json:"duration_seconds"`
 	Intensity       *string  `json:"intensity"`
 	Notes           *string  `json:"notes"`
 }
