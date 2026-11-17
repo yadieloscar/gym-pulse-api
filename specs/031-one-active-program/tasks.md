@@ -259,6 +259,29 @@ schedule lock. Restores FR-010 (saving the active program updates its future) on
   `idx_programs_one_active_per_user` from migration 014. Every path that activates a program
   deactivates the other one first, inside the per-athlete program lock.
 
+### Follow-up fix (2026-11-17): saving the active program timed out in production
+
+The owner replaced a workout and added a sport session on the phone and got "Couldn't save your
+program". The server logged `context canceled`: the app gave up at its 15-second timeout and the
+transaction rolled back, so nothing was saved. Laying the changed units out to the 56-day horizon
+wrote 24 sessions and 288 sets with one statement each, about 360 round trips. The API runs in
+US East and the database in us-west-1, so each one costs tens of milliseconds.
+
+`insertLayoutSessions`, `insertScheduledSets`, and `insertProgramExercises` now send their rows as
+pgx batches: one round trip for the sessions, one for all their sets, one per workout's exercises.
+No behavior, contract, or schema change. Restores FR-010 on a remote database.
+
+| Check | Result |
+| --- | --- |
+| Same save through a proxy adding 60 ms per round trip | 23.9 s before, 3.5 s after (the 3.5 s includes four reads the script makes first) |
+| `TestSavingTheActiveProgramStaysWithinARoundTripBudget` | pass: 24 sessions, 288 sets, 19 statements and 4 batches (budget 60) |
+| Full integration suite, unit tests, lint | pass |
+| The save on the owner's phone against production | not verified until deployed |
+
+Not changed: a 60-day schedule read still runs about 56 statements (3.7 s through the same
+proxy), and four malformed payloads (duplicate exercise order, unknown catalog id, an exercise
+with neither reps nor time, duplicate workout position) return 500 where 422 is intended.
+
 ### Consistency analysis (2026-11-16, before implementation)
 
 Read-only pass over spec, plan, research, data model, contract draft, and tasks.
