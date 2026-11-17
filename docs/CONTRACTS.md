@@ -462,9 +462,20 @@ or later** in the training-profile timezone:
 
 These changes apply to planned, unstarted sessions dated **today or later**
 (since 1.12.1; before that, after today), so a workout added to today's
-weekday is on today. Sessions that are in progress, finished, missed, or
-dated before today never change, and a unit with a started session today does
-not get a second one. If the saved active program has no `weekdays` (an older client),
+weekday is on today. Sessions that are finished, missed, or dated before
+today never change, and a unit with a started session today does not get a
+second one.
+
+A session the athlete has **started and not finished** takes a change to its
+unit's name, order, or exercises too (since 1.13.1): every required set with a
+performed set, done or not, stays as it is and keeps its `id` and `set_index`;
+every other required set is replaced by the edited workout's sets. A kept set
+moves to its exercise's `exercise_order` in the edited workout, matched by
+`exercise_name`; a kept set whose exercise the edit removed is placed after
+the edited exercises. The session's `revision` increases, so a client holding
+the earlier revision gets `REVISION_CONFLICT` on its next write and should
+read the session again. A started session is not moved or removed when its
+unit's weekdays change or the unit is removed. If the saved active program has no `weekdays` (an older client),
 the server places it at once from tomorrow, so the week is never left empty; a
 following `schedule/regenerate` yields the same schedule. A body with
 `active: true` for a program that was not active starts it from tomorrow: the

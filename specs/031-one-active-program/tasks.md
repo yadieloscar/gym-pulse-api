@@ -324,6 +324,13 @@ export run a few dozen statements. Not verified against production.
   no-second-session rule.
 - [X] Spec FR-015, User Story 6 scenario 1, data model, contract draft, and `docs/CONTRACTS.md`.
 
+### Amendment A4: a started workout takes the edit (2026-11-17)
+
+- [X] `model.MergeStartedSets` (pure): logged sets kept and placed, the rest taken from the edit.
+- [X] `mergeStartedUnitSessions` / `mergeStartedSession` in `training_mutation_dao.go`, called from `resnapshotUnitSessions`; a session with any performed set is treated as started, so its sets are never bulk-deleted.
+- [X] Unit tests `training_materialization_test.go`; integration tests `started_session_edit_integration_test.go` (run by CI; local Docker was unresponsive).
+- [X] Spec FR-015 and `docs/CONTRACTS.md`.
+
 ### Consistency analysis (2026-11-16, before implementation)
 
 Read-only pass over spec, plan, research, data model, contract draft, and tasks.
