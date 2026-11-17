@@ -109,8 +109,8 @@ fast-digesting. A `meal_choices` entry overrides selection for its role.
 
 ### Compatibility and rollout
 
-Additive. Stacked on `feat/031-one-active-program` (API #67) because migrations must be contiguous
-and #67 holds 045; this is 046. Merge after #67. Older apps never call the routes. The app probes
+Additive. Started on `feat/031-one-active-program` (API #67) because migrations must be contiguous
+and #67 held 045; #67 merged on 2026-11-16 and main is merged in, so this is 046 on main. Older apps never call the routes. The app probes
 the options route and hides the calculator on `404`.
 
 ## Complexity Tracking

@@ -24,7 +24,7 @@ Expected: `bmr_kcal` 1783, `activity.level` `moderate`, `tdee_kcal` 2763, `macro
 
 ## Rollout
 
-1. Merge after API #67 (this branch is stacked on it; migration 046 follows 045).
+1. API #67 (migration 045) merged on 2026-11-16; this branch has main merged in and adds 046.
 2. Deploy; the `./migrate` pre-deploy step applies 046. Additive: older apps are unaffected.
 3. The app (spec 038) probes `GET /api/v1/nutrition/calculator/options`; a `404` hides the feature,
    so the app may ship before or after, but shows the calculator only against this API.
