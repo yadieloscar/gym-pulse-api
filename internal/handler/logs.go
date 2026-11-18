@@ -189,6 +189,31 @@ func (h *LogHandler) ExerciseRecords(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, records)
 }
 
+// ExerciseProgression godoc
+// @Summary     Weekly heaviest set per exercise
+// @Description Returns, for each comma-separated exercise, the heaviest completed weighted set of each Monday-start week in the last N weeks (default 12, 1 to 52), oldest first. Weeks and exercises without one are omitted.
+// @Tags        logs
+// @Produce     json
+// @Param       ids   query string true  "Comma-separated exercise UUIDs (at most 100)"
+// @Param       weeks query int    false "Number of weeks, 1 to 52 (default 12)"
+// @Success     200 {array}  model.ExerciseProgression
+// @Failure     401 {object} map[string]string
+// @Failure     422 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/exercises/progression [get]
+func (h *LogHandler) ExerciseProgression(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.MustGetUserID(r.Context())
+
+	query := r.URL.Query()
+	progressions, err := h.svc.ExerciseProgression(r.Context(), userID, query.Get("ids"), query.Get("weeks"))
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, progressions)
+}
+
 // Delete godoc
 // @Summary     Delete a day log
 // @Description Permanently deletes the day log for the given date.

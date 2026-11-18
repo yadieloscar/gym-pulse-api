@@ -239,6 +239,8 @@ func New(
 				r.Get("/exercises/history", logHandler.ExerciseHistory)
 				// Per-exercise all-time records (heaviest + best e1RM)
 				r.Get("/exercises/records", logHandler.ExerciseRecords)
+				// Per-exercise weekly heaviest set (Progress trend)
+				r.Get("/exercises/progression", logHandler.ExerciseProgression)
 
 				// Weekly plan
 				r.Route("/plan", func(r chi.Router) {

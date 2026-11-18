@@ -1778,6 +1778,42 @@ detect PRs, and shows "top lifts".
 ]
 ```
 
+### `GET /api/v1/exercises/progression?ids=<uuid,uuid>&weeks=N` → `ExerciseProgression[]` (contract 1.15.0)
+Per requested exercise, the heaviest completed weighted set of each week, for
+the Progress trend. One request replaces reading every week's logs. Read-only:
+no idempotency key and no revision.
+
+- `ids` follows `/exercises/records`: comma-separated exercise UUIDs, at most
+  100. A malformed id or more than 100 ids → 422 `VALIDATION_ERROR` with
+  `details.field: "ids"`. Empty `ids` → `[]`. A repeated id is answered once.
+- `weeks` defaults to 12 and allows 1 to 52. Anything else (0, 53, a
+  non-integer) → 422 `VALIDATION_ERROR` with `details.field: "weeks"`. Unlike
+  `/stats/volume`, a value above 52 is refused, not capped.
+- The window is the current week and the `N-1` weeks before it. Weeks start on
+  Monday, and "the current week" is decided on the server clock, exactly as
+  `/stats/volume` decides it.
+- The sets are the ones `/exercises/records` reads: completed sets with a
+  weight and positive reps, from day logs and from workout sessions that are
+  not discarded. Estimates are never returned.
+- The heaviest set of a week wins. Equal weight → the set with more reps.
+  Equal weight and reps → the earlier date.
+- Exercises come back in the order requested, each with `weeks` oldest first.
+  A week with no such set has no entry (the series is **not** continuous). An
+  exercise with no such set in the window, an unknown id, and an id owned by
+  another athlete are omitted. The list is `[]`, never `null`.
+- `week_start` is the Monday of the week and `date` is the day the set was
+  lifted, both `YYYY-MM-DD`.
+```json
+[
+  { "exercise_id": "uuid",
+    "weeks": [
+      { "week_start": "2026-08-31", "max_weight": 205, "max_weight_reps": 5, "date": "2026-09-02" }
+    ] }
+]
+```
+A server older than 1.15.0 does not have this route and answers 404 without the
+JSON error envelope; clients treat that as "not available yet".
+
 ---
 
 ## Weekly plan

@@ -67,3 +67,20 @@ type ExerciseRecord struct {
 	E1RMReps      *int      `json:"e1rm_reps"`
 	E1RMDate      *string   `json:"e1rm_date,omitempty"`
 }
+
+// ProgressionWeek is the heaviest completed weighted set of one week for one
+// exercise. WeekStart is the week's Monday and Date is the day the set was
+// lifted, both YYYY-MM-DD.
+type ProgressionWeek struct {
+	WeekStart     string  `json:"week_start"`
+	MaxWeight     float64 `json:"max_weight"`
+	MaxWeightReps int     `json:"max_weight_reps"`
+	Date          string  `json:"date"`
+}
+
+// ExerciseProgression is one exercise's weekly heaviest sets, oldest week
+// first. Only weeks with a completed weighted set have an entry.
+type ExerciseProgression struct {
+	ExerciseID uuid.UUID         `json:"exercise_id"`
+	Weeks      []ProgressionWeek `json:"weeks"`
+}

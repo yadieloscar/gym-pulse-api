@@ -331,3 +331,61 @@ func TestLogHandler_ExerciseRecords(t *testing.T) {
 		}
 	})
 }
+
+func TestLogHandler_ExerciseProgression(t *testing.T) {
+	uid := uuid.New()
+	exerciseID := uuid.MustParse("11111111-1111-4111-8111-111111111111")
+
+	t.Run("success", func(t *testing.T) {
+		svc := &MockLogService{ExerciseProgressionFunc: func(_ context.Context, userID uuid.UUID, ids, weeks string) ([]model.ExerciseProgression, error) {
+			if userID != uid || ids != exerciseID.String() || weeks != "12" {
+				t.Fatalf("unexpected progression request: user=%s ids=%q weeks=%q", userID, ids, weeks)
+			}
+			return []model.ExerciseProgression{{ExerciseID: exerciseID, Weeks: []model.ProgressionWeek{
+				{WeekStart: "2026-08-31", MaxWeight: 205, MaxWeightReps: 5, Date: "2026-09-02"},
+			}}}, nil
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseProgression(rec, newReq(t, http.MethodGet, "/?ids="+exerciseID.String()+"&weeks=12", nil, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		want := `[{"exercise_id":"11111111-1111-4111-8111-111111111111","weeks":[{"week_start":"2026-08-31","max_weight":205,"max_weight_reps":5,"date":"2026-09-02"}]}]`
+		if got := strings.TrimSpace(rec.Body.String()); got != want {
+			t.Errorf("body = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("empty result is a JSON array", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		NewLogHandler(&MockLogService{}).ExerciseProgression(rec, newReq(t, http.MethodGet, "/", nil, uid))
+		if got := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusOK || got != "[]" {
+			t.Fatalf("status=%d body=%s, want 200 []", rec.Code, got)
+		}
+	})
+
+	t.Run("validation failure names the field", func(t *testing.T) {
+		svc := &MockLogService{ExerciseProgressionFunc: func(context.Context, uuid.UUID, string, string) ([]model.ExerciseProgression, error) {
+			return nil, &model.ValidationError{Message: "weeks must be an integer from 1 to 52", Field: "weeks"}
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseProgression(rec, newReq(t, http.MethodGet, "/?weeks=99", nil, uid))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		if body := rec.Body.String(); !strings.Contains(body, `"VALIDATION_ERROR"`) || !strings.Contains(body, `"field":"weeks"`) {
+			t.Errorf("body = %s, want VALIDATION_ERROR with field weeks", body)
+		}
+	})
+
+	t.Run("service failure", func(t *testing.T) {
+		svc := &MockLogService{ExerciseProgressionFunc: func(context.Context, uuid.UUID, string, string) ([]model.ExerciseProgression, error) {
+			return nil, errors.New("database unavailable")
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseProgression(rec, newReq(t, http.MethodGet, "/?ids="+exerciseID.String(), nil, uid))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}

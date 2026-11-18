@@ -320,6 +320,67 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/exercises/progression": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns, for each comma-separated exercise, the heaviest completed weighted set of each Monday-start week in the last N weeks (default 12, 1 to 52), oldest first. Weeks and exercises without one are omitted.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "Weekly heaviest set per exercise",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Comma-separated exercise UUIDs (at most 100)",
+                        "name": "ids",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of weeks, 1 to 52 (default 12)",
+                        "name": "weeks",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/model.ExerciseProgression"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/exercises/records": {
             "get": {
                 "security": [
@@ -5880,6 +5941,20 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExerciseProgression": {
+            "type": "object",
+            "properties": {
+                "exercise_id": {
+                    "type": "string"
+                },
+                "weeks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgressionWeek"
+                    }
+                }
+            }
+        },
         "model.ExerciseRecord": {
             "type": "object",
             "properties": {
@@ -7828,6 +7903,23 @@ const docTemplate = `{
                     "items": {
                         "type": "integer"
                     }
+                }
+            }
+        },
+        "model.ProgressionWeek": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "max_weight": {
+                    "type": "number"
+                },
+                "max_weight_reps": {
+                    "type": "integer"
+                },
+                "week_start": {
+                    "type": "string"
                 }
             }
         },

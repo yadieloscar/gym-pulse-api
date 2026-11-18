@@ -26,6 +26,10 @@ type LogDAO interface {
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 	RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
+	// WeeklyHeaviestSets returns, per requested exercise that has any, the
+	// heaviest completed weighted set of each Monday-start week on or after
+	// since, weeks oldest first.
+	WeeklyHeaviestSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error)
 }
 
 type logDAO struct {
@@ -310,6 +314,54 @@ func (r *logDAO) RecordSets(ctx context.Context, userID uuid.UUID, exerciseIDs [
 		perfs = append(perfs, p)
 	}
 	return perfs, rows.Err()
+}
+
+// WeeklyHeaviestSets reads the same performed sets as RecordSets, limited to
+// dates on or after since, and keeps one set per exercise and week: the
+// heaviest, then the one with more reps, then the earlier date. Weeks are
+// keyed by their Monday, the bucketing GetWeeklyVolume uses. Rows arrive
+// grouped by exercise with weeks oldest first.
+func (r *logDAO) WeeklyHeaviestSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error) {
+	if len(exerciseIDs) == 0 {
+		return []model.ExerciseProgression{}, nil
+	}
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT ON (exercise_id, week_start)
+		       exercise_id, to_char(week_start, 'YYYY-MM-DD'), actual_weight, actual_reps, to_char(date, 'YYYY-MM-DD')
+		FROM (
+		  SELECT exercise_id, actual_weight, actual_reps, date, date_trunc('week', date) AS week_start FROM (
+		    SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, dl.date FROM set_logs sl JOIN day_logs dl ON dl.id=sl.day_log_id
+		    WHERE dl.user_id=$1 AND dl.date >= $3 AND sl.completed=true
+		    UNION ALL
+		    SELECT sl.exercise_id, sl.actual_weight, sl.actual_reps, ws.date FROM set_logs sl JOIN workout_sessions ws ON ws.id=sl.workout_session_id
+		    WHERE ws.user_id=$1 AND ws.date >= $3 AND ws.status <> 'discarded' AND sl.completed=true
+		  ) performed
+		  WHERE exercise_id = ANY($2) AND actual_weight IS NOT NULL AND actual_reps IS NOT NULL AND actual_reps > 0
+		) weighted
+		ORDER BY exercise_id, week_start, actual_weight DESC, actual_reps DESC, date ASC`,
+		userID, exerciseIDs, since,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("querying weekly heaviest sets: %w", err)
+	}
+	defer rows.Close()
+
+	progressions := []model.ExerciseProgression{}
+	for rows.Next() {
+		var (
+			exerciseID uuid.UUID
+			week       model.ProgressionWeek
+		)
+		if err := rows.Scan(&exerciseID, &week.WeekStart, &week.MaxWeight, &week.MaxWeightReps, &week.Date); err != nil {
+			return nil, fmt.Errorf("scanning weekly heaviest set: %w", err)
+		}
+		if n := len(progressions); n == 0 || progressions[n-1].ExerciseID != exerciseID {
+			progressions = append(progressions, model.ExerciseProgression{ExerciseID: exerciseID})
+		}
+		last := &progressions[len(progressions)-1]
+		last.Weeks = append(last.Weeks, week)
+	}
+	return progressions, rows.Err()
 }
 
 // ExerciseHistory returns, per requested exercise, the completed sets from the

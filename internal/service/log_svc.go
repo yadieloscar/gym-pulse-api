@@ -2,7 +2,9 @@ package service
 
 import (
 	"context"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -19,6 +21,7 @@ type LogService interface {
 	Delete(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
 	ExerciseRecords(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
+	ExerciseProgression(ctx context.Context, userID uuid.UUID, idsParam, weeksParam string) ([]model.ExerciseProgression, error)
 }
 
 type logService struct {
@@ -232,6 +235,53 @@ func (s *logService) ExerciseRecords(ctx context.Context, userID uuid.UUID, idsP
 		return nil, err
 	}
 	return reduceRecords(perfs, ids), nil
+}
+
+const (
+	defaultProgressionWeeks = 12
+	maxProgressionWeeks     = 52
+)
+
+// ExerciseProgression returns, for each requested exercise that has any, the
+// heaviest completed weighted set of each week in the window: the current
+// week and the weeks-1 weeks before it, on the week boundary GetVolume uses.
+// Exercises follow the order of idsParam; a repeated id appears once.
+func (s *logService) ExerciseProgression(ctx context.Context, userID uuid.UUID, idsParam, weeksParam string) ([]model.ExerciseProgression, error) {
+	ids, err := parseExerciseIDs(idsParam)
+	if err != nil {
+		return nil, err
+	}
+	weeks := defaultProgressionWeeks
+	if weeksParam != "" {
+		n, err := strconv.Atoi(weeksParam)
+		if err != nil || n < 1 || n > maxProgressionWeeks {
+			return nil, &model.ValidationError{Message: "weeks must be an integer from 1 to 52", Field: "weeks"}
+		}
+		weeks = n
+	}
+	if len(ids) == 0 {
+		return []model.ExerciseProgression{}, nil
+	}
+
+	since := model.MondayOfWeek(time.Now()).AddDate(0, 0, -7*(weeks-1))
+	found, err := s.repo.WeeklyHeaviestSets(ctx, userID, ids, since)
+	if err != nil {
+		return nil, err
+	}
+	byID := make(map[uuid.UUID]model.ExerciseProgression, len(found))
+	for _, p := range found {
+		byID[p.ExerciseID] = p
+	}
+	progressions := []model.ExerciseProgression{}
+	for _, id := range ids {
+		p, ok := byID[id]
+		if !ok || len(p.Weeks) == 0 {
+			continue
+		}
+		progressions = append(progressions, p)
+		delete(byID, id)
+	}
+	return progressions, nil
 }
 
 // MaxExerciseIDsPerRequest bounds the window queries behind exercise history

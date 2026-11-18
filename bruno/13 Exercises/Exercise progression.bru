@@ -1,0 +1,26 @@
+meta {
+  name: Exercise progression
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/exercises/progression?ids={{templateExerciseId}}&weeks=12
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ids: {{templateExerciseId}}
+  weeks: 12
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/exercises/progression`
+  
+  Comma-separated exercise UUIDs and a number of weeks (1 to 52, default 12)
+}
