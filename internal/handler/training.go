@@ -421,6 +421,71 @@ func (h *ScheduleHandler) PatchSetTarget(w http.ResponseWriter, r *http.Request)
 	respond(w, resource, err, http.StatusOK)
 }
 
+// SwapExercise replaces one exercise of a dated workout for that date only.
+// @Summary Swap an exercise in a scheduled workout
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param exercise_order path int true "Exercise position in the workout"
+// @Param body body model.SwapScheduledExerciseRequest true "Replacement exercise"
+// @Success 200 {object} model.ScheduledWorkout
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/swap [post]
+func (h *ScheduleHandler) SwapExercise(w http.ResponseWriter, r *http.Request) {
+	workoutID, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	order, ok := pathExerciseOrder(w, r)
+	if !ok {
+		return
+	}
+	var req model.SwapScheduledExerciseRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.SwapExercise(r.Context(), middleware.MustGetUserID(r.Context()), workoutID, order, req)
+	respond(w, resource, err, http.StatusOK)
+}
+
+// SkipExercise drops the unperformed sets of one exercise for that date only.
+// @Summary Skip an exercise in a scheduled workout
+// @Tags goal-training
+// @Accept json
+// @Produce json
+// @Param Idempotency-Key header string true "Stable operation key"
+// @Param exercise_order path int true "Exercise position in the workout"
+// @Param body body model.RevisionRequest true "Revision"
+// @Success 200 {object} model.ScheduledWorkout
+// @Security BearerAuth
+// @Router /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/skip [post]
+func (h *ScheduleHandler) SkipExercise(w http.ResponseWriter, r *http.Request) {
+	workoutID, ok := pathUUID(w, r, "id")
+	if !ok {
+		return
+	}
+	order, ok := pathExerciseOrder(w, r)
+	if !ok {
+		return
+	}
+	var req model.RevisionRequest
+	if !decodeMutation(w, r, &req, "") || !matchIdempotencyKey(w, r, req.OperationKey) {
+		return
+	}
+	resource, err := h.svc.SkipExercise(r.Context(), middleware.MustGetUserID(r.Context()), workoutID, order, req)
+	respond(w, resource, err, http.StatusOK)
+}
+
+func pathExerciseOrder(w http.ResponseWriter, r *http.Request) (int, bool) {
+	order, err := strconv.Atoi(chi.URLParam(r, "exercise_order"))
+	if err != nil || order < 1 {
+		writeError(w, http.StatusBadRequest, "invalid exercise_order", "BAD_REQUEST", nil)
+		return 0, false
+	}
+	return order, true
+}
+
 // AddExtra records performed work that never satisfies required completion.
 // @Summary Add extra set
 // @Tags goal-training

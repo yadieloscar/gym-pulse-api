@@ -121,6 +121,8 @@ func New(
 					r.Put("/sets/{set_id}", scheduleHandler.PutSet)
 					r.Patch("/sets/{set_id}/target", scheduleHandler.PatchSetTarget)
 					r.Post("/extra-sets", scheduleHandler.AddExtra)
+					r.Post("/exercises/{exercise_order}/swap", scheduleHandler.SwapExercise)
+					r.Post("/exercises/{exercise_order}/skip", scheduleHandler.SkipExercise)
 					r.Post("/complete", scheduleHandler.Complete)
 					r.Post("/skip", scheduleHandler.Skip)
 					r.Post("/unskip", scheduleHandler.Unskip)

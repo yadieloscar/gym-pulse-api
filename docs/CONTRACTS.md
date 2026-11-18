@@ -962,6 +962,46 @@ exercise. For migration compatibility, a recognized global catalog UUID in
 that field is accepted but detached to `null`; immutable exercise snapshots
 remain authoritative, and new clients send `null` for catalog-derived sets.
 
+#### `POST /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/swap` (contract 1.14.0)
+
+```json
+{
+  "operation_key": "swap-123", "expected_revision": 4,
+  "exercise_name": "Push-Up", "exercise_category": "push"
+}
+```
+Replaces one exercise of this dated workout with another, for this date only.
+`exercise_order` is the position the workout's `required_sets` carry. Only
+sets without a performed result change: they keep their `id`, reps, duration,
+rest, and notes, take the new name and category, lose `program_exercise_id`,
+and lose `target_weight`. When some sets of the exercise were already
+performed, those stay as they are and the open sets become a new exercise
+directly after them, numbered from `set_index` 1; later exercises move one
+position down. The program, the saved workout, and other dates do not change.
+Response 200: authoritative `ScheduledWorkout`, revision increased by one.
+
+Errors: 400 for a non-positive `exercise_order`; 404 when the workout is not
+owned or has no exercise at that position; 409 `REVISION_CONFLICT` for a stale
+revision and 409 for a finished workout; 422 `VALIDATION_ERROR` when a field
+is missing, when every set of the exercise is already performed
+(`details.field: "exercise_order"`), or for a sport session
+(`details.field: "kind"`).
+
+#### `POST /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/skip` (contract 1.14.0)
+
+```json
+{ "operation_key": "skip-exercise-123", "expected_revision": 4 }
+```
+Removes the sets of one exercise that have no performed result, for this date
+only. Performed sets stay. When the exercise had no performed set, later
+exercises move one position up. A workout keeps at least one set: skipping the
+only remaining work answers 422 (`details.field: "exercise_order"`); skip the
+workout instead. Response 200: authoritative `ScheduledWorkout`. The other
+errors match the swap route.
+
+A server older than 1.14.0 has neither route and answers 404 without the JSON
+error envelope; clients treat that as "not available yet".
+
 #### `POST /api/v1/scheduled-workouts/{id}/skip`
 
 ```json

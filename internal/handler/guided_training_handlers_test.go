@@ -363,3 +363,11 @@ func (s *capturingProgramService) Create(_ context.Context, _ uuid.UUID, req mod
 	s.created = &req
 	return &model.Program{Name: req.Name, Workouts: req.Workouts}, nil
 }
+
+func (guidedScheduleService) SwapExercise(context.Context, uuid.UUID, uuid.UUID, int, model.SwapScheduledExerciseRequest) (*model.ScheduledWorkout, error) {
+	return &model.ScheduledWorkout{}, nil
+}
+
+func (guidedScheduleService) SkipExercise(context.Context, uuid.UUID, uuid.UUID, int, model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	return &model.ScheduledWorkout{}, nil
+}

@@ -441,3 +441,11 @@ func TestProgramServiceBoundsRoadmapSize(t *testing.T) {
 		assertRoadmapRejected(t, err)
 	})
 }
+
+func (*adoptionMutationStub) SwapScheduledExercise(context.Context, uuid.UUID, uuid.UUID, int, model.SwapScheduledExerciseRequest, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return nil, false, nil
+}
+
+func (*adoptionMutationStub) SkipScheduledExercise(context.Context, uuid.UUID, uuid.UUID, int, int64, model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error) {
+	return nil, false, nil
+}
