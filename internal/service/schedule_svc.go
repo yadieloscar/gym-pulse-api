@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-playground/validator/v10"
@@ -22,6 +23,8 @@ type ScheduleService interface {
 	Regenerate(ctx context.Context, userID uuid.UUID, req model.RegenerateScheduleRequest) (*model.RegenerateScheduleResponse, error)
 	PatchWorkout(ctx context.Context, userID, workoutID uuid.UUID, req model.PatchScheduledWorkoutRequest) (*model.ScheduledWorkout, error)
 	PatchSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.PatchScheduledSetTargetRequest) (*model.ScheduledWorkout, error)
+	SwapExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, req model.SwapScheduledExerciseRequest) (*model.ScheduledWorkout, error)
+	SkipExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, req model.RevisionRequest) (*model.ScheduledWorkout, error)
 	RecoverToday(ctx context.Context, userID uuid.UUID, req model.RecoverScheduledWorkoutRequest) (*model.ScheduledWorkout, error)
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, req model.SetMutationRequest) (*model.ScheduledWorkout, error)
 	AddExtraSet(ctx context.Context, userID, workoutID uuid.UUID, req model.ExtraSetRequest) (*model.ScheduledWorkout, error)
@@ -339,6 +342,77 @@ func (s *scheduleService) PatchSetTarget(ctx context.Context, userID, workoutID,
 		return nil, err
 	}
 	return s.schedules.Get(ctx, userID, workoutID)
+}
+
+// SwapExercise replaces one exercise of a dated workout for that date only.
+func (s *scheduleService) SwapExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, req model.SwapScheduledExerciseRequest) (*model.ScheduledWorkout, error) {
+	req.ExerciseName = strings.TrimSpace(req.ExerciseName)
+	req.ExerciseCategory = strings.TrimSpace(req.ExerciseCategory)
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "exercise_name and exercise_category are required", Field: "body"}
+	}
+	if err := s.exerciseChangeAllowed(ctx, userID, workoutID, exerciseOrder); err != nil {
+		return nil, err
+	}
+	hash, err := hashPayload(struct {
+		WorkoutID     uuid.UUID
+		ExerciseOrder int
+		Request       model.SwapScheduledExerciseRequest
+	}{workoutID, exerciseOrder, req})
+	if err != nil {
+		return nil, err
+	}
+	result, _, err := s.mutations.SwapScheduledExercise(ctx, userID, workoutID, exerciseOrder, req, model.IdempotencyRecord{
+		Scope: "scheduled-workouts/exercise-swap", OperationKey: req.OperationKey, RequestHash: hash,
+		ResponseStatus: 200, ResourceType: "scheduled_workout",
+	})
+	return result, err
+}
+
+// SkipExercise drops the unperformed sets of one exercise from a dated workout.
+func (s *scheduleService) SkipExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, req model.RevisionRequest) (*model.ScheduledWorkout, error) {
+	if err := s.validator.Struct(req); err != nil {
+		return nil, &model.ValidationError{Message: "operation_key and expected_revision are required", Field: "body"}
+	}
+	if err := s.exerciseChangeAllowed(ctx, userID, workoutID, exerciseOrder); err != nil {
+		return nil, err
+	}
+	hash, err := hashPayload(struct {
+		WorkoutID     uuid.UUID
+		ExerciseOrder int
+		Request       model.RevisionRequest
+	}{workoutID, exerciseOrder, req})
+	if err != nil {
+		return nil, err
+	}
+	result, _, err := s.mutations.SkipScheduledExercise(ctx, userID, workoutID, exerciseOrder, req.ExpectedRevision, model.IdempotencyRecord{
+		Scope: "scheduled-workouts/exercise-skip", OperationKey: req.OperationKey, RequestHash: hash,
+		ResponseStatus: 200, ResourceType: "scheduled_workout",
+	})
+	return result, err
+}
+
+var errExerciseChangeNeedsStore = errors.New("exercise changes need the training mutation store")
+
+// exerciseChangeAllowed keeps exercise changes to an owned, unfinished gym
+// workout dated today or later. A replayed request is answered by the
+// mutation itself, so a workout finished since the first attempt still
+// returns its recorded response.
+func (s *scheduleService) exerciseChangeAllowed(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int) error {
+	if exerciseOrder < 1 {
+		return &model.ValidationError{Message: "exercise_order must be a positive integer", Field: "exercise_order"}
+	}
+	if s.mutations == nil {
+		return errExerciseChangeNeedsStore
+	}
+	w, err := s.schedules.Get(ctx, userID, workoutID)
+	if err != nil {
+		return err
+	}
+	if w.IsSport() {
+		return errSportSessionHasNoSets
+	}
+	return nil
 }
 
 func (s *scheduleService) RecoverToday(ctx context.Context, userID uuid.UUID, req model.RecoverScheduledWorkoutRequest) (*model.ScheduledWorkout, error) {

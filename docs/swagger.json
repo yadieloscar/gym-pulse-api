@@ -3500,6 +3500,110 @@
                 }
             }
         },
+        "/api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/skip": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Skip an exercise in a scheduled workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Exercise position in the workout",
+                        "name": "exercise_order",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Revision",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.RevisionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/swap": {
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Swap an exercise in a scheduled workout",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Stable operation key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Exercise position in the workout",
+                        "name": "exercise_order",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement exercise",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SwapScheduledExerciseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ScheduledWorkout"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/scheduled-workouts/{id}/extra-sets": {
             "post": {
                 "security": [
@@ -8593,6 +8697,32 @@
                     "type": "integer"
                 },
                 "subtype_id": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.SwapScheduledExerciseRequest": {
+            "type": "object",
+            "required": [
+                "exercise_category",
+                "exercise_name",
+                "expected_revision",
+                "operation_key"
+            ],
+            "properties": {
+                "exercise_category": {
+                    "type": "string",
+                    "maxLength": 64
+                },
+                "exercise_name": {
+                    "type": "string",
+                    "maxLength": 120
+                },
+                "expected_revision": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "operation_key": {
                     "type": "string"
                 }
             }

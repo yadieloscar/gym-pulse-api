@@ -24,6 +24,8 @@ type TrainingMutationDAO interface {
 	DeleteProgram(ctx context.Context, userID, programID uuid.UUID, now time.Time) error
 	ReplaceScheduledWorkout(ctx context.Context, userID uuid.UUID, workout *model.ScheduledWorkout, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	UpdateScheduledSetTarget(ctx context.Context, userID, workoutID, setID uuid.UUID, target model.PatchScheduledSetTargetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
+	SwapScheduledExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, request model.SwapScheduledExerciseRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
+	SkipScheduledExercise(ctx context.Context, userID, workoutID uuid.UUID, exerciseOrder int, expectedRevision int64, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	PutRequiredSet(ctx context.Context, userID, workoutID, setID uuid.UUID, request model.SetMutationRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	AddExtraSet(ctx context.Context, userID, workoutID uuid.UUID, request model.ExtraSetRequest, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)
 	FinalizeScheduledWorkout(ctx context.Context, userID, workoutID uuid.UUID, expectedRevision int64, now time.Time, record model.IdempotencyRecord) (*model.ScheduledWorkout, bool, error)

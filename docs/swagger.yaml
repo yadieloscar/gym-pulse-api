@@ -2596,6 +2596,25 @@ definitions:
       subtype_id:
         type: string
     type: object
+  model.SwapScheduledExerciseRequest:
+    properties:
+      exercise_category:
+        maxLength: 64
+        type: string
+      exercise_name:
+        maxLength: 120
+        type: string
+      expected_revision:
+        minimum: 1
+        type: integer
+      operation_key:
+        type: string
+    required:
+    - exercise_category
+    - exercise_name
+    - expected_revision
+    - operation_key
+    type: object
   model.TemplateSummary:
     properties:
       created_at:
@@ -5213,6 +5232,72 @@ paths:
       security:
       - BearerAuth: []
       summary: Complete scheduled workout
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/skip:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Exercise position in the workout
+        in: path
+        name: exercise_order
+        required: true
+        type: integer
+      - description: Revision
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.RevisionRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Skip an exercise in a scheduled workout
+      tags:
+      - goal-training
+  /api/v1/scheduled-workouts/{id}/exercises/{exercise_order}/swap:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Stable operation key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Exercise position in the workout
+        in: path
+        name: exercise_order
+        required: true
+        type: integer
+      - description: Replacement exercise
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SwapScheduledExerciseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ScheduledWorkout'
+      security:
+      - BearerAuth: []
+      summary: Swap an exercise in a scheduled workout
       tags:
       - goal-training
   /api/v1/scheduled-workouts/{id}/extra-sets:

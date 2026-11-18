@@ -805,3 +805,13 @@ func ValidateDateRange(from, to string) error {
 	}
 	return nil
 }
+
+// SwapScheduledExerciseRequest replaces one exercise of a dated workout with
+// another for that date only. Sets already performed stay under the exercise
+// they were performed as; the program and the saved workout do not change.
+type SwapScheduledExerciseRequest struct {
+	OperationKey     string `json:"operation_key" validate:"required"`
+	ExpectedRevision int64  `json:"expected_revision" validate:"required,min=1"`
+	ExerciseName     string `json:"exercise_name" validate:"required,max=120"`
+	ExerciseCategory string `json:"exercise_category" validate:"required,max=64"`
+}
