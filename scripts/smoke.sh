@@ -199,6 +199,23 @@ else
   bad "GET exercises/records expected 200 array, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8b. exercise progression wired ----------
+step "8b. GET /api/v1/exercises/progression returns an array and validates weeks"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/progression?ids=$rand&weeks=12" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d, list)" "$body" 2>/dev/null; then
+  ok "exercise progression endpoint returns an array (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercises/progression expected 200 array, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/progression?ids=$rand&weeks=53" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['details']['field']=='weeks'" "$body" 2>/dev/null; then
+  ok "exercise progression rejects weeks=53 with field weeks"
+else
+  bad "GET exercises/progression?weeks=53 expected 422 field weeks, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 9. weekly volume series ----------
 step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")

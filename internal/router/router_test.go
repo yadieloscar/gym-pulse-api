@@ -64,6 +64,10 @@ func (fakeLogDAO) RecordSets(ctx context.Context, u uuid.UUID, ids []uuid.UUID) 
 	return []model.SetPerf{}, nil
 }
 
+func (fakeLogDAO) WeeklyHeaviestSets(ctx context.Context, u uuid.UUID, ids []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error) {
+	return []model.ExerciseProgression{}, nil
+}
+
 type fakeStatsDAO struct{}
 
 func (fakeStatsDAO) GetWeeklyCount(ctx context.Context, u uuid.UUID, s, e time.Time) (int, error) {

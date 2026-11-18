@@ -56,6 +56,8 @@ type MockLogService struct {
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
 	ExerciseRecordsFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
+
+	ExerciseProgressionFunc func(ctx context.Context, userID uuid.UUID, idsParam, weeksParam string) ([]model.ExerciseProgression, error)
 }
 
 func (m *MockLogService) ListByWeek(ctx context.Context, u uuid.UUID, w string) ([]model.DayLogSummary, error) {
@@ -99,6 +101,13 @@ func (m *MockLogService) ExerciseRecords(ctx context.Context, u uuid.UUID, ids s
 		return m.ExerciseRecordsFunc(ctx, u, ids)
 	}
 	return []model.ExerciseRecord{}, nil
+}
+
+func (m *MockLogService) ExerciseProgression(ctx context.Context, u uuid.UUID, ids, weeks string) ([]model.ExerciseProgression, error) {
+	if m.ExerciseProgressionFunc != nil {
+		return m.ExerciseProgressionFunc(ctx, u, ids, weeks)
+	}
+	return []model.ExerciseProgression{}, nil
 }
 
 type MockStatsService struct {

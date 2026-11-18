@@ -88,6 +88,8 @@ type MockLogDAO struct {
 	DeleteFunc          func(ctx context.Context, userID uuid.UUID, date string) error
 	ExerciseHistoryFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.ExerciseHistory, error)
 	RecordSetsFunc      func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
+
+	WeeklyHeaviestSetsFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error)
 }
 
 func (m *MockLogDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {
@@ -144,6 +146,13 @@ func (m *MockLogDAO) RecordSets(ctx context.Context, userID uuid.UUID, exerciseI
 		return m.RecordSetsFunc(ctx, userID, exerciseIDs)
 	}
 	return []model.SetPerf{}, nil
+}
+
+func (m *MockLogDAO) WeeklyHeaviestSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error) {
+	if m.WeeklyHeaviestSetsFunc != nil {
+		return m.WeeklyHeaviestSetsFunc(ctx, userID, exerciseIDs, since)
+	}
+	return []model.ExerciseProgression{}, nil
 }
 
 type MockTemplateDAO struct {
