@@ -413,6 +413,9 @@ func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 		default:
 			return &model.ValidationError{Message: "kind must be exercises or sport", Field: "workouts"}
 		}
+		if err := validateUnitRoutines(workout); err != nil {
+			return err
+		}
 		for _, exercise := range workout.Exercises {
 			if exercise.Name == "" || exercise.ExerciseOrder < 1 || exercise.TargetSets < 1 || (exercise.Modality != "strength" && exercise.Modality != "cardio") {
 				return &model.ValidationError{Message: "invalid program exercise", Field: "workouts"}
@@ -420,6 +423,27 @@ func validateProgramShape(goal string, workouts []model.ProgramWorkout) error {
 			if exercise.TargetSets > model.MaxProgramTargetSets {
 				return &model.ValidationError{Message: fmt.Sprintf("target_sets must be between 1 and %d", model.MaxProgramTargetSets), Field: "workouts"}
 			}
+		}
+	}
+	return nil
+}
+
+// validateUnitRoutines checks the stretching routines a unit chose. They are
+// slugs the app owns, so only their shape is checked. A sport unit has no
+// warm-up or cool-down: naming one is refused, and a unit saved as sport
+// drops any choice it stored as an exercises unit.
+func validateUnitRoutines(workout *model.ProgramWorkout) error {
+	for _, routine := range []*model.OptionalText{&workout.WarmupRoutineID, &workout.CooldownRoutineID} {
+		if routine.Value != nil {
+			if workout.IsSport() {
+				return &model.ValidationError{Message: "sport sessions cannot carry a stretching routine", Field: "workouts"}
+			}
+			if len(*routine.Value) > maxRoutineIDLength || !sportIDPattern.MatchString(*routine.Value) {
+				return &model.ValidationError{Message: "invalid stretching routine id", Field: "workouts"}
+			}
+		}
+		if workout.IsSport() {
+			*routine = model.OptionalText{Present: true}
 		}
 	}
 	return nil

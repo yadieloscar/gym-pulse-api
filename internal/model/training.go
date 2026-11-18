@@ -279,14 +279,22 @@ func (l WeekdayList) MarshalJSON() ([]byte, error) {
 }
 
 type ProgramWorkout struct {
-	ID               uuid.UUID         `json:"id"`
-	Kind             UnitKind          `json:"kind"`
-	Name             string            `json:"name"`
-	PreferredWeekday *int              `json:"preferred_weekday,omitempty"`
-	Weekdays         WeekdayList       `json:"weekdays"`
-	SequencePosition int               `json:"sequence_position"`
-	Sport            *SportTarget      `json:"sport,omitempty"`
-	Exercises        []ProgramExercise `json:"exercises"`
+	ID               uuid.UUID    `json:"id"`
+	Kind             UnitKind     `json:"kind"`
+	Name             string       `json:"name"`
+	PreferredWeekday *int         `json:"preferred_weekday,omitempty"`
+	Weekdays         WeekdayList  `json:"weekdays"`
+	SequencePosition int          `json:"sequence_position"`
+	Sport            *SportTarget `json:"sport,omitempty"`
+	// WarmupRoutineID and CooldownRoutineID name the stretching routines the
+	// athlete chose for this workout; null means the app picks by body area.
+	// Responses always carry both keys. On a program update, a key that is
+	// absent keeps the stored choice of a unit named by id, so a client older
+	// than contract 1.16.0 does not clear it; null or "" clears it. A sport
+	// unit never has one.
+	WarmupRoutineID   OptionalText      `json:"warmup_routine_id" swaggertype:"string"`
+	CooldownRoutineID OptionalText      `json:"cooldown_routine_id" swaggertype:"string"`
+	Exercises         []ProgramExercise `json:"exercises"`
 }
 
 // IsSport reports whether the unit is a planned sport session.

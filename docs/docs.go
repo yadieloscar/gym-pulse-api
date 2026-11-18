@@ -4195,6 +4195,84 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/stretching/library": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "An athlete who never saved a library gets revision 0, empty lists, and a null updated_at.",
+                "tags": [
+                    "stretching"
+                ],
+                "summary": "Read the athlete's own stretch moves and routines",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.StretchLibrary"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "The whole library is replaced. expected_revision is the stored revision, 0 when none exists. See docs/CONTRACTS.md \"Stretch library\".",
+                "tags": [
+                    "stretching"
+                ],
+                "summary": "Replace the athlete's own stretch moves and routines",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Equal to operation_key",
+                        "name": "Idempotency-Key",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "description": "Every move and routine the athlete keeps",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveStretchLibraryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.StretchLibrary"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/templates": {
             "get": {
                 "security": [
@@ -7874,6 +7952,9 @@ const docTemplate = `{
         "model.ProgramWorkout": {
             "type": "object",
             "properties": {
+                "cooldown_routine_id": {
+                    "type": "string"
+                },
                 "exercises": {
                     "type": "array",
                     "items": {
@@ -7897,6 +7978,10 @@ const docTemplate = `{
                 },
                 "sport": {
                     "$ref": "#/definitions/model.SportTarget"
+                },
+                "warmup_routine_id": {
+                    "description": "WarmupRoutineID and CooldownRoutineID name the stretching routines the\nathlete chose for this workout; null means the app picks by body area.\nResponses always carry both keys. On a program update, a key that is\nabsent keeps the stored choice of a unit named by id, so a client older\nthan contract 1.16.0 does not clear it; null or \"\" clears it. A sport\nunit never has one.",
+                    "type": "string"
                 },
                 "weekdays": {
                     "type": "array",
@@ -8295,6 +8380,29 @@ const docTemplate = `{
                 },
                 "protein_g": {
                     "type": "number"
+                }
+            }
+        },
+        "model.SaveStretchLibraryRequest": {
+            "type": "object",
+            "properties": {
+                "expected_revision": {
+                    "type": "integer"
+                },
+                "moves": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StretchMove"
+                    }
+                },
+                "operation_key": {
+                    "type": "string"
+                },
+                "routines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StretchRoutine"
+                    }
                 }
             }
         },
@@ -8784,6 +8892,89 @@ const docTemplate = `{
                     "$ref": "#/definitions/model.WeekProgress"
                 },
                 "total_workouts": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.StretchLibrary": {
+            "type": "object",
+            "properties": {
+                "moves": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StretchMove"
+                    }
+                },
+                "revision": {
+                    "type": "integer"
+                },
+                "routines": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StretchRoutine"
+                    }
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.StretchMove": {
+            "type": "object",
+            "properties": {
+                "areas": {
+                    "type": "string"
+                },
+                "cue": {
+                    "type": "string"
+                },
+                "hold_seconds": {
+                    "type": "integer"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "reps": {
+                    "type": "integer"
+                },
+                "sided": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "model.StretchRoutine": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.StretchRoutineItem"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.StretchRoutineItem": {
+            "type": "object",
+            "properties": {
+                "hold_seconds": {
+                    "type": "integer"
+                },
+                "move_id": {
+                    "type": "string"
+                },
+                "reps": {
                     "type": "integer"
                 }
             }

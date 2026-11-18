@@ -1,0 +1,21 @@
+meta {
+  name: Get stretch library
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{baseUrl}}/api/v1/stretching/library
+  body: none
+  auth: inherit
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `GET /api/v1/stretching/library`
+  
+  The athlete's own stretch moves and routines; revision 0 with empty lists before the first save
+}

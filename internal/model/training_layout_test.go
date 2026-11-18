@@ -287,3 +287,22 @@ func TestOffAvailability(t *testing.T) {
 		t.Fatalf("OffAvailability(unplaced) = %v, want empty non-nil slice", got)
 	}
 }
+
+// A unit's stretching routines are not part of what a session snapshots, so
+// changing only them leaves every dated session alone (spec 036).
+func TestDiffUnitsIgnoresRoutineChoices(t *testing.T) {
+	reps := 8
+	unit := ProgramWorkout{
+		ID: uuid.New(), Kind: UnitKindExercises, Name: "Push", SequencePosition: 1, Weekdays: WeekdayList{1},
+		Exercises: []ProgramExercise{{Name: "Press", Category: "chest", Modality: "strength", ExerciseOrder: 1, TargetSets: 3, TargetReps: &reps}},
+	}
+	routine := "knee-kit"
+	changed := unit
+	changed.WarmupRoutineID = OptionalText{Present: true, Value: &routine}
+	changed.CooldownRoutineID = OptionalText{Present: true}
+
+	diff := DiffUnits([]ProgramWorkout{unit}, []ProgramWorkout{changed})
+	if len(diff.Added)+len(diff.Removed)+len(diff.Replaced)+len(diff.Resnapshot) != 0 {
+		t.Errorf("DiffUnits() = %+v, want no session change for a routine-only edit", diff)
+	}
+}
