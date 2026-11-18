@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **44 tables and 480 supported columns**. For the Supabase-managed
+The current inventory contains **45 tables and 486 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -685,6 +685,8 @@ active it also updates that program's planned unstarted sessions in the same tra
 | `target_distance_meters` | `integer` | nullable | Planned distance of a distance-sport unit | Health |
 | `sport_notes` | `text` | nullable | Planned note of a sport unit | Health |
 | `weekdays` | `smallint[]` | nullable | ISO weekdays the unit sits on; null while the unit is unplaced | Health |
+| `warmup_routine_id` | `text` | nullable | Stretching routine the athlete chose to open the workout; `NULL` lets the app pick by body area | Health |
+| `cooldown_routine_id` | `text` | nullable | Stretching routine the athlete chose to close the workout; `NULL` lets the app pick by body area | Health |
 
 **Current constraints and indexes**
 
@@ -695,9 +697,10 @@ active it also updates that program's planned unstarted sessions in the same tra
 - `kind IN ('exercises', 'sport')`; `program_workouts_sport_kind_check` requires `sport_id`, `sport_name`, and `target_duration_minutes` exactly when `kind = 'sport'` and allows `target_distance_meters` and `sport_notes` only then. Sport id is a 1–64 lowercase slug, name 1–80, duration 1–1440, distance 1–1,000,000, notes 1–2,000.
 - A sport unit has no `program_exercises` rows; an exercises unit has at least one (application-enforced).
 - `program_workouts_weekdays_check`: `weekdays` is null or holds 1–7 values from 1–7. Uniqueness and ascending order of the values, and "all units placed or none", are application-enforced.
+- Checks `program_workouts_warmup_routine_id_check` and `program_workouts_cooldown_routine_id_check`: `NULL`, or a 1–64 character lowercase slug, the rule `workout_templates` follows. The slug names a routine the app bundles or one in the athlete's `stretch_libraries` document, so it is not a foreign key. "No routine on a sport unit" is application-enforced. The choice is not copied to `scheduled_workouts` (050).
 
 **Migration source**: `012_create_training_domain`, `027_add_planned_sport_sessions`,
-`045_program_weekdays_and_rolling_schedule`.
+`045_program_weekdays_and_rolling_schedule`, `050_stretch_libraries_and_program_unit_routines`.
 
 ### Table: `public.program_exercises`
 
@@ -1394,6 +1397,26 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 047.
 
+### Table: `public.stretch_libraries`
+
+**Purpose**: The stretch moves and routines one athlete wrote, as one document. One row per athlete, read and replaced whole and never queried by field. The app owns the bundled stretching catalog; this table holds only what the athlete added to it.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `user_id` | `uuid` | not null | Authenticated owner; primary key | Account |
+| `revision` | `bigint` | not null; `1` | Optimistic revision; advances on every replace | Operational |
+| `content` | `jsonb` | not null | `{ "moves": [...], "routines": [...] }`: at most 50 moves and 30 routines of at most 30 items, validated by the service | Health |
+| `updated_at` | `timestamptz` | not null; `now()` | Last save instant | Health |
+
+**Current constraints and indexes**
+
+- PK `user_id`; FK `user_id → auth.users(id) ON DELETE CASCADE`. No secondary index: every read and write is by owner.
+- Checks: `revision > 0`; `content` is a JSON object of at most 262,144 bytes as text. The shape of the moves and routines (ids, names, doses, the caps, and "an own move a routine names is in the same document") is enforced by the service, because the document is always written whole through it.
+
+**Ownership/lifecycle**: Private to the authenticated owner. Replaced in place under the `stretch-library:` lock with an expected revision and the idempotency ledger, in one transaction. No row means the empty library at revision 0. Nothing else reads it: it is not counted in any stat and is not in the data export. Removed with the account. RLS, Data API revocation, and runtime-role provisioning through `gym_pulse_private.secure_table`.
+
+**Migration source**: 050.
+
 ### Table: `public.criteria_training_blocks`
 
 **Purpose**: Owner-scoped athlete-authored block, optionally associated with an owned program without changing its schedule.
@@ -1546,7 +1569,7 @@ The count is derived from the final state after migration 041, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals`, `nutrition_profiles` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals`, `nutrition_profiles`, `stretch_libraries` | Cascade | Removes all application-owned data |
 | `food_catalog` | `food_entries`, `saved_meal_items` | Restrict | Catalog rows are never deleted; entries and meal items keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `user_foods` | `saved_meal_items` | No action, deferred | A held own food cannot be deleted on its own; the identity cascade removes meal and food together |
@@ -1627,6 +1650,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Body weight | `body_weights` | Measurements ordered by date | Authoritative health series |
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
 | Mobility sessions | `mobility_sessions` | Owner range list, get, delete; nothing else reads it | Authoritative write-once fact; never counted |
+| Stretch library | `stretch_libraries`, idempotency | Owner read by primary key; nothing else reads it | Athlete-authored revisioned document; never counted, bundled catalog stays in the app |
 | Workout imports | `workout_imports`, `day_logs`, `set_logs` | Owner list, commit, delete; imported days read as ordinary day logs | Write-once batch owning the day logs it created |
 | Knee Kit days | `knee_kit_days`, idempotency | Owner range list oldest first and whole-day replacement; only the data export also reads it | Authoritative revisioned per-day fact; never counted, no guidance computed |
 | Nutrition | `nutrition_days`, `nutrition_targets` | Days in range plus the targets that applied | Authoritative revisioned per-day totals and target history |
@@ -2394,6 +2418,7 @@ Report one of:
 | 047 | `nutrition_profiles` (one saved macro calculator plan per athlete), checks, `secure_table` provisioning; new table only |
 | 048 | No table change: `gym_pulse_private.schema_version()`, a `SECURITY DEFINER` function returning the migration ledger's `version` and `dirty`, executable by `gym_pulse_api` only; the server calls it at startup and refuses a schema that is behind or dirty |
 | 049 | `exercises.duration_seconds` (seconds per set of a hold or stretch, 1–3600) and `workout_templates.warmup_routine_id` / `cooldown_routine_id` (the stretching routines the athlete chose for a saved workout; 1–64 character slugs, `NULL` for the automatic pick). Additive; no row rewritten |
+| 050 | `stretch_libraries` (one JSONB document of the athlete's own stretch moves and routines per athlete, revisioned), `secure_table` provisioning; `program_workouts.warmup_routine_id` / `cooldown_routine_id` with the slug checks 049 gave `workout_templates`. Additive; no row rewritten |
 
 ## 19. Decision summary
 

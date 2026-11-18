@@ -275,3 +275,60 @@ func TestSportSessionValidationRejectsSetsAndLiveStatuses(t *testing.T) {
 		}
 	}
 }
+
+// Contract 1.16.0: a program unit always serializes both routine keys, and a
+// request tells an absent key (keep the stored choice) from null or "" (clear).
+func TestProgramUnitRoutineJSON(t *testing.T) {
+	encoded, err := json.Marshal(ProgramWorkout{Name: "Push", SequencePosition: 1, Exercises: []ProgramExercise{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"warmup_routine_id":null`, `"cooldown_routine_id":null`} {
+		if !strings.Contains(string(encoded), want) {
+			t.Errorf("unit JSON %s lacks %s", encoded, want)
+		}
+	}
+
+	routine := "knee-kit"
+	encoded, err = json.Marshal(ProgramWorkout{WarmupRoutineID: OptionalText{Value: &routine}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), `"warmup_routine_id":"knee-kit"`) || !strings.Contains(string(encoded), `"cooldown_routine_id":null`) {
+		t.Errorf("unit JSON %s does not carry the chosen routine", encoded)
+	}
+
+	tests := []struct {
+		name, body    string
+		warmupPresent bool
+		warmup        string
+	}{
+		{"absent", `{"name":"Push"}`, false, ""},
+		{"null", `{"name":"Push","warmup_routine_id":null}`, true, ""},
+		{"empty string", `{"name":"Push","warmup_routine_id":""}`, true, ""},
+		{"slug", `{"name":"Push","warmup_routine_id":"knee-kit"}`, true, "knee-kit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var unit ProgramWorkout
+			if err := json.Unmarshal([]byte(tt.body), &unit); err != nil {
+				t.Fatal(err)
+			}
+			got := ""
+			if unit.WarmupRoutineID.Value != nil {
+				got = *unit.WarmupRoutineID.Value
+			}
+			if unit.WarmupRoutineID.Present != tt.warmupPresent || got != tt.warmup {
+				t.Errorf("warmup_routine_id = present %v %q, want present %v %q", unit.WarmupRoutineID.Present, got, tt.warmupPresent, tt.warmup)
+			}
+			if unit.CooldownRoutineID.Present {
+				t.Error("cooldown_routine_id was not in the body and must stay absent")
+			}
+		})
+	}
+
+	var unit ProgramWorkout
+	if err := json.Unmarshal([]byte(`{"warmup_routine_id":7}`), &unit); err == nil {
+		t.Error("a routine id that is not a string must not decode")
+	}
+}

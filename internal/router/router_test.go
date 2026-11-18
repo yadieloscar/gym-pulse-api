@@ -174,7 +174,7 @@ func TestRouter_HidesSwaggerInReleaseEnvironments(t *testing.T) {
 		t.Run(environment, func(t *testing.T) {
 			cfg := &config.Config{Environment: environment, AllowedOrigins: []string{"https://app.example.com"}}
 			logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-			r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+			r := New(cfg, logger, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 			rec := httptest.NewRecorder()
 			r.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/docs/index.html", nil))
 			if rec.Code != http.StatusNotFound {
@@ -206,7 +206,7 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 
-	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, tplH, logH, statsH, setH, profH, bwH, exH, planH, acctH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	do := func(req *http.Request) *http.Response {
 		rec := httptest.NewRecorder()
 		r.ServeHTTP(rec, req)
@@ -454,7 +454,7 @@ func TestRouter_AuthenticatedRoutesShareDefaultUserLimit(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
-	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	get := func(sub string) int {
 		claims := jwt.MapClaims{"sub": sub, "exp": time.Now().Add(time.Hour).Unix()}
@@ -493,7 +493,7 @@ func TestRouter_AllowedUserIDsRestrictAuthenticatedRoutes(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	activeUsers := &fakeActiveUserChecker{exists: true}
 	setH := handler.NewSettingsHandler(newSettingsSvc(fakeSettingsDAO{}, validator.New()))
-	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(cfg, logger, activeUsers, nil, nil, nil, setH, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 
 	send := func(method, path string, sub uuid.UUID) int {
 		claims := jwt.MapClaims{"sub": sub.String(), "exp": time.Now().Add(time.Hour).Unix()}

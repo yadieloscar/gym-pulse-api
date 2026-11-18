@@ -212,6 +212,7 @@ const programWorkoutsQuery = `
 		SELECT pw.id, pw.name, pw.preferred_weekday, pw.weekdays, pw.sequence_position,
 		       pw.kind, pw.sport_id, pw.sport_name, pw.target_duration_minutes,
 		       pw.target_distance_meters, pw.sport_notes,
+		       pw.warmup_routine_id, pw.cooldown_routine_id,
 		       pe.id, pe.catalog_id, pe.source_starter_exercise_id, pe.name,
 		       pe.category, pe.modality, pe.exercise_order, pe.target_sets,
 		       pe.target_reps, pe.target_weight, pe.target_duration_seconds,
@@ -264,6 +265,7 @@ func scanProgramWorkouts(rows pgx.Rows, starter bool) ([]model.ProgramWorkout, e
 			err := rows.Scan(
 				&workout.ID, &workout.Name, &workout.PreferredWeekday, &weekdays, &workout.SequencePosition,
 				&workout.Kind, &sport.ID, &sport.Name, &sport.DurationMinutes, &sport.DistanceMeters, &sport.Notes,
+				&workout.WarmupRoutineID.Value, &workout.CooldownRoutineID.Value,
 				&exerciseID, &exercise.CatalogID, &exercise.SourceStarterExerciseID,
 				&name, &category, &modality, &order,
 				&targetSets, &exercise.TargetReps, &exercise.TargetWeight,
@@ -512,11 +514,12 @@ func insertProgramWorkouts(ctx context.Context, tx pgx.Tx, programID uuid.UUID, 
 		sport := sportColumns(w.Sport)
 		if err := tx.QueryRow(ctx, `
 			INSERT INTO program_workouts (program_id, name, preferred_weekday, sequence_position,
-				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes, weekdays)
-			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING id`,
+				kind, sport_id, sport_name, target_duration_minutes, target_distance_meters, sport_notes, weekdays,
+				warmup_routine_id, cooldown_routine_id)
+			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) RETURNING id`,
 			programID, w.Name, w.PreferredWeekday, w.SequencePosition,
 			w.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes,
-			weekdayColumn(w.Weekdays)).Scan(&w.ID); err != nil {
+			weekdayColumn(w.Weekdays), w.WarmupRoutineID.Value, w.CooldownRoutineID.Value).Scan(&w.ID); err != nil {
 			return fmt.Errorf("inserting program workout: %w", err)
 		}
 		if err := insertProgramExercises(ctx, tx, w); err != nil {

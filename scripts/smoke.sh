@@ -216,6 +216,25 @@ else
   bad "GET exercises/progression?weeks=53 expected 422 field weeks, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8c. stretch library wired (contract 1.16.0) ----------
+step "8c. GET /api/v1/stretching/library returns the library and PUT validates moves"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stretching/library" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'revision','moves','routines','updated_at'}; assert isinstance(d['revision'], int) and isinstance(d['moves'], list) and isinstance(d['routines'], list); assert d['revision']>0 or (d['moves']==[] and d['routines']==[] and d['updated_at'] is None)" "$body" 2>/dev/null; then
+  ok "stretch library endpoint returns revision, moves, routines, updated_at (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET stretching/library expected 200 library, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/stretching/library" \
+  "${auth[@]}" -H "Content-Type: application/json" -H "Idempotency-Key: smoke-stretch-bad" \
+  -d '{"expected_revision":0,"operation_key":"smoke-stretch-bad","moves":[{"id":"couch","name":"Couch stretch","mode":"hold","hold_seconds":45}],"routines":[]}')
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='VALIDATION_ERROR' and d['details']['field']=='moves'" "$body" 2>/dev/null; then
+  ok "stretch library rejects a move id without my- with field moves"
+else
+  bad "PUT stretching/library with a bad move expected 422 field moves, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 9. weekly volume series ----------
 step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")

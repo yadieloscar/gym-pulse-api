@@ -1,0 +1,64 @@
+meta {
+  name: Save stretch library
+  type: http
+  seq: 5
+}
+
+put {
+  url: {{baseUrl}}/api/v1/stretching/library
+  body: json
+  auth: inherit
+}
+
+headers {
+  Idempotency-Key: {{operationKey}}
+}
+
+body:json {
+  {
+    "expected_revision": 0,
+    "operation_key": "{{operationKey}}",
+    "moves": [
+      {
+        "id": "my-couch-stretch",
+        "name": "Couch stretch",
+        "cue": "Hips forward, ribs down",
+        "areas": "Hips, quads",
+        "mode": "hold",
+        "sided": true,
+        "hold_seconds": 45,
+        "reps": null
+      },
+      {
+        "id": "my-leg-swings",
+        "name": "Leg swings",
+        "cue": "",
+        "areas": "Hips",
+        "mode": "reps",
+        "sided": true,
+        "hold_seconds": null,
+        "reps": 12
+      }
+    ],
+    "routines": [
+      {
+        "id": "my-evening",
+        "name": "Evening",
+        "items": [
+          { "move_id": "my-couch-stretch", "hold_seconds": null, "reps": null },
+          { "move_id": "cat-cow", "hold_seconds": null, "reps": 8 }
+        ]
+      }
+    ]
+  }
+}
+
+tests {
+  test("not a server error", () => expect(res.status).to.be.below(500));
+}
+
+docs {
+  `PUT /api/v1/stretching/library`
+  
+  Replaces the whole library; expected_revision 0 first, then the revision last read; own ids start with my-
+}

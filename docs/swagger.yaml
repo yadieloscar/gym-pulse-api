@@ -2002,6 +2002,8 @@ definitions:
     type: object
   model.ProgramWorkout:
     properties:
+      cooldown_routine_id:
+        type: string
       exercises:
         items:
           $ref: '#/definitions/model.ProgramExercise'
@@ -2018,6 +2020,15 @@ definitions:
         type: integer
       sport:
         $ref: '#/definitions/model.SportTarget'
+      warmup_routine_id:
+        description: |-
+          WarmupRoutineID and CooldownRoutineID name the stretching routines the
+          athlete chose for this workout; null means the app picks by body area.
+          Responses always carry both keys. On a program update, a key that is
+          absent keeps the stored choice of a unit named by id, so a client older
+          than contract 1.16.0 does not clear it; null or "" clears it. A sport
+          unit never has one.
+        type: string
       weekdays:
         items:
           type: integer
@@ -2281,6 +2292,21 @@ definitions:
         type: string
       protein_g:
         type: number
+    type: object
+  model.SaveStretchLibraryRequest:
+    properties:
+      expected_revision:
+        type: integer
+      moves:
+        items:
+          $ref: '#/definitions/model.StretchMove'
+        type: array
+      operation_key:
+        type: string
+      routines:
+        items:
+          $ref: '#/definitions/model.StretchRoutine'
+        type: array
     type: object
   model.SaveUserFoodRequest:
     properties:
@@ -2607,6 +2633,60 @@ definitions:
       this_week:
         $ref: '#/definitions/model.WeekProgress'
       total_workouts:
+        type: integer
+    type: object
+  model.StretchLibrary:
+    properties:
+      moves:
+        items:
+          $ref: '#/definitions/model.StretchMove'
+        type: array
+      revision:
+        type: integer
+      routines:
+        items:
+          $ref: '#/definitions/model.StretchRoutine'
+        type: array
+      updated_at:
+        type: string
+    type: object
+  model.StretchMove:
+    properties:
+      areas:
+        type: string
+      cue:
+        type: string
+      hold_seconds:
+        type: integer
+      id:
+        type: string
+      mode:
+        type: string
+      name:
+        type: string
+      reps:
+        type: integer
+      sided:
+        type: boolean
+    type: object
+  model.StretchRoutine:
+    properties:
+      id:
+        type: string
+      items:
+        items:
+          $ref: '#/definitions/model.StretchRoutineItem'
+        type: array
+      name:
+        type: string
+    type: object
+  model.StretchRoutineItem:
+    properties:
+      hold_seconds:
+        type: integer
+      move_id:
+        type: string
+      reps:
         type: integer
     type: object
   model.SubtypeDistribution:
@@ -5697,6 +5777,57 @@ paths:
       summary: Weekly training volume
       tags:
       - stats
+  /api/v1/stretching/library:
+    get:
+      description: An athlete who never saved a library gets revision 0, empty lists,
+        and a null updated_at.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StretchLibrary'
+      security:
+      - BearerAuth: []
+      summary: Read the athlete's own stretch moves and routines
+      tags:
+      - stretching
+    put:
+      description: The whole library is replaced. expected_revision is the stored
+        revision, 0 when none exists. See docs/CONTRACTS.md "Stretch library".
+      parameters:
+      - description: Equal to operation_key
+        in: header
+        name: Idempotency-Key
+        required: true
+        type: string
+      - description: Every move and routine the athlete keeps
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveStretchLibraryRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.StretchLibrary'
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Replace the athlete's own stretch moves and routines
+      tags:
+      - stretching
   /api/v1/templates:
     get:
       description: Returns all workout templates for the authenticated user, optionally

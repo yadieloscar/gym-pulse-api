@@ -339,12 +339,18 @@ func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, progr
 		}
 		unit.Kind = model.NormalizeUnitKind(unit.Kind)
 		sport := sportColumns(unit.Sport)
+		// A routine key the request left out keeps the stored choice, so a
+		// client older than contract 1.16.0 does not clear it.
 		if _, err := tx.Exec(ctx, `
 			UPDATE program_workouts SET name=$3, preferred_weekday=$4, sequence_position=$5,
 			       kind=$6, sport_id=$7, sport_name=$8, target_duration_minutes=$9,
-			       target_distance_meters=$10, sport_notes=$11, weekdays=$12
+			       target_distance_meters=$10, sport_notes=$11, weekdays=$12,
+			       warmup_routine_id=CASE WHEN $13::boolean THEN $14::text ELSE warmup_routine_id END,
+			       cooldown_routine_id=CASE WHEN $15::boolean THEN $16::text ELSE cooldown_routine_id END
 			WHERE id=$1 AND program_id=$2`, unit.ID, program.ID, unit.Name, unit.PreferredWeekday, unit.SequencePosition,
-			unit.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes, weekdayColumn(unit.Weekdays)); err != nil {
+			unit.Kind, sport.ID, sport.Name, sport.DurationMinutes, sport.DistanceMeters, sport.Notes, weekdayColumn(unit.Weekdays),
+			unit.WarmupRoutineID.Present, unit.WarmupRoutineID.Value,
+			unit.CooldownRoutineID.Present, unit.CooldownRoutineID.Value); err != nil {
 			return fmt.Errorf("updating program unit: %w", err)
 		}
 		if !rewrite[index] {
@@ -367,7 +373,8 @@ func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, progr
 		}
 	}
 	// Unchanged units were not re-read; give them their stored exercise IDs
-	// back so the response matches the rows.
+	// back so the response matches the rows. The routine choices come from the
+	// rows too, because a unit that left a key out kept its stored choice.
 	stored, err := loadProgramWorkouts(ctx, tx, userID, program.ID)
 	if err != nil {
 		return err
@@ -379,6 +386,8 @@ func replaceProgramUnits(ctx context.Context, tx pgx.Tx, userID uuid.UUID, progr
 	for index := range program.Workouts {
 		if current, ok := byID[program.Workouts[index].ID]; ok {
 			program.Workouts[index].Exercises = current.Exercises
+			program.Workouts[index].WarmupRoutineID.Value = current.WarmupRoutineID.Value
+			program.Workouts[index].CooldownRoutineID.Value = current.CooldownRoutineID.Value
 		}
 	}
 	return nil

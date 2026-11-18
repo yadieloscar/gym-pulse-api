@@ -336,6 +336,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
   "workouts": [{
     "id": "<uuid>", "kind": "exercises", "name": "Full Body A", "preferred_weekday": 1,
     "weekdays": [1, 5], "sequence_position": 1,
+    "warmup_routine_id": "knee-kit", "cooldown_routine_id": null,
     "exercises": [{
       "id": "<uuid>", "catalog_id": "<uuid|null>",
       "source_starter_exercise_id": "<uuid|null>", "name": "Back Squat",
@@ -346,6 +347,7 @@ Response 200: `{ "programs": [Program] }`, where `Program` is:
   }, {
     "id": "<uuid>", "kind": "sport", "name": "Long ride", "preferred_weekday": 6,
     "weekdays": [6], "sequence_position": 2,
+    "warmup_routine_id": null, "cooldown_routine_id": null,
     "sport": {
       "sport_id": "cycling", "sport_name": "Cycling",
       "target_duration_minutes": 90, "target_distance_meters": 40000, "notes": null
@@ -392,6 +394,36 @@ response, so its presence tells a client that this contract is supported. It is
 - Starting a program is `POST /api/v1/plan-transitions/apply`; see "Schedule
   and scheduled workouts". The released-client behaviors that change are
   listed there.
+
+Chosen stretching routines on a program workout (contract 1.16.0, additive):
+every `exercises` unit may carry `warmup_routine_id` and `cooldown_routine_id`,
+the stretching routine the athlete chose to open and close that workout. The
+rule is the one saved workouts follow (see "Templates"): the API stores the
+slug (1–64 characters, lowercase letters, digits, and single hyphens) and does
+not look it up, so it may name a routine the app bundles (`knee-kit`) or one of
+the athlete's own (`my-…`, see "Stretch library"). `null` means the app picks
+by body area.
+
+- Every program and starter response carries **both keys on every unit**,
+  `null` when unset. Their presence tells a client that this contract is
+  supported; a server older than 1.16.0 returns units without them and ignores
+  them on write.
+- `POST /api/v1/programs` stores what each unit carries; an omitted key is
+  `null`.
+- `PUT /api/v1/programs/{id}`: for a unit the program already has (named by
+  its `id`), a key that is **absent keeps the stored choice**, so a client
+  older than 1.16.0 does not clear it. `null` or `""` clears it. A unit the
+  request adds stores what it carries.
+- A value that is not a slug, or any routine on a `sport` unit, is
+  `422 VALIDATION_ERROR` with `details.field = "workouts"`. A unit saved as
+  `sport` drops a choice it stored as an `exercises` unit.
+- Starter units and units copied by `from-starter` and `adopt-legacy` have
+  both `null`. A generated draft does not carry the keys.
+- The choice lives on the unit, not on a dated session. A scheduled workout
+  does not carry it; a client reads it through the session's
+  `program_workout_id`. Saving a program that changes only these fields
+  advances the program `revision` and changes no scheduled workout's sets,
+  status, or revision.
 
 Program size limits: a program has at most 14 workouts, an `exercises` unit at
 most 50 exercises, and `target_sets` is 1–20. `POST /api/v1/programs` and
@@ -1352,6 +1384,123 @@ Response 200 is the owned entry. A missing or foreign UUID returns the shared
 
 Removes the owned entry. A repeat delete, or a missing or foreign id, returns
 `404 NOT_FOUND`. Account deletion removes every entry.
+
+### Stretch library (contract 1.16.0)
+
+The stretch library is everything one athlete wrote for stretching: their own
+moves, and their own routines built from those moves and from the moves the app
+bundles. It is one document per athlete, read and replaced whole. The API does
+not know the bundled catalog: it never supplies or suggests a move or routine,
+and it does not check a `move_id` that is not the athlete's own. Nothing here
+is counted: stats, streaks, records, volume, participation, and the data export
+ignore the library. A finished routine is recorded as before through
+`POST /api/v1/mobility-sessions`, whose `routine_id` accepts an own routine's
+id. Additive in contract 1.16.0; older clients never call these routes.
+
+**Detecting an older server.** A server older than 1.16.0 does not have this
+route and answers `404` without the JSON error envelope (no `code`). A client
+must treat that as "own stretches are not available" rather than as an error.
+
+`StretchLibrary`:
+
+```json
+{
+  "revision": 2,
+  "moves": [
+    { "id": "my-couch-stretch", "name": "Couch stretch", "cue": "Hips forward, ribs down",
+      "areas": "Hips, quads", "mode": "hold", "sided": true, "hold_seconds": 45, "reps": null },
+    { "id": "my-leg-swings", "name": "Leg swings", "cue": "", "areas": "",
+      "mode": "reps", "sided": true, "hold_seconds": null, "reps": 12 }
+  ],
+  "routines": [
+    { "id": "my-evening", "name": "Evening", "items": [
+      { "move_id": "my-couch-stretch", "hold_seconds": null, "reps": null },
+      { "move_id": "cat-cow", "hold_seconds": null, "reps": 8 }
+    ] }
+  ],
+  "updated_at": "<RFC3339>"
+}
+```
+
+Every key is always present. `moves`, `routines`, and each routine's `items`
+are arrays, never `null`, in the order they were saved. `hold_seconds` and
+`reps` are `null` when unset.
+
+#### `GET /api/v1/stretching/library` → `200 StretchLibrary`
+
+An athlete who never saved a library receives
+`{ "revision": 0, "moves": [], "routines": [], "updated_at": null }`.
+
+#### `PUT /api/v1/stretching/library` → `200 StretchLibrary`
+
+Replaces the whole library. Requires `Idempotency-Key` equal to
+`operation_key` (otherwise `422` on `Idempotency-Key`).
+
+```json
+{
+  "expected_revision": 2,
+  "operation_key": "stretch-library-save-123",
+  "moves": [ /* every Move the athlete keeps */ ],
+  "routines": [ /* every Routine the athlete keeps */ ]
+}
+```
+
+| Field | Rule |
+|---|---|
+| `expected_revision` | Whole number 0 or greater: the `revision` the client last read. `0` creates the library (an omitted value is read as `0`). |
+| `operation_key` | Trimmed, 1–128 characters. |
+| `moves` | Required array of at most 50 `Move`; `[]` removes every move. Ids are unique. |
+| `routines` | Required array of at most 30 `Routine`; `[]` removes every routine. Ids are unique. |
+
+`Move`:
+
+| Field | Rule |
+|---|---|
+| `id` | Lowercase slug (`a-z`, `0-9`, single hyphens between parts), 4–64 characters, starting with `my-`. The client makes it. |
+| `name` | Trimmed, 1–60 characters. |
+| `cue` | Trimmed, 0–200 characters. |
+| `areas` | Trimmed, 0–60 characters of free text. |
+| `mode` | `hold` or `reps`. |
+| `sided` | Boolean; `true` when the move is done once per side. Omitted is `false`. |
+| `hold_seconds` | Required whole number 5–600 when `mode` is `hold`; must be `null` or omitted when `mode` is `reps`. |
+| `reps` | Required whole number 1–100 when `mode` is `reps`; must be `null` or omitted when `mode` is `hold`. |
+
+`Routine`:
+
+| Field | Rule |
+|---|---|
+| `id` | Same rule as a move `id`. Move ids and routine ids are separate sets. |
+| `name` | Trimmed, 1–60 characters. |
+| `items` | 1–30 items, in the order they are performed. |
+| `items[].move_id` | Lowercase slug, 1–64 characters. One that starts with `my-` must be the `id` of a move in this same body. Any other is a bundled move and is not checked. |
+| `items[].hold_seconds` | `null`, omitted, or a whole number 5–600. |
+| `items[].reps` | `null`, omitted, or a whole number 1–100. At most one of `hold_seconds` and `reps` is set on an item; it replaces the move's own dose in this routine. |
+
+Any rule that fails returns `422 VALIDATION_ERROR` with `details.field`
+`moves` or `routines` (an item fault is reported on `routines`), and
+`details.index` giving the zero-based position of the move or routine at
+fault when one entry is the cause. `operation_key` and `expected_revision`
+faults name those fields. Nothing is stored.
+
+Response 200 is the stored `StretchLibrary` at `expected_revision + 1`, with
+text trimmed. The first save returns `revision` 1 and is also `200`.
+
+- A stale `expected_revision` returns `409 REVISION_CONFLICT` with
+  `details.expected_revision`, `details.actual_revision`, and the current
+  `StretchLibrary` under `resource` (the empty revision-0 library when none
+  was ever saved). Nothing changes.
+- An identical retry with the same `operation_key` returns `200` with the
+  answer stored the first time, at the revision it had then. The same key
+  with a different body returns `409 IDEMPOTENCY_CONFLICT`. Keys are scoped to
+  the athlete.
+- The write, the revision check, and the idempotency record are one
+  transaction.
+- Removing a move or routine here does not change a saved workout or program
+  unit that names it in `warmup_routine_id` or `cooldown_routine_id`, nor a
+  recorded mobility session; the client decides what to show for an id it no
+  longer has.
+- Another athlete never sees or changes this library. Account deletion
+  removes it.
 
 ### Knee Kit days (contract 1.7.0)
 
