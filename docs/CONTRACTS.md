@@ -1003,7 +1003,9 @@ remain authoritative, and new clients send `null` for catalog-derived sets.
 }
 ```
 Replaces one exercise of this dated workout with another, for this date only.
-`exercise_order` is the position the workout's `required_sets` carry. Only
+`exercise_order` is the position the workout's `required_sets` carry. A set
+that was ticked and then unticked has no performed result (`checked` false)
+and counts as open here and for skip. Only
 sets without a performed result change: they keep their `id`, reps, duration,
 rest, and notes, take the new name and category, lose `program_exercise_id`,
 and lose `target_weight`. When some sets of the exercise were already
