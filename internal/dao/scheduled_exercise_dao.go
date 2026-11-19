@@ -13,7 +13,8 @@ import (
 
 // scheduledExerciseSets is one exercise of a dated workout split by whether a
 // set has a performed result. A performed set keeps its identity and its
-// exercise: only open sets can be swapped or skipped.
+// exercise: only open sets can be swapped or skipped. A set that was ticked
+// and then unticked has no performed result and is open.
 type scheduledExerciseSets struct {
 	open   []uuid.UUID
 	logged int
@@ -63,7 +64,7 @@ func (r *trainingMutationDAO) beginExerciseChange(ctx context.Context, userID, w
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT ss.id, ss.exercise_order,
-		       EXISTS (SELECT 1 FROM set_logs sl WHERE sl.scheduled_set_id=ss.id)
+		       EXISTS (SELECT 1 FROM set_logs sl WHERE sl.scheduled_set_id=ss.id AND sl.completed=true)
 		FROM scheduled_sets ss WHERE ss.scheduled_workout_id=$1
 		ORDER BY ss.exercise_order, ss.set_index`, workoutID)
 	if err != nil {
@@ -99,6 +100,12 @@ func (r *trainingMutationDAO) beginExerciseChange(ctx context.Context, userID, w
 	}
 	if len(sets.open) == 0 {
 		return fail(&model.ValidationError{Message: "every set of this exercise is already logged", Field: "exercise_order"})
+	}
+	// A set the athlete ticked and unticked is open again, as the workout
+	// reports it. Its emptied result goes, so the set can leave or be logged
+	// later under its new exercise.
+	if _, err := tx.Exec(ctx, `DELETE FROM set_logs WHERE scheduled_set_id=ANY($1) AND completed=false`, sets.open); err != nil {
+		return fail(fmt.Errorf("clearing unticked set results: %w", err))
 	}
 	return tx, nil, sets, nil
 }

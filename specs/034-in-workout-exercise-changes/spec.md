@@ -24,6 +24,7 @@ Governing product rules: workspace `docs/PRODUCT.md`. Nothing there changes: the
 ### Drafting defaults
 
 - A set that already has a performed result keeps its identity and the exercise it was performed as. Only open sets are swapped or skipped.
+- A set that was ticked and then unticked has no performed result: it is open, as the workout reports it (`checked` false). A swap or skip removes its emptied result. (Fix 2026-11-19: it used to count as performed, so skipping an exercise whose sets were all unticked answered 422 on every retry.)
 - A swap keeps reps, duration, rest, and notes, and clears the target weight: that weight belonged to the other exercise.
 - Swapping an exercise with some sets performed leaves those sets in place and puts the remaining sets, as the new exercise, directly after them.
 - A workout keeps at least one set. Skipping its last remaining work is refused; the athlete skips the workout instead (`POST .../skip`).

@@ -9,3 +9,4 @@
 - [X] T005 Integration tests: unstarted swap, started swap, skip, refusals, replay, finished workout.
 - [X] T006 Service and handler unit tests.
 - [X] T007 `docs/CONTRACTS.md` (contract 1.14.0) and regenerated swagger.
+- [X] T008 Fix: a ticked-then-unticked set is open for swap and skip; integration test `TestAnUntickedSetIsOpenForSkipAndSwap`.

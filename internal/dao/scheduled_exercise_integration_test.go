@@ -197,3 +197,45 @@ func TestExerciseChangesRefuseWhatTheyCannotApply(t *testing.T) {
 		t.Fatalf("swapping in a finished workout: %v", err)
 	}
 }
+
+// untickSet empties a logged result, as unticking a done set does.
+func untickSet(t *testing.T, f *releaseFixture, set model.ScheduledSet) {
+	t.Helper()
+	f.exec(t, `UPDATE set_logs SET completed=false, actual_reps=NULL, actual_weight=NULL WHERE scheduled_set_id=$1`, set.ID)
+}
+
+func TestAnUntickedSetIsOpenForSkipAndSwap(t *testing.T) {
+	f := newReleaseFixture(t)
+	before := exerciseChangeWorkout(t, f)
+
+	// Curl's only set was ticked and unticked: the exercise can still be skipped.
+	curl := before.RequiredSets[4]
+	logSet(t, f, before, curl)
+	untickSet(t, f, curl)
+	after, _, err := f.mutations.SkipScheduledExercise(f.ctx, f.userID, before.ID, 3, before.Revision, releaseRecord("scheduled-workouts/exercise-skip"))
+	if err != nil {
+		t.Fatalf("skipping an unticked exercise: %v", err)
+	}
+	if len(after.RequiredSets) != 4 {
+		t.Fatalf("sets after skipping Curl = %v", layout(after))
+	}
+
+	// Row has one unticked set: the swap renames both sets in place.
+	row := after.RequiredSets[2]
+	logSet(t, f, after, row)
+	untickSet(t, f, row)
+	after, _, err = f.mutations.SwapScheduledExercise(f.ctx, f.userID, before.ID, 2, swapTo("Pull-up", after.Revision), releaseRecord("scheduled-workouts/exercise-swap"))
+	if err != nil {
+		t.Fatalf("swapping an unticked exercise: %v", err)
+	}
+	if got := layout(after)[2:]; !slices.Equal(got, []string{"2.1 Pull-up", "2.2 Pull-up"}) {
+		t.Fatalf("sets after swapping Row = %v", layout(after))
+	}
+	var left int
+	if err := f.pool.QueryRow(f.ctx, `SELECT count(*) FROM set_logs sl JOIN workout_sessions ws ON ws.id=sl.workout_session_id WHERE ws.scheduled_workout_id=$1`, before.ID).Scan(&left); err != nil {
+		t.Fatal(err)
+	}
+	if left != 0 {
+		t.Fatalf("%d emptied results were left behind", left)
+	}
+}
