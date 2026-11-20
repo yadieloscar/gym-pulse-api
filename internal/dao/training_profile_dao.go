@@ -26,13 +26,22 @@ func NewTrainingProfileDAO(pool *pgxpool.Pool) TrainingProfileDAO {
 }
 
 func (r *trainingProfileDAO) Get(ctx context.Context, userID uuid.UUID) (*model.TrainingProfile, error) {
-	p := &model.TrainingProfile{}
-	err := r.pool.QueryRow(ctx, `
+	return scanTrainingProfile(r.pool.QueryRow(ctx, selectTrainingProfile, userID))
+}
+
+// selectTrainingProfile reads the athlete's training profile; $1 is the user.
+const selectTrainingProfile = `
 		SELECT primary_goal, available_days, usual_activity, experience,
 		       equipment, session_duration_minutes, timezone, preferences,
 		       revision, created_at, updated_at
 		FROM training_profiles
-		WHERE user_id = $1`, userID).Scan(
+		WHERE user_id = $1`
+
+// scanTrainingProfile scans one selectTrainingProfile row. No row is a
+// NotFoundError.
+func scanTrainingProfile(row pgx.Row) (*model.TrainingProfile, error) {
+	p := &model.TrainingProfile{}
+	err := row.Scan(
 		&p.PrimaryGoal, &p.AvailableDays, &p.UsualActivity, &p.Experience,
 		&p.Equipment, &p.SessionDurationMinutes, &p.Timezone, &p.Preferences,
 		&p.Revision, &p.CreatedAt, &p.UpdatedAt,

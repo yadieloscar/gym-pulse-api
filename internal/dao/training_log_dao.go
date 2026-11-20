@@ -350,15 +350,23 @@ func (r *performedSetDAO) AddExtra(ctx context.Context, userID, sessionID uuid.U
 }
 
 func (r *participationDAO) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.DayParticipation, error) {
-	rows, err := r.pool.Query(ctx, `
-		SELECT id, to_char(date, 'YYYY-MM-DD'), scheduled_opportunity, participated,
-		       finalized_at, timezone, to_char(local_date, 'YYYY-MM-DD'), revision
-		FROM day_participation WHERE user_id=$1 AND date BETWEEN $2 AND $3
-		ORDER BY date`, userID, from, to)
+	rows, err := r.pool.Query(ctx, selectParticipation, userID, from, to)
 	if err != nil {
 		return nil, fmt.Errorf("querying participation: %w", err)
 	}
 	defer rows.Close()
+	return scanParticipation(rows)
+}
+
+// selectParticipation reads a range's stored day outcomes; $1 is the user,
+// $2 and $3 the range.
+const selectParticipation = `
+		SELECT id, to_char(date, 'YYYY-MM-DD'), scheduled_opportunity, participated,
+		       finalized_at, timezone, to_char(local_date, 'YYYY-MM-DD'), revision
+		FROM day_participation WHERE user_id=$1 AND date BETWEEN $2 AND $3
+		ORDER BY date`
+
+func scanParticipation(rows pgx.Rows) ([]model.DayParticipation, error) {
 	outcomes := []model.DayParticipation{}
 	for rows.Next() {
 		var outcome model.DayParticipation

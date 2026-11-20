@@ -98,7 +98,7 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.SupabaseJWKSURL != "" {
 		t.Errorf("expected empty JWKS URL")
 	}
-	if cfg.DatabaseMaxConns != 10 || cfg.DatabaseMinConns != 1 {
+	if cfg.DatabaseMaxConns != 10 || cfg.DatabaseMinConns != 10 {
 		t.Errorf("unexpected database pool defaults: max=%d min=%d", cfg.DatabaseMaxConns, cfg.DatabaseMinConns)
 	}
 	if cfg.DatabaseLockURL != cfg.DatabaseURL {
@@ -540,6 +540,20 @@ func TestLoad_RejectsInvalidDatabasePool(t *testing.T) {
 			}
 		})
 	}
+
+	t.Run("unset min follows a lowered max", func(t *testing.T) {
+		clearAll(t)
+		setValidDevelopmentEnv(t)
+		setEnv(t, "DATABASE_MAX_CONNS", "4")
+
+		cfg, err := Load()
+		if err != nil {
+			t.Fatalf("Load() error = %v", err)
+		}
+		if cfg.DatabaseMinConns != 4 {
+			t.Fatalf("DatabaseMinConns = %d, want 4", cfg.DatabaseMinConns)
+		}
+	})
 
 	t.Run("min exceeds max", func(t *testing.T) {
 		clearAll(t)

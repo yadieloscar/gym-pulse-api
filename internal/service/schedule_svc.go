@@ -91,22 +91,88 @@ func (s *scheduleService) List(ctx context.Context, userID uuid.UUID, from, to s
 	if err := model.ValidateDateRange(from, to); err != nil {
 		return nil, err
 	}
-	// The profile gives the athlete's today for both the fill and the
-	// finalize pass. It is read once per request: every read here is a round
-	// trip to the database.
-	profile, profileErr := s.profiles.Get(ctx, userID)
-	if profileErr != nil && !isNotFound(profileErr) {
-		return nil, profileErr
-	}
-	if profileErr == nil {
-		if err := s.ensureFilledFor(ctx, userID, profile, to); err != nil {
-			return nil, err
-		}
-	}
-	workouts, err := s.schedules.List(ctx, userID, from, to)
+	// Every read here is a round trip to a database in another region. The
+	// profile, the fill watermark, and the range come back together; the fill
+	// and the finalize pass add trips only when they have work to do.
+	read, err := s.readSchedule(ctx, userID, from, to)
 	if err != nil {
 		return nil, err
 	}
+	workouts := read.Workouts
+	if read.Profile != nil && s.needsFill(read, to) {
+		if err := s.ensureFilledFor(ctx, userID, read.Profile, to); err != nil {
+			return nil, err
+		}
+		if workouts, err = s.schedules.List(ctx, userID, from, to); err != nil {
+			return nil, err
+		}
+	}
+	finalized, err := s.finalizePastSessions(ctx, userID, read.Profile, read.ProfileErr, workouts)
+	if err != nil {
+		return nil, err
+	}
+	if !finalized {
+		return workouts, nil
+	}
+	// A finalize changes status, revision, and participation; read them back.
+	return s.schedules.List(ctx, userID, from, to)
+}
+
+// readSchedule reads the profile, fill watermark, and range in one round trip
+// when the DAO supports it. Otherwise it reads the profile and range
+// separately and reports an active program that was never filled, so the fill
+// check falls to EnsureFilled.
+func (s *scheduleService) readSchedule(ctx context.Context, userID uuid.UUID, from, to string) (*dao.ScheduleRead, error) {
+	if reader, ok := s.schedules.(dao.ScheduleReader); ok {
+		return reader.ReadSchedule(ctx, userID, from, to)
+	}
+	read := &dao.ScheduleRead{ActiveProgram: true}
+	profile, err := s.profiles.Get(ctx, userID)
+	switch {
+	case isNotFound(err):
+		read.ProfileErr = err
+	case err != nil:
+		return nil, err
+	default:
+		read.Profile = profile
+	}
+	if read.Profile != nil && s.needsFill(read, to) {
+		// Fill first so the one list below sees the filled range.
+		if err := s.ensureFilledFor(ctx, userID, read.Profile, to); err != nil {
+			return nil, err
+		}
+		read.ActiveProgram = false
+	}
+	if read.Workouts, err = s.schedules.List(ctx, userID, from, to); err != nil {
+		return nil, err
+	}
+	return read, nil
+}
+
+// needsFill reports whether a read reaching to must first extend the active
+// program to the horizon: the same test EnsureFilled makes against the
+// watermark, made here on the watermark the read already returned.
+func (s *scheduleService) needsFill(read *dao.ScheduleRead, to string) bool {
+	if _, ok := s.schedules.(dao.RollingScheduleDAO); !ok || !read.ActiveProgram {
+		return false
+	}
+	today := localToday(s.now(), read.Profile.Timezone)
+	if to < today {
+		return false
+	}
+	parsed, err := model.ParseDate(today)
+	if err != nil {
+		return true
+	}
+	horizon := parsed.AddDate(0, 0, model.ScheduleHorizonDays).Format(time.DateOnly)
+	return read.ScheduledThrough == "" || read.ScheduledThrough < horizon
+}
+
+// finalizePastSessions finalizes every unfinalized session dated before the
+// athlete's today and reports whether it finalized any. Judging a session
+// needs the saved timezone, so an unfinalized session without a profile
+// returns profileErr.
+func (s *scheduleService) finalizePastSessions(ctx context.Context, userID uuid.UUID, profile *model.TrainingProfile, profileErr error, workouts []model.ScheduledWorkout) (bool, error) {
 	finalized := false
 	today := ""
 	for i := range workouts {
@@ -114,14 +180,13 @@ func (s *scheduleService) List(ctx context.Context, userID uuid.UUID, from, to s
 		if w.FinalizedAt != nil {
 			continue
 		}
-		if profileErr != nil {
-			// An unfinalized session needs the saved timezone to be judged.
-			return nil, profileErr
+		if profile == nil {
+			return false, profileErr
 		}
 		if today == "" {
 			location, err := time.LoadLocation(profile.Timezone)
 			if err != nil {
-				return nil, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
+				return false, &model.ValidationError{Message: "invalid saved timezone", Field: "timezone"}
 			}
 			today = s.now().In(location).Format("2006-01-02")
 		}
@@ -129,15 +194,11 @@ func (s *scheduleService) List(ctx context.Context, userID uuid.UUID, from, to s
 			continue
 		}
 		if err := s.finalizePast(ctx, userID, w); err != nil {
-			return nil, err
+			return false, err
 		}
 		finalized = true
 	}
-	if !finalized {
-		return workouts, nil
-	}
-	// A finalize changes status, revision, and participation; read them back.
-	return s.schedules.List(ctx, userID, from, to)
+	return finalized, nil
 }
 
 func (s *scheduleService) Materialize(ctx context.Context, userID uuid.UUID, req model.MaterializeScheduleRequest) ([]model.ScheduledWorkout, error) {
@@ -976,8 +1037,30 @@ func (s *workoutSessionService) Patch(ctx context.Context, userID, sessionID uui
 }
 
 func (s *participationService) List(ctx context.Context, userID uuid.UUID, from, to string) ([]model.DayParticipation, error) {
-	if _, err := s.schedule.List(ctx, userID, from, to); err != nil {
+	schedule, isSchedule := s.schedule.(*scheduleService)
+	reader, canRead := s.participation.(dao.ParticipationReader)
+	if !isSchedule || !canRead || schedule.mutations == nil {
+		if _, err := s.schedule.List(ctx, userID, from, to); err != nil {
+			return nil, err
+		}
+		return s.participation.List(ctx, userID, from, to)
+	}
+	// Participation only needs past sessions finalized before it is read. It
+	// does not need the schedule filled ahead or read back, so it reads the
+	// profile, the unfinalized sessions, and the outcomes in one round trip.
+	if err := model.ValidateDateRange(from, to); err != nil {
 		return nil, err
+	}
+	read, err := reader.ReadParticipation(ctx, userID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	finalized, err := schedule.finalizePastSessions(ctx, userID, read.Profile, read.ProfileErr, read.Unfinalized)
+	if err != nil {
+		return nil, err
+	}
+	if !finalized {
+		return read.Days, nil
 	}
 	return s.participation.List(ctx, userID, from, to)
 }

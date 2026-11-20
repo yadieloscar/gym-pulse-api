@@ -122,19 +122,10 @@ func (r *scheduleDAO) List(ctx context.Context, userID uuid.UUID, from, to strin
 	return workouts, nil
 }
 
-func (r *scheduleDAO) loadListSets(ctx context.Context, userID uuid.UUID, workouts []model.ScheduledWorkout) error {
-	ids := make([]uuid.UUID, len(workouts))
-	index := make(map[uuid.UUID]int, len(workouts))
-	for i := range workouts {
-		ids[i] = workouts[i].ID
-		index[workouts[i].ID] = i
-		workouts[i].RequiredSets = []model.ScheduledSet{}
-		workouts[i].ExtraSets = []model.PerformedSet{}
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	rows, err := r.pool.Query(ctx, `
+// The list's set reads. $1 is the user; the caller adds a WHERE clause that
+// picks the workouts, then the order.
+const (
+	listRequiredSetsSelect = `
 		SELECT ss.scheduled_workout_id, ss.id, ss.program_exercise_id, ss.catalog_id,
 		       ss.exercise_name, ss.exercise_category, ss.exercise_modality,
 		       ss.exercise_order, ss.set_index, ss.target_reps, ss.target_weight,
@@ -149,48 +140,84 @@ func (r *scheduleDAO) loadListSets(ctx context.Context, userID uuid.UUID, workou
 			WHERE ws.scheduled_workout_id=sw.id AND candidate.scheduled_set_id=ss.id AND candidate.completed=true
 			ORDER BY candidate.logged_at DESC, candidate.id DESC
 			LIMIT 1
-		) sl ON true
-		WHERE ss.scheduled_workout_id = ANY($2::uuid[])
-		ORDER BY sw.date, sw.created_at, ss.exercise_order, ss.set_index`, userID, ids)
-	if err != nil {
-		return fmt.Errorf("querying scheduled sets: %w", err)
-	}
-	for rows.Next() {
-		var workoutID uuid.UUID
-		var set model.ScheduledSet
-		if err := rows.Scan(&workoutID, &set.ID, &set.ProgramExerciseID, &set.CatalogID, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.ExerciseOrder, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.TargetDurationSeconds, &set.RestSeconds, &set.Notes, &set.Checked, &set.PerformedSetID, &set.ActualReps, &set.ActualWeight, &set.ActualDurationSeconds); err != nil {
-			rows.Close()
-			return fmt.Errorf("scanning scheduled set: %w", err)
-		}
-		workouts[index[workoutID]].RequiredSets = append(workouts[index[workoutID]].RequiredSets, set)
-	}
-	if err := rows.Err(); err != nil {
-		rows.Close()
-		return fmt.Errorf("iterating scheduled sets: %w", err)
-	}
-	rows.Close()
-	extraRows, err := r.pool.Query(ctx, `
+		) sl ON true`
+	listRequiredSetsOrder = `ORDER BY sw.date, sw.created_at, ss.exercise_order, ss.set_index`
+	listExtraSetsSelect   = `
 		SELECT ws.scheduled_workout_id, sl.id, sl.scheduled_set_id, sl.exercise_id,
 		       sl.is_extra, sl.exercise_name, sl.exercise_category, sl.exercise_modality,
 		       sl.set_index, sl.target_reps, sl.target_weight, sl.actual_reps,
 		       sl.actual_weight, sl.duration_seconds, sl.completed, sl.operation_key, sl.revision
 		FROM set_logs sl
-		JOIN workout_sessions ws ON ws.id=sl.workout_session_id AND ws.user_id=$1
+		JOIN workout_sessions ws ON ws.id=sl.workout_session_id AND ws.user_id=$1`
+	listExtraSetsOrder = `ORDER BY ws.date, ws.created_at, sl.logged_at`
+)
+
+func (r *scheduleDAO) loadListSets(ctx context.Context, userID uuid.UUID, workouts []model.ScheduledWorkout) error {
+	ids := make([]uuid.UUID, len(workouts))
+	index := make(map[uuid.UUID]int, len(workouts))
+	for i := range workouts {
+		ids[i] = workouts[i].ID
+		index[workouts[i].ID] = i
+		workouts[i].RequiredSets = []model.ScheduledSet{}
+		workouts[i].ExtraSets = []model.PerformedSet{}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	rows, err := r.pool.Query(ctx, listRequiredSetsSelect+`
+		WHERE ss.scheduled_workout_id = ANY($2::uuid[])
+		`+listRequiredSetsOrder, userID, ids)
+	if err != nil {
+		return fmt.Errorf("querying scheduled sets: %w", err)
+	}
+	if err := scanListRequiredSets(rows, workouts, index); err != nil {
+		rows.Close()
+		return err
+	}
+	rows.Close()
+	extraRows, err := r.pool.Query(ctx, listExtraSetsSelect+`
 		WHERE ws.scheduled_workout_id = ANY($2::uuid[]) AND sl.is_extra=true
-		ORDER BY ws.date, ws.created_at, sl.logged_at`, userID, ids)
+		`+listExtraSetsOrder, userID, ids)
 	if err != nil {
 		return fmt.Errorf("querying extra sets: %w", err)
 	}
 	defer extraRows.Close()
-	for extraRows.Next() {
+	return scanListExtraSets(extraRows, workouts, index)
+}
+
+// scanListRequiredSets appends each row's set to its workout. A row for a
+// workout outside index is skipped: a read that selects sets by date range
+// can see a session created after the workouts were read.
+func scanListRequiredSets(rows pgx.Rows, workouts []model.ScheduledWorkout, index map[uuid.UUID]int) error {
+	for rows.Next() {
+		var workoutID uuid.UUID
+		var set model.ScheduledSet
+		if err := rows.Scan(&workoutID, &set.ID, &set.ProgramExerciseID, &set.CatalogID, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.ExerciseOrder, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.TargetDurationSeconds, &set.RestSeconds, &set.Notes, &set.Checked, &set.PerformedSetID, &set.ActualReps, &set.ActualWeight, &set.ActualDurationSeconds); err != nil {
+			return fmt.Errorf("scanning scheduled set: %w", err)
+		}
+		if i, ok := index[workoutID]; ok {
+			workouts[i].RequiredSets = append(workouts[i].RequiredSets, set)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterating scheduled sets: %w", err)
+	}
+	return nil
+}
+
+// scanListExtraSets is scanListRequiredSets for extra sets.
+func scanListExtraSets(rows pgx.Rows, workouts []model.ScheduledWorkout, index map[uuid.UUID]int) error {
+	for rows.Next() {
 		var workoutID uuid.UUID
 		var set model.PerformedSet
-		if err := extraRows.Scan(&workoutID, &set.ID, &set.ScheduledSetID, &set.ExerciseID, &set.IsExtra, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.ActualReps, &set.ActualWeight, &set.DurationSeconds, &set.Completed, &set.OperationKey, &set.Revision); err != nil {
+		if err := rows.Scan(&workoutID, &set.ID, &set.ScheduledSetID, &set.ExerciseID, &set.IsExtra, &set.ExerciseName, &set.ExerciseCategory, &set.ExerciseModality, &set.SetIndex, &set.TargetReps, &set.TargetWeight, &set.ActualReps, &set.ActualWeight, &set.DurationSeconds, &set.Completed, &set.OperationKey, &set.Revision); err != nil {
 			return fmt.Errorf("scanning extra set: %w", err)
 		}
-		workouts[index[workoutID]].ExtraSets = append(workouts[index[workoutID]].ExtraSets, set)
+		if i, ok := index[workoutID]; ok {
+			workouts[i].ExtraSets = append(workouts[i].ExtraSets, set)
+		}
 	}
-	if err := extraRows.Err(); err != nil {
+	if err := rows.Err(); err != nil {
 		return fmt.Errorf("iterating extra sets: %w", err)
 	}
 	return nil
