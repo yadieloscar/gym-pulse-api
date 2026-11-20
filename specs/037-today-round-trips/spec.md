@@ -20,7 +20,7 @@ held decision on that identity check, none of which 031 covers.
 ## What the athlete notices
 
 Opening Today is faster. Nothing else changes: every response keeps its shape, values, status
-codes, and errors. `docs/CONTRACTS.md` does not change.
+codes, and errors. `docs/CONTRACTS.md` changes in one place: the identity check below.
 
 ## Baseline (measured 2026-11-20, main `e2448f0`)
 
@@ -66,16 +66,17 @@ Why:
 - **FR-003** With `DATABASE_MIN_CONNS` unset, the pool keeps 10 connections open (one per request
   of Today's burst), or `DATABASE_MAX_CONNS` if that is lower. An explicit value still wins.
 
-## Held: caching the identity check (needs the owner)
+## Adopted 2026-11-20: caching the identity check
 
-Every authenticated request still runs `auth_user_exists` (one round trip each, run in parallel
-across Today's burst). A 30-second in-process cache of positive answers, forgotten on
-`DELETE /api/v1/account`, was built and measured (Today warm ~157 ms instead of ~354 ms) but is
-**not** in this change: `docs/CONTRACTS.md` ("A deleted identity is rejected even while its
-previously issued access token remains unexpired") and `docs/RELEASE_RUNBOOK.md` ("delete them
-in Supabase Auth; the next request is `401`") promise zero staleness for an identity deleted in
-Supabase. Adopting it means the owner accepts up to 30 seconds of access after a dashboard
-deletion and both documents change. The code is on branch `perf/active-user-cache`.
+Every authenticated request ran `auth_user_exists` (one round trip each). A 30-second in-process
+cache of positive answers, forgotten on `DELETE /api/v1/account`, removes it for a burst of
+requests (measured: Today warm ~157 ms instead of ~354 ms at 65 ms per trip).
+
+The owner accepted the trade on 2026-11-20 ("Ship the built fix"): an identity deleted directly
+in Supabase Auth may keep access for up to 30 seconds on each server process. `docs/CONTRACTS.md`
+and `docs/RELEASE_RUNBOOK.md` say so. Deletion through the API takes effect on the next request to
+the process that served it; another process, if the service ever runs more than one, follows
+within 30 seconds. Missing identities and failed checks are never cached.
 
 ## Edge cases
 

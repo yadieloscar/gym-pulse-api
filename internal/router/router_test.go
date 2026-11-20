@@ -146,10 +146,14 @@ func (fakeAccountDAO) DeleteUserData(ctx context.Context, userID uuid.UUID) erro
 }
 
 type fakeActiveUserChecker struct {
-	exists bool
-	err    error
-	calls  int
+	exists  bool
+	err     error
+	calls   int
+	forgets int
 }
+
+// Forget records that a route dropped the cached identity.
+func (c *fakeActiveUserChecker) Forget(uuid.UUID) { c.forgets++ }
 
 func (c *fakeActiveUserChecker) Exists(ctx context.Context, userID uuid.UUID) (bool, error) {
 	c.calls++
@@ -299,10 +303,16 @@ func TestRouter_RoutesAndAuth(t *testing.T) {
 	})
 
 	t.Run("DELETE /api/v1/account", func(t *testing.T) {
+		forgetsBefore := activeUsers.forgets
 		resp := authed("DELETE", "/api/v1/account", "")
 		defer resp.Body.Close()
 		if resp.StatusCode != http.StatusNoContent {
 			t.Errorf("expected 204, got %d", resp.StatusCode)
+		}
+		// Before and after the deletion, so no request rides on a cached
+		// answer from before the identity was removed.
+		if activeUsers.forgets-forgetsBefore != 2 {
+			t.Errorf("account deletion forgot the cached identity %d times, want 2", activeUsers.forgets-forgetsBefore)
 		}
 	})
 

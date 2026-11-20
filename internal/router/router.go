@@ -83,7 +83,9 @@ func New(
 		// A cryptographically valid JWT may retry deletion cleanup after the
 		// auth identity itself has already been removed. No other route gets
 		// this exception.
-		r.With(middleware.RateLimitPerUser(middleware.StorageBoundLimit)).Delete("/api/v1/account", accountHandler.Delete)
+		// The deletion also drops any cached proof that the identity exists.
+		forgetter, _ := activeUserChecker.(middleware.ActiveUserForgetter)
+		r.With(middleware.RateLimitPerUser(middleware.StorageBoundLimit), middleware.ForgetActiveUser(forgetter)).Delete("/api/v1/account", accountHandler.Delete)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireActiveUser(activeUserChecker))
