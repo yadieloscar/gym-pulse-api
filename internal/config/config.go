@@ -270,7 +270,11 @@ func Load() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	minConns, err := nonNegativeInt32Env("DATABASE_MIN_CONNS", 1)
+	// The app opens a screen with a burst of parallel requests (Today sends
+	// nine). Keeping that many connections open means the burst never waits
+	// on new cross-region connections, whose setup costs several round trips
+	// each. Unset, the floor follows a lowered DATABASE_MAX_CONNS.
+	minConns, err := nonNegativeInt32Env("DATABASE_MIN_CONNS", min(DefaultDatabaseMinConns, maxConns))
 	if err != nil {
 		return nil, err
 	}
@@ -471,6 +475,10 @@ func validateProductionDatabaseTLS(raw string) error {
 		return ErrProductionDatabaseTLS
 	}
 }
+
+// DefaultDatabaseMinConns is the connection floor when DATABASE_MIN_CONNS is
+// unset: one connection per request of the app's largest burst.
+const DefaultDatabaseMinConns int32 = 10
 
 func positiveInt32Env(name string, fallback int32) (int32, error) {
 	value := os.Getenv(name)
