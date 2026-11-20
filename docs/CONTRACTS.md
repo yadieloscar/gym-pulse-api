@@ -26,7 +26,8 @@
   rejected even while its previously issued access token remains unexpired.
   A server process trusts a confirmed identity for up to 30 seconds, so an
   identity deleted directly in Supabase Auth may keep access for that long;
-  deletion through `DELETE /api/v1/account` takes effect on the next request.
+  deletion through `DELETE /api/v1/account` takes effect on the next request
+  to the process that served it, and within 30 seconds on any other process.
 - Every authentication failure is
   `401 { "error": "<message>", "code": "AUTHENTICATION_REQUIRED" }` with a
   `WWW-Authenticate` challenge (RFC 6750): `Bearer realm="gym-pulse"` when no
