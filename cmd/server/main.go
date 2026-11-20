@@ -31,6 +31,7 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/dao"
 	"github.com/gym-pulse/gym-pulse-api/internal/dbmigrate"
 	"github.com/gym-pulse/gym-pulse-api/internal/handler"
+	"github.com/gym-pulse/gym-pulse-api/internal/middleware"
 	"github.com/gym-pulse/gym-pulse-api/internal/router"
 	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
@@ -270,7 +271,11 @@ func main() {
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
 
 	// Create router.
-	r := router.New(cfg, logger, authUserRepo, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler, nutritionPlanHandler, stretchLibraryHandler)
+	// The request guard trusts a confirmed identity for a few seconds so a
+	// screen's burst of requests costs one lookup; avatar uploads above keep
+	// asking the database.
+	activeUsers := middleware.NewActiveUserCache(authUserRepo, middleware.DefaultActiveUserCacheTTL)
+	r := router.New(cfg, logger, activeUsers, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler, nutritionPlanHandler, stretchLibraryHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

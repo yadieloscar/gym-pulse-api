@@ -15,9 +15,10 @@
   integration `TestReadScheduleMatchesTheSeparateReads`,
   `TestReadScheduleWithoutAProfileOrActiveProgram`; existing
   `TestScheduleListCostDoesNotGrowWithPlannedSessions` still passes.
-- [ ] T004 (held, needs the owner) Identity-check cache: built and tested on branch
-  `perf/active-user-cache`, not merged, because it changes `docs/CONTRACTS.md` and the release
-  runbook (spec, "Held").
+- [X] T004 Identity-check cache (this branch, `perf/active-user-cache`; merge only on the
+  owner's yes): `ActiveUserCache` (30 s, positive answers only, bounded at 10,000),
+  `ForgetActiveUser` on `DELETE /api/v1/account`, `docs/CONTRACTS.md` and release-runbook
+  staleness note. Tests: `internal/middleware/active_user_cache_test.go`, router account test.
 - [X] T005 FR-003 pool floor default and `.env.example`. Test: config defaults and
   `unset min follows a lowered max`.
 - [X] T006 Gates and re-measurement (below).

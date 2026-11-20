@@ -24,6 +24,9 @@
 - After signature and claim validation, every `/api/v1/*` request verifies
   that the JWT subject still exists in `auth.users`. A deleted identity is
   rejected even while its previously issued access token remains unexpired.
+  A server process trusts a confirmed identity for up to 30 seconds, so an
+  identity deleted directly in Supabase Auth may keep access for that long;
+  deletion through `DELETE /api/v1/account` takes effect on the next request.
 - Every authentication failure is
   `401 { "error": "<message>", "code": "AUTHENTICATION_REQUIRED" }` with a
   `WWW-Authenticate` challenge (RFC 6750): `Bearer realm="gym-pulse"` when no

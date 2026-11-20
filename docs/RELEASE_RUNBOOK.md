@@ -73,7 +73,8 @@ every release, and record the values in the release notes:
       or compromised access token stays usable; the app refreshes silently. The API checks
       only that the token's user still exists in `auth.users`, not `banned_until`, so a
       **banned** user keeps API access until their current access token expires. To cut a
-      user off immediately, delete them in Supabase Auth; the next request is `401`.
+      user off, delete them in Supabase Auth; requests are `401` within 30 seconds (the API
+      caches a confirmed identity that long per process).
 - [ ] **Refresh token rotation** is on with **reuse detection**; reuse interval at the default
       10 seconds.
 - [ ] **Auth rate limits** for sign-in, sign-up, password reset, and token refresh are at or
