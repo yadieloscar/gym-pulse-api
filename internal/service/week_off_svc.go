@@ -36,8 +36,19 @@ func NewWeekOffService(weeks dao.WeekOffDAO) WeekOffService {
 }
 
 func (s *weekOffService) List(ctx context.Context, userID uuid.UUID, from, to string) (*model.WeeksOffResponse, error) {
-	if err := model.ValidateDateRange(from, to); err != nil {
-		return nil, err
+	fromDate, err := model.ParseDate(from)
+	if err != nil {
+		return nil, &model.ValidationError{Message: "from must be YYYY-MM-DD", Field: "from"}
+	}
+	toDate, err := model.ParseDate(to)
+	if err != nil {
+		return nil, &model.ValidationError{Message: "to must be YYYY-MM-DD", Field: "to"}
+	}
+	if toDate.Before(fromDate) {
+		return nil, &model.ValidationError{Message: "to must not be before " + from, Field: "to"}
+	}
+	if toDate.After(fromDate.AddDate(0, 0, model.MaxWeeksOffRangeDays-1)) {
+		return nil, &model.ValidationError{Message: "date range must not exceed 731 inclusive days", Field: "range"}
 	}
 	weeks, err := s.weeks.List(ctx, userID, from, to)
 	if err != nil {

@@ -6,6 +6,11 @@ import "time"
 // start. It keeps a week off inside the schedule the API has already filled.
 const MaxWeekOffAheadWeeks = 8
 
+// MaxWeeksOffRangeDays is the longest inclusive from..to range GET /weeks-off
+// accepts: two years, so one request covers a year of streak history and the
+// weeks ahead.
+const MaxWeeksOffRangeDays = 731
+
 // WeekOff is one Monday-to-Sunday week the athlete took off. WeekStart is
 // the Monday as YYYY-MM-DD. See docs/CONTRACTS.md "Weeks off".
 type WeekOff struct {
