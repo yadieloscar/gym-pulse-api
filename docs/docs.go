@@ -4631,6 +4631,128 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/weeks-off": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns the weeks off whose Monday falls within from..to, oldest first.",
+                "tags": [
+                    "schedule"
+                ],
+                "summary": "List the athlete's weeks off",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "First date, YYYY-MM-DD",
+                        "name": "from",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Last date, YYYY-MM-DD",
+                        "name": "to",
+                        "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WeeksOffResponse"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/weeks-off/{week_start}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Marks the Monday-to-Sunday week as off. Idempotent by week_start; there is no body. See docs/CONTRACTS.md \"Weeks off\".",
+                "tags": [
+                    "schedule"
+                ],
+                "summary": "Take a week off",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The week's Monday, YYYY-MM-DD",
+                        "name": "week_start",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.WeekOff"
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Removes the week off. Idempotent: a week that is not off also returns 204.",
+                "tags": [
+                    "schedule"
+                ],
+                "summary": "End a week off",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "The week's Monday, YYYY-MM-DD",
+                        "name": "week_start",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/workout-sessions": {
             "get": {
                 "security": [
@@ -9367,6 +9489,17 @@ const docTemplate = `{
                 }
             }
         },
+        "model.WeekOff": {
+            "type": "object",
+            "properties": {
+                "created_at": {
+                    "type": "string"
+                },
+                "week_start": {
+                    "type": "string"
+                }
+            }
+        },
         "model.WeekProgress": {
             "type": "object",
             "properties": {
@@ -9405,6 +9538,17 @@ const docTemplate = `{
                 },
                 "week_start": {
                     "type": "string"
+                }
+            }
+        },
+        "model.WeeksOffResponse": {
+            "type": "object",
+            "properties": {
+                "weeks_off": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.WeekOff"
+                    }
                 }
             }
         },
