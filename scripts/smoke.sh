@@ -235,6 +235,23 @@ else
   bad "PUT stretching/library with a bad move expected 422 field moves, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8d. weeks off wired (contract 1.17.0) ----------
+step "8d. GET /api/v1/weeks-off lists weeks and PUT refuses a day that is not a Monday"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/weeks-off?from=2026-01-01&to=2026-12-31" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'weeks_off'} and isinstance(d['weeks_off'], list)" "$body" 2>/dev/null; then
+  ok "weeks off endpoint returns a weeks_off list (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET weeks-off expected 200 list, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/weeks-off/2026-11-24" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='VALIDATION_ERROR' and d['details']['field']=='week_start'" "$body" 2>/dev/null; then
+  ok "PUT weeks-off refuses a Tuesday with field week_start"
+else
+  bad "PUT weeks-off/2026-11-24 expected 422 field week_start, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 9. weekly volume series ----------
 step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")

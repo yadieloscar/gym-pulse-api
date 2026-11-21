@@ -177,6 +177,7 @@ func main() {
 	foodEntryRepo := dao.NewFoodEntryDAO(pool)
 	savedMealRepo := dao.NewSavedMealDAO(pool)
 	stretchLibraryRepo := dao.NewStretchLibraryDAO(pool)
+	weekOffRepo := dao.NewWeekOffDAO(pool)
 	nutritionProfileRepo := dao.NewNutritionProfileDAO(pool)
 	trainingBlockRepo := dao.NewTrainingBlockDAO(pool)
 	programGenerationRepo := dao.NewProgramGenerationDAO(pool, cfg.ProgramGenerationTimeout+generationLedgerMargin)
@@ -221,6 +222,7 @@ func main() {
 	foodSvc := service.NewFoodService(foodRepo, foodEntryRepo, trainingProfileRepo, usdaSource, openFoodFactsSource)
 	savedMealSvc := service.NewSavedMealService(savedMealRepo, trainingProfileRepo)
 	stretchLibrarySvc := service.NewStretchLibraryService(stretchLibraryRepo)
+	weekOffSvc := service.NewWeekOffService(weekOffRepo)
 	nutritionPlanSvc := service.NewNutritionPlanService(nutritionProfileRepo, foodRepo)
 	trainingBlockSvc := service.NewTrainingBlockService(trainingBlockRepo, trainingProfileRepo)
 	planTransitionSvc := service.NewPlanTransitionService(starterProgramRepo, programRepo, trainingProfileRepo, planTransitionRepo, v)
@@ -266,6 +268,7 @@ func main() {
 	savedMealHandler := handler.NewSavedMealHandler(savedMealSvc)
 	nutritionPlanHandler := handler.NewNutritionPlanHandler(nutritionPlanSvc)
 	stretchLibraryHandler := handler.NewStretchLibraryHandler(stretchLibrarySvc)
+	weekOffHandler := handler.NewWeekOffHandler(weekOffSvc)
 	trainingBlockHandler := handler.NewTrainingBlockHandler(trainingBlockSvc)
 	planTransitionHandler := handler.NewPlanTransitionHandler(planTransitionSvc)
 	programGenerationHandler := handler.NewProgramGenerationHandler(programGenerationSvc, cfg.ProgramGenerationTimeout)
@@ -275,7 +278,7 @@ func main() {
 	// screen's burst of requests costs one lookup; avatar uploads above keep
 	// asking the database.
 	activeUsers := middleware.NewActiveUserCache(authUserRepo, middleware.DefaultActiveUserCacheTTL)
-	r := router.New(cfg, logger, activeUsers, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler, nutritionPlanHandler, stretchLibraryHandler)
+	r := router.New(cfg, logger, activeUsers, templateHandler, logHandler, statsHandler, settingsHandler, profileHandler, bodyWeightHandler, exerciseCatalogHandler, planHandler, accountHandler, readinessHandler, trainingProfileHandler, programHandler, scheduleHandler, planTransitionHandler, workoutSessionHandler, participationHandler, sportActivityHandler, healthExportHandler, nutritionHandler, foodHandler, trainingBlockHandler, programGenerationHandler, exportHandler, mobilitySessionHandler, kneeKitHandler, workoutImportHandler, savedMealHandler, nutritionPlanHandler, stretchLibraryHandler, weekOffHandler)
 
 	// Start server with graceful shutdown.
 	// Program generation holds a response open for up to its timeout, so the

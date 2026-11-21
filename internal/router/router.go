@@ -46,6 +46,7 @@ func New(
 	savedMealHandler *handler.SavedMealHandler,
 	nutritionPlanHandler *handler.NutritionPlanHandler,
 	stretchLibraryHandler *handler.StretchLibraryHandler,
+	weekOffHandler *handler.WeekOffHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -156,6 +157,10 @@ func New(
 				// The athlete's own stretch moves and routines, one document.
 				r.Get("/stretching/library", stretchLibraryHandler.Get)
 				r.Put("/stretching/library", stretchLibraryHandler.Save)
+				// Weeks the athlete took off, named by their Monday.
+				r.Get("/weeks-off", weekOffHandler.List)
+				r.Put("/weeks-off/{week_start}", weekOffHandler.Take)
+				r.Delete("/weeks-off/{week_start}", weekOffHandler.End)
 				r.Route("/knee-kit", func(r chi.Router) {
 					r.Get("/days", kneeKitHandler.ListDays)
 					r.Put("/days/{date}", kneeKitHandler.SaveDay)

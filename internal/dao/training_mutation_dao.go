@@ -1508,11 +1508,30 @@ func (r *trainingMutationDAO) FinalizeScheduledWorkout(ctx context.Context, user
 	if workout.FinalizedAt == nil {
 		status, participated := scheduledOutcome(workout)
 		finalizedAt := now.UTC()
+		// A workout left untouched in a week the athlete took off is skipped,
+		// not a miss waiting for a choice, and is not a scheduled opportunity.
+		weekOff := false
+		if status == model.WorkoutStatusMissed && !participated {
+			if err := tx.QueryRow(ctx, `
+				SELECT EXISTS (
+					SELECT 1 FROM weeks_off
+					WHERE user_id=$1 AND week_start=date_trunc('week', $2::date)::date)`,
+				userID, workout.Date).Scan(&weekOff); err != nil {
+				return nil, false, fmt.Errorf("checking week off: %w", err)
+			}
+		}
+		var resolution *string
+		var resolvedAt *time.Time
+		if weekOff {
+			skipped := model.ResolutionSkipped
+			resolution, resolvedAt = &skipped, &finalizedAt
+		}
 		err = tx.QueryRow(ctx, `
 			UPDATE scheduled_workouts SET status=$3, finalized_at=$4,
+			       resolution=COALESCE($6, resolution), resolved_at=COALESCE($7, resolved_at),
 			       revision=revision+1, updated_at=now()
 			WHERE id=$1 AND user_id=$2 AND revision=$5
-			RETURNING revision`, workoutID, userID, status, finalizedAt, expectedRevision).Scan(&revision)
+			RETURNING revision`, workoutID, userID, status, finalizedAt, expectedRevision, resolution, resolvedAt).Scan(&revision)
 		if err != nil {
 			return nil, false, fmt.Errorf("finalizing scheduled workout: %w", err)
 		}
@@ -1530,17 +1549,19 @@ func (r *trainingMutationDAO) FinalizeScheduledWorkout(ctx context.Context, user
 			}
 			return nil, false, fmt.Errorf("loading participation timezone: %w", err)
 		}
-		if _, err := tx.Exec(ctx, `
-			INSERT INTO day_participation (
-				user_id, date, scheduled_opportunity, participated,
-				finalized_at, timezone, local_date)
-			VALUES ($1,$2,true,$3,$4,$5,$2)
-			ON CONFLICT (user_id, date) DO UPDATE SET
-			  scheduled_opportunity=true,
-			  participated=day_participation.participated OR EXCLUDED.participated,
-			  revision=day_participation.revision+1`, userID, workout.Date,
-			participated, finalizedAt, timezone); err != nil {
-			return nil, false, fmt.Errorf("finalizing scheduled participation: %w", err)
+		if !weekOff {
+			if _, err := tx.Exec(ctx, `
+				INSERT INTO day_participation (
+					user_id, date, scheduled_opportunity, participated,
+					finalized_at, timezone, local_date)
+				VALUES ($1,$2,true,$3,$4,$5,$2)
+				ON CONFLICT (user_id, date) DO UPDATE SET
+				  scheduled_opportunity=true,
+				  participated=day_participation.participated OR EXCLUDED.participated,
+				  revision=day_participation.revision+1`, userID, workout.Date,
+				participated, finalizedAt, timezone); err != nil {
+				return nil, false, fmt.Errorf("finalizing scheduled participation: %w", err)
+			}
 		}
 	}
 	result, err := loadScheduledWorkout(ctx, tx, userID, workoutID)
