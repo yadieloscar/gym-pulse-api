@@ -45,8 +45,8 @@ func TestSupabaseSecurityMigrationProtectsEveryPublicApplicationTable(t *testing
 		}
 	}
 
-	if len(publicTables) != 44 {
-		t.Fatalf("found %d public application tables, want 44: %v", len(publicTables), publicTables)
+	if len(publicTables) != 45 {
+		t.Fatalf("found %d public application tables, want 45: %v", len(publicTables), publicTables)
 	}
 	// Migration 044's helper enables RLS and provisions the runtime role in one
 	// call, so a table secured through it satisfies both checks below.

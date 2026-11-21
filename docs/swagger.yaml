@@ -2957,6 +2957,13 @@ definitions:
     - weekly_goal
     - weight_unit
     type: object
+  model.WeekOff:
+    properties:
+      created_at:
+        type: string
+      week_start:
+        type: string
+    type: object
   model.WeekProgress:
     properties:
       completed:
@@ -2983,6 +2990,13 @@ definitions:
         type: number
       week_start:
         type: string
+    type: object
+  model.WeeksOffResponse:
+    properties:
+      weeks_off:
+        items:
+          $ref: '#/definitions/model.WeekOff'
+        type: array
     type: object
   model.WorkoutImport:
     properties:
@@ -6058,6 +6072,86 @@ paths:
       summary: Update training profile
       tags:
       - goal-training
+  /api/v1/weeks-off:
+    get:
+      description: Returns the weeks off whose Monday falls within from..to, oldest
+        first.
+      parameters:
+      - description: First date, YYYY-MM-DD
+        in: query
+        name: from
+        required: true
+        type: string
+      - description: Last date, YYYY-MM-DD
+        in: query
+        name: to
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WeeksOffResponse'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: List the athlete's weeks off
+      tags:
+      - schedule
+  /api/v1/weeks-off/{week_start}:
+    delete:
+      description: 'Removes the week off. Idempotent: a week that is not off also
+        returns 204.'
+      parameters:
+      - description: The week's Monday, YYYY-MM-DD
+        in: path
+        name: week_start
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: End a week off
+      tags:
+      - schedule
+    put:
+      description: Marks the Monday-to-Sunday week as off. Idempotent by week_start;
+        there is no body. See docs/CONTRACTS.md "Weeks off".
+      parameters:
+      - description: The week's Monday, YYYY-MM-DD
+        in: path
+        name: week_start
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.WeekOff'
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Take a week off
+      tags:
+      - schedule
   /api/v1/workout-sessions:
     get:
       produces:

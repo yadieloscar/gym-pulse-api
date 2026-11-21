@@ -1161,12 +1161,80 @@ Response 200:
 Participation is server-derived and has no public write route. Any performed set
 on a scheduled day yields `participated:true`, even when the planned workout is
 missed. Zero performed sets yields false. Rest/unscheduled dates are neutral and
-omitted. Finalized timezone/date basis is immutable.
+omitted. Finalized timezone/date basis is immutable. A scheduled day left untouched
+in a week off (contract 1.17.0) is also neutral and omitted.
 
 Completing an off-plan workout preserves participation for that local date but
 does not rewrite a missed scheduled outcome. Stats, record, history, and volume
 queries union legacy day logs with UUID workout sessions; an off-plan session is
 counted as its own performed workout while weekly participation remains date-based.
+
+### Weeks off (contract 1.17.0)
+
+A week off is one Monday-to-Sunday week the athlete chose not to train. It is
+named by its Monday, `week_start`. Additive in contract 1.17.0; older clients
+never call these routes.
+
+What a week off changes on the server:
+
+- A scheduled workout in that week that is left untouched is still finalized
+  as `status: "missed"`, but with `resolution: "skipped"` and `resolved_at`
+  set, so it never waits for a choice. `POST /scheduled-workouts/{id}/unskip`
+  works on it as on any skipped workout.
+- That finalization writes no participation row, so the day is neutral in
+  `GET /participation`, like a rest day.
+- A workout the athlete does perform in the week is finalized and counted
+  exactly as in any other week.
+- Planned workouts stay `planned` until their date passes. Nothing is deleted
+  or moved, and the schedule keeps filling.
+
+`GET /api/v1/stats` is unchanged: `streak_weeks` and `streak_days` do not know
+about weeks off. Clients that show a weeks-on-target streak leave a week off
+out of it: the week neither counts nor ends the streak, unless the athlete
+reached their target in it anyway.
+
+Taking and ending a week are idempotent by `week_start`. They take no body, no
+`operation_key`, and no `Idempotency-Key`, and there is no revision.
+
+**Detecting an older server.** A server older than 1.17.0 does not have these
+routes and answers 404 without the JSON error envelope; clients treat that as
+"not available yet".
+
+#### `GET /api/v1/weeks-off?from=YYYY-MM-DD&to=YYYY-MM-DD`
+
+Response 200, the weeks off whose `week_start` is within `from`..`to`
+inclusive, oldest first; `[]` when there are none:
+```json
+{ "weeks_off": [{ "week_start": "2026-11-23", "created_at": "<RFC3339>" }] }
+```
+Both `from` and `to` are required, `to` must not be before `from`, and the range
+is at most 731 inclusive days, so one request covers a year of streak history
+and the weeks ahead. Otherwise `422 VALIDATION_ERROR` with `field` `from`, `to`,
+or `range`.
+
+#### `PUT /api/v1/weeks-off/{week_start}`
+
+No body. Marks the week off and returns it. Response 200:
+```json
+{ "week_start": "2026-11-23", "created_at": "<RFC3339>" }
+```
+A week that is already off returns 200 with the stored week unchanged. In the
+same transaction every `missed` workout of that week with no resolution becomes
+`resolution: "skipped"`, with its revision incremented.
+
+`422 VALIDATION_ERROR` with `field: "week_start"` when `week_start` is not
+`YYYY-MM-DD`, is not a Monday, is before the athlete's current week, or is more
+than 8 weeks after it. The current week is judged in the training profile's
+timezone, or in UTC when the athlete has no training profile. A saved timezone
+the server cannot load returns `422` with `field: "timezone"`.
+
+#### `DELETE /api/v1/weeks-off/{week_start}`
+
+No body. Ends the week off. Response 204, also when the week was not off.
+Workouts already finalized as skipped stay skipped; the rest of the week's
+workouts are treated as in any other week from then on. Validation is the same
+as for `PUT`, without the 8-week limit: a week before the athlete's current
+week cannot be ended (`422`, `field: "week_start"`).
 
 ### Sport activities
 
