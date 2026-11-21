@@ -172,11 +172,19 @@ func TestWeekOffList(t *testing.T) {
 	if store.listed != [2]string{"2026-11-01", "2026-11-30"} {
 		t.Fatalf("listed %v", store.listed)
 	}
-	if got := validationField(t, func() error {
-		_, err := svc.List(context.Background(), uuid.New(), "2026-11-30", "2026-11-01")
-		return err
-	}()); got != "to" {
-		t.Fatalf("field = %q, want to", got)
+	for _, tt := range []struct{ from, to, field string }{
+		{from: "2026-11-30", to: "2026-11-01", field: "to"},
+		{from: "soon", to: "2026-11-01", field: "from"},
+		{from: "2026-11-01", to: "later", field: "to"},
+		{from: "2025-01-01", to: "2027-01-02", field: "range"},
+	} {
+		_, err := svc.List(context.Background(), uuid.New(), tt.from, tt.to)
+		if got := validationField(t, err); got != tt.field {
+			t.Fatalf("List(%s, %s) field = %q, want %q", tt.from, tt.to, got, tt.field)
+		}
+	}
+	if _, err := svc.List(context.Background(), uuid.New(), "2025-01-01", "2027-01-01"); err != nil {
+		t.Fatalf("a 731-day range: %v", err)
 	}
 	store.err = errors.New("database down")
 	if _, err := svc.List(context.Background(), uuid.New(), "2026-11-01", "2026-11-30"); err == nil {

@@ -55,7 +55,7 @@ untouched workouts do not wait for a choice.
 
 - **FR-001**: `GET /api/v1/weeks-off?from&to` MUST return the athlete's weeks off whose Monday is in
   the range, oldest first, as `{ "weeks_off": [{ "week_start", "created_at" }] }`, with `[]` when
-  there are none. The range follows the participation range rules.
+  there are none. The range is at most 731 inclusive days.
 - **FR-002**: `PUT /api/v1/weeks-off/{week_start}` MUST mark the week off and return it with 200. A
   week already off MUST return 200 unchanged.
 - **FR-003**: `week_start` MUST be a `YYYY-MM-DD` Monday, not before the athlete's current week,

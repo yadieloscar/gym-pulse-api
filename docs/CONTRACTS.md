@@ -1207,9 +1207,10 @@ inclusive, oldest first; `[]` when there are none:
 ```json
 { "weeks_off": [{ "week_start": "2026-11-23", "created_at": "<RFC3339>" }] }
 ```
-`from` and `to` follow the participation range rules: both required, `to` not
-before `from`, at most 366 inclusive days; otherwise `422 VALIDATION_ERROR`
-with `field` `from`, `to`, or `range`.
+Both `from` and `to` are required, `to` must not be before `from`, and the range
+is at most 731 inclusive days, so one request covers a year of streak history
+and the weeks ahead. Otherwise `422 VALIDATION_ERROR` with `field` `from`, `to`,
+or `range`.
 
 #### `PUT /api/v1/weeks-off/{week_start}`
 
