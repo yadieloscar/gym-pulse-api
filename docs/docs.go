@@ -3223,6 +3223,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/programs/{id}/recap": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Weeks on target, workouts done, and how the main lifts moved, computed from the program's sessions. Read-only. See docs/CONTRACTS.md \"Program recap\".",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "goal-training"
+                ],
+                "summary": "Recap of one program",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Program id",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ProgramRecap"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/schedule": {
             "get": {
                 "security": [
@@ -8068,6 +8120,82 @@ const docTemplate = `{
                 },
                 "target_weight": {
                     "type": "number"
+                }
+            }
+        },
+        "model.ProgramRecap": {
+            "type": "object",
+            "properties": {
+                "active": {
+                    "type": "boolean"
+                },
+                "first_date": {
+                    "description": "FirstDate and LastDate are the program's first and last session dated\ntoday or earlier, YYYY-MM-DD. Both are nil when it has none.",
+                    "type": "string"
+                },
+                "last_date": {
+                    "type": "string"
+                },
+                "lifts": {
+                    "description": "Lifts is never nil.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ProgramRecapLift"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "program_id": {
+                    "type": "string"
+                },
+                "weeks": {
+                    "$ref": "#/definitions/model.ProgramRecapWeeks"
+                },
+                "workouts_done": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.ProgramRecapLift": {
+            "type": "object",
+            "properties": {
+                "days": {
+                    "type": "integer"
+                },
+                "first": {
+                    "$ref": "#/definitions/model.ProgramRecapSet"
+                },
+                "last": {
+                    "$ref": "#/definitions/model.ProgramRecapSet"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ProgramRecapSet": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "reps": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "number"
+                }
+            }
+        },
+        "model.ProgramRecapWeeks": {
+            "type": "object",
+            "properties": {
+                "on_target": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },

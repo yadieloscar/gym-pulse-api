@@ -535,6 +535,65 @@ snapshots and a null `program_id`;
 a training block that named the program keeps its history with a null
 `program_id`. Foreign/missing ID → 404, including a repeated delete.
 
+#### `GET /api/v1/programs/{id}/recap` (contract 1.18.0)
+
+Sums up one program the athlete owns, active or not: weeks on target, workouts
+done, and how its main lifts moved. Additive in contract 1.18.0. Read-only: no
+idempotency key, no revision, nothing is written, and one database round trip.
+The recap is computed from the program's scheduled workouts on every read and
+is never stored, so it reflects a past workout logged later.
+
+Response 200:
+```json
+{
+  "program_id": "<uuid>", "name": "Push Pull Legs", "active": false,
+  "first_date": "2026-09-07", "last_date": "2026-10-30",
+  "weeks": { "total": 8, "on_target": 6 },
+  "workouts_done": 21,
+  "lifts": [{
+    "name": "Back Squat", "days": 8,
+    "first": { "weight": 185, "reps": 5, "date": "2026-09-07" },
+    "last":  { "weight": 205, "reps": 5, "date": "2026-10-26" }
+  }]
+}
+```
+
+- A program has no stored start or end. `first_date` and `last_date` are the
+  dates of its first and last scheduled workout dated today or earlier; both
+  are `null` when it has none, and every count is then 0. "Today" is judged in
+  the training profile's timezone, or UTC without one. A program ends when the
+  athlete starts another (`plan-transitions/apply`); `active: false` with a
+  `last_date` is a finished program, and an active program's recap covers it
+  so far.
+- `weeks.total` counts each Monday-to-Sunday week from `first_date` to
+  `last_date` in which the program had at least one scheduled workout, except
+  a week off (contract 1.17.0) that is not on target and a week that is not
+  over yet and is not on target. A week off that reached the target counts.
+  The number of weeks off is never returned.
+- A week is on target when the athlete's `participated` days in it (as in
+  `GET /participation`, counted only from the program's first scheduled date to
+  its last) are at least the week's target. The target is the number of
+  distinct weekdays in the program's `workouts[].weekdays`, and never more than
+  the number of dates the program had a scheduled workout in that week, so the
+  week a program starts or ends in is held only to the days it had. A program
+  whose units have no weekdays uses that number of dates.
+- `workouts_done` counts the program's scheduled workouts with status
+  `completed` or `incomplete`, sport sessions included. Missed, skipped, and
+  planned workouts are not counted and no total of them is returned.
+- `lifts` holds at most five lifts, `[]` when there are none. A lift is an
+  exercise name (case and outer spaces ignored) with at least one completed
+  set with a weight above 0 and positive reps, logged in a workout session of
+  this program that is not discarded. Off-plan sets are not included.
+  Estimates are never returned. `first` and `last` are the heaviest such set
+  (equal weight: more reps) on the first and on the last day the lift was
+  done; they are equal when `days` is 1. Lifts are ordered by `days`
+  descending, then by name. `last.weight` may be below `first.weight`.
+
+A malformed id is `400 BAD_REQUEST`. A missing, foreign, or deleted program is
+`404 NOT_FOUND`; a deleted program has no recap because its workouts no longer
+name it. A server older than 1.18.0 does not have this route and answers 404
+without the JSON error envelope; clients treat that as "not available yet".
+
 #### `POST /api/v1/programs/adopt-legacy`
 
 ```json

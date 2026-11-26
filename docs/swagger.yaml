@@ -2000,6 +2000,58 @@ definitions:
       target_weight:
         type: number
     type: object
+  model.ProgramRecap:
+    properties:
+      active:
+        type: boolean
+      first_date:
+        description: |-
+          FirstDate and LastDate are the program's first and last session dated
+          today or earlier, YYYY-MM-DD. Both are nil when it has none.
+        type: string
+      last_date:
+        type: string
+      lifts:
+        description: Lifts is never nil.
+        items:
+          $ref: '#/definitions/model.ProgramRecapLift'
+        type: array
+      name:
+        type: string
+      program_id:
+        type: string
+      weeks:
+        $ref: '#/definitions/model.ProgramRecapWeeks'
+      workouts_done:
+        type: integer
+    type: object
+  model.ProgramRecapLift:
+    properties:
+      days:
+        type: integer
+      first:
+        $ref: '#/definitions/model.ProgramRecapSet'
+      last:
+        $ref: '#/definitions/model.ProgramRecapSet'
+      name:
+        type: string
+    type: object
+  model.ProgramRecapSet:
+    properties:
+      date:
+        type: string
+      reps:
+        type: integer
+      weight:
+        type: number
+    type: object
+  model.ProgramRecapWeeks:
+    properties:
+      on_target:
+        type: integer
+      total:
+        type: integer
+    type: object
   model.ProgramWorkout:
     properties:
       cooldown_routine_id:
@@ -5115,6 +5167,40 @@ paths:
       tags:
       - goal-training
       - Programs
+  /api/v1/programs/{id}/recap:
+    get:
+      description: Weeks on target, workouts done, and how the main lifts moved, computed
+        from the program's sessions. Read-only. See docs/CONTRACTS.md "Program recap".
+      parameters:
+      - description: Program id
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ProgramRecap'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Recap of one program
+      tags:
+      - goal-training
   /api/v1/programs/adopt-legacy:
     post:
       consumes:

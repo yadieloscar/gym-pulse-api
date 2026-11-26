@@ -14,7 +14,7 @@ import (
 )
 
 func TestTrainingRoutesRegistered(t *testing.T) {
-	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	r := New(&config.Config{}, slog.New(slog.NewTextHandler(io.Discard, nil)), nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
 	routes, ok := r.(chi.Routes)
 	if !ok {
 		t.Fatal("router does not expose chi routes")
@@ -29,7 +29,7 @@ func TestTrainingRoutesRegistered(t *testing.T) {
 	for _, route := range []string{
 		"GET /api/v1/training-profile", "PUT /api/v1/training-profile",
 		"GET /api/v1/starter-programs", "POST /api/v1/programs/from-starter", "POST /api/v1/programs/adopt-legacy",
-		"GET /api/v1/weeks-off", "PUT /api/v1/weeks-off/{week_start}", "DELETE /api/v1/weeks-off/{week_start}",
+		"GET /api/v1/programs/{id}/recap", "GET /api/v1/weeks-off", "PUT /api/v1/weeks-off/{week_start}", "DELETE /api/v1/weeks-off/{week_start}",
 		"POST /api/v1/schedule/materialize", "PUT /api/v1/scheduled-workouts/{id}/sets/{set_id}",
 		"POST /api/v1/scheduled-workouts/{id}/complete", "POST /api/v1/scheduled-workouts/{id}/skip", "POST /api/v1/scheduled-workouts/{id}/unskip", "POST /api/v1/scheduled-workouts/{id}/move", "DELETE /api/v1/programs/{id}/", "GET /api/v1/participation",
 		"POST /api/v1/plan-transitions/preview", "POST /api/v1/plan-transitions/apply",

@@ -252,6 +252,16 @@ else
   bad "PUT weeks-off/2026-11-24 expected 422 field week_start, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8e. program recap wired (contract 1.18.0) ----------
+step "8e. GET /api/v1/programs/{id}/recap answers 404 NOT_FOUND for an unknown program"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/programs/00000000-0000-4000-8000-000000000000/recap" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "404" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='NOT_FOUND'" "$body" 2>/dev/null; then
+  ok "program recap route is wired and hides an unknown program"
+else
+  bad "GET programs/{id}/recap expected 404 NOT_FOUND envelope, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 9. weekly volume series ----------
 step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")
