@@ -1,6 +1,10 @@
 package model
 
-import "github.com/google/uuid"
+import (
+	"time"
+
+	"github.com/google/uuid"
+)
 
 // SetLog is one performed (or planned-but-skipped) set within a day's workout.
 // It is the per-set source of truth behind the active workout player and the
@@ -83,4 +87,47 @@ type ProgressionWeek struct {
 type ExerciseProgression struct {
 	ExerciseID uuid.UUID         `json:"exercise_id"`
 	Weeks      []ProgressionWeek `json:"weeks"`
+}
+
+// ExerciseSessionSet is one completed set of a lift on one day. Reps, weight,
+// and duration are what the athlete did; any of them may be absent.
+type ExerciseSessionSet struct {
+	ActualReps      *int     `json:"actual_reps"`
+	ActualWeight    *float64 `json:"actual_weight"`
+	DurationSeconds *int     `json:"duration_seconds"`
+}
+
+// ExerciseSession is one day a lift was performed, with its completed sets in
+// the order they were done. Date is YYYY-MM-DD.
+type ExerciseSession struct {
+	Date string               `json:"date"`
+	Sets []ExerciseSessionSet `json:"sets"`
+}
+
+// HeaviestSet is the heaviest completed weighted set in a lift's whole
+// history, not only the page returned with it.
+type HeaviestSet struct {
+	Date   string  `json:"date"`
+	Weight float64 `json:"weight"`
+	Reps   int     `json:"reps"`
+}
+
+// ExerciseSessionsPage is one page of a lift's history, newest day first.
+// NextBefore is the before value that returns the next page, nil on the last.
+type ExerciseSessionsPage struct {
+	Sessions   []ExerciseSession `json:"sessions"`
+	NextBefore *string           `json:"next_before"`
+	Heaviest   *HeaviestSet      `json:"heaviest"`
+}
+
+// ExerciseSessionsFilter names one lift and one page of its history. A set
+// belongs to the lift when it matches any identity given: the saved-workout
+// exercise, the catalog entry, or the name (lower case, trimmed; "" matches
+// nothing). Before, when set, keeps days strictly earlier than it.
+type ExerciseSessionsFilter struct {
+	ExerciseID *uuid.UUID
+	CatalogID  *uuid.UUID
+	Name       string
+	Before     *time.Time
+	Limit      int
 }

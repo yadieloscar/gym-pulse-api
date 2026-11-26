@@ -6,6 +6,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
+	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
 
 // MockTemplateService stubs service.TemplateService.
@@ -58,6 +59,14 @@ type MockLogService struct {
 	ExerciseRecordsFunc func(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
 
 	ExerciseProgressionFunc func(ctx context.Context, userID uuid.UUID, idsParam, weeksParam string) ([]model.ExerciseProgression, error)
+	ExerciseSessionsFunc    func(ctx context.Context, userID uuid.UUID, params service.ExerciseSessionsParams) (*model.ExerciseSessionsPage, error)
+}
+
+func (m *MockLogService) ExerciseSessions(ctx context.Context, u uuid.UUID, params service.ExerciseSessionsParams) (*model.ExerciseSessionsPage, error) {
+	if m.ExerciseSessionsFunc != nil {
+		return m.ExerciseSessionsFunc(ctx, u, params)
+	}
+	return &model.ExerciseSessionsPage{Sessions: []model.ExerciseSession{}}, nil
 }
 
 func (m *MockLogService) ListByWeek(ctx context.Context, u uuid.UUID, w string) ([]model.DayLogSummary, error) {

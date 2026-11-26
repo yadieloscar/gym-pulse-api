@@ -2037,6 +2037,62 @@ no idempotency key and no revision.
 A server older than 1.15.0 does not have this route and answers 404 without the
 JSON error envelope; clients treat that as "not available yet".
 
+### `GET /api/v1/exercises/sessions` → `ExerciseSessionsPage` (contract 1.18.0)
+One lift's past sessions, newest first, for the exercise history page. Unlike
+`/exercises/history`, `/exercises/records`, and `/exercises/progression`, this
+route also reads planned (program) workouts, whose sets carry no saved-workout
+exercise id. Read-only: no idempotency key and no revision.
+
+Query:
+
+- The lift is named by `exercise_id` (a saved-workout exercise UUID),
+  `catalog_id` (an exercise catalog UUID), `name`, or any mix. At least one is
+  required → otherwise 422 `VALIDATION_ERROR` with
+  `details.field: "exercise_id"`. A malformed UUID → 422 naming its field.
+  `name` is trimmed, matched without case against the name stored with each
+  set, and at most 200 characters → otherwise 422 with `details.field: "name"`.
+- A set belongs to the lift when it matches **any** identity given: its
+  `exercise_id` is the one sent; its saved-workout exercise or its planned set
+  points at `catalog_id`; or its stored name equals `name`. Clients send every
+  identity they hold so planned work, off-plan work, and imported history
+  appear together.
+- `limit` is the number of days per page: default 20, 1 to 50. Anything else →
+  422 with `details.field: "limit"`.
+- `before` (`YYYY-MM-DD`, optional) keeps days strictly earlier than it. A
+  malformed date → 422 with `details.field: "before"`.
+
+Response:
+
+```json
+{
+  "sessions": [
+    { "date": "2026-09-05",
+      "sets": [ { "actual_reps": 5, "actual_weight": 205, "duration_seconds": null } ] }
+  ],
+  "next_before": "2026-09-05",
+  "heaviest": { "date": "2026-09-05", "weight": 205, "reps": 5 }
+}
+```
+
+- One entry per calendar day the lift was performed, newest first. A day with
+  more than one workout is one entry. `sets` are the completed sets only, in
+  the order they were logged, from day logs and from workout sessions that are
+  not discarded; a day with no completed set of the lift has no entry.
+  `actual_reps`, `actual_weight`, and `duration_seconds` are each `null` when
+  the set has none (a bodyweight set has no weight; a timed hold has only a
+  duration).
+- `next_before` is the value to send as `before` for the next page, and `null`
+  on the last page. `sessions` is `[]`, never `null`.
+- `heaviest` is the heaviest completed set with a weight and positive reps in
+  the lift's **whole** history, not only this page: equal weight → more reps,
+  then the earlier date. It is `null` when the lift has no such set. It is a
+  set the athlete lifted, never an estimate.
+- An unknown lift, and an id owned by another athlete, return the empty page:
+  `{ "sessions": [], "next_before": null, "heaviest": null }`.
+
+A server older than 1.18.0 does not have this route and answers 404 without the
+JSON error envelope; clients treat that as "not available yet".
+
 ---
 
 ## Weekly plan

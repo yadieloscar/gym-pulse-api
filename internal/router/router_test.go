@@ -64,6 +64,10 @@ func (fakeLogDAO) RecordSets(ctx context.Context, u uuid.UUID, ids []uuid.UUID) 
 	return []model.SetPerf{}, nil
 }
 
+func (fakeLogDAO) ExerciseSessions(ctx context.Context, u uuid.UUID, filter model.ExerciseSessionsFilter) (*model.ExerciseSessionsPage, error) {
+	return &model.ExerciseSessionsPage{Sessions: []model.ExerciseSession{}}, nil
+}
+
 func (fakeLogDAO) WeeklyHeaviestSets(ctx context.Context, u uuid.UUID, ids []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error) {
 	return []model.ExerciseProgression{}, nil
 }
