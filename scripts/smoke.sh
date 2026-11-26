@@ -252,7 +252,7 @@ else
   bad "PUT weeks-off/2026-11-24 expected 422 field week_start, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
-# ---------- 8e. program recap wired (contract 1.18.0) ----------
+# ---------- 8e. program recap wired (contract 1.20.0) ----------
 step "8e. GET /api/v1/programs/{id}/recap answers 404 NOT_FOUND for an unknown program"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/programs/00000000-0000-4000-8000-000000000000/recap" "${auth[@]}")
 body=$(cat /tmp/smoke.body)

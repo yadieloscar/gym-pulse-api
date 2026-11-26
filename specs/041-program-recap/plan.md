@@ -4,7 +4,7 @@
 
 ## Constitution check
 
-I contract 1.18.0 in `docs/CONTRACTS.md` in the same change; II every query in the batch is scoped
+I contract 1.20.0 in `docs/CONTRACTS.md` in the same change; II every query in the batch is scoped
 by the authenticated `user_id`, and a foreign id is the same 404 as a missing one; III read-only and
 additive, no migration; IV tests named in the spec's acceptance table, service coverage stays above
 90%; V handler → service → DAO, no new dependency, no concurrency.

@@ -535,10 +535,10 @@ snapshots and a null `program_id`;
 a training block that named the program keeps its history with a null
 `program_id`. Foreign/missing ID → 404, including a repeated delete.
 
-#### `GET /api/v1/programs/{id}/recap` (contract 1.18.0)
+#### `GET /api/v1/programs/{id}/recap` (contract 1.20.0)
 
 Sums up one program the athlete owns, active or not: weeks on target, workouts
-done, and how its main lifts moved. Additive in contract 1.18.0. Read-only: no
+done, and how its main lifts moved. Additive in contract 1.20.0. Read-only: no
 idempotency key, no revision, nothing is written, and one database round trip.
 The recap is computed from the program's scheduled workouts on every read and
 is never stored, so it reflects a past workout logged later.
@@ -591,7 +591,7 @@ Response 200:
 
 A malformed id is `400 BAD_REQUEST`. A missing, foreign, or deleted program is
 `404 NOT_FOUND`; a deleted program has no recap because its workouts no longer
-name it. A server older than 1.18.0 does not have this route and answers 404
+name it. A server older than 1.20.0 does not have this route and answers 404
 without the JSON error envelope; clients treat that as "not available yet".
 
 #### `POST /api/v1/programs/adopt-legacy`

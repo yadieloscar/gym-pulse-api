@@ -1,10 +1,10 @@
 # Feature Specification: Program recap
 
-**Feature Branch**: `feat/039-program-recap`
+**Feature Branch**: `feat/039-program-recap` (named before the directory moved to 041; 039 and 040 went to features opened the same day)
 
 **Feature ID**: `gympulse-program-recap`
 
-**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/048-program-recap/spec.md)
+**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/054-program-recap/spec.md)
 
 **Created**: 2026-11-25
 
@@ -105,7 +105,7 @@ is already stored on the program's scheduled sessions.
   `date`. A lift done on one day has equal `first` and `last`. The list is `[]`, never `null`.
 - **FR-007**: The route MUST be read-only (no idempotency key, no revision, no write) and MUST use
   one database round trip.
-- **FR-008**: The change MUST be additive (contract 1.18.0) and need no migration. An older server
+- **FR-008**: The change MUST be additive (contract 1.20.0) and need no migration. An older server
   answers 404 without the JSON error envelope, which clients read as "not available yet".
 - **FR-009**: Another athlete's sessions, participation, weeks off, and sets MUST never be read.
 
@@ -132,5 +132,5 @@ gets a 404 without the JSON envelope and hides the recap.
 | FR-005 | `TestBuildProgramRecap/full_program`, `TestProgramRecapRead` |
 | FR-006 | `TestBuildProgramRecap/no_logged_lifts`, `TestBuildProgramRecapMainLifts`, `TestProgramRecapRead` |
 | FR-007 | `program_recap_dao.go` (one `SendBatch`), `TestProgramRecapRoundTrips` |
-| FR-008 | `training_routes_test.go`, `docs/CONTRACTS.md` 1.18.0, smoke step 8e |
+| FR-008 | `training_routes_test.go`, `docs/CONTRACTS.md` 1.20.0, smoke step 8e |
 | FR-009 | `TestProgramRecapReadIsOwned` |
