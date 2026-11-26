@@ -430,6 +430,81 @@
                 }
             }
         },
+        "/api/v1/exercises/sessions": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns one page of the days the athlete performed a lift, each with its completed sets, and the heaviest weighted set of the whole history. The lift is named by exercise_id, catalog_id, name, or any mix; a set that matches any of them belongs to it.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "logs"
+                ],
+                "summary": "One lift's past sessions, newest first",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Saved-workout exercise UUID",
+                        "name": "exercise_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exercise catalog UUID",
+                        "name": "catalog_id",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Exercise name, matched without case",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Return days strictly before this YYYY-MM-DD date",
+                        "name": "before",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Days per page, 1 to 50 (default 20)",
+                        "name": "limit",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ExerciseSessionsPage"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/export": {
             "get": {
                 "security": [
@@ -6178,6 +6253,51 @@
                 }
             }
         },
+        "model.ExerciseSession": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "sets": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExerciseSessionSet"
+                    }
+                }
+            }
+        },
+        "model.ExerciseSessionSet": {
+            "type": "object",
+            "properties": {
+                "actual_reps": {
+                    "type": "integer"
+                },
+                "actual_weight": {
+                    "type": "number"
+                },
+                "duration_seconds": {
+                    "type": "integer"
+                }
+            }
+        },
+        "model.ExerciseSessionsPage": {
+            "type": "object",
+            "properties": {
+                "heaviest": {
+                    "$ref": "#/definitions/model.HeaviestSet"
+                },
+                "next_before": {
+                    "type": "string"
+                },
+                "sessions": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExerciseSession"
+                    }
+                }
+            }
+        },
         "model.ExportBodyWeight": {
             "type": "object",
             "properties": {
@@ -7106,6 +7226,20 @@
                 },
                 "resets_at": {
                     "type": "string"
+                }
+            }
+        },
+        "model.HeaviestSet": {
+            "type": "object",
+            "properties": {
+                "date": {
+                    "type": "string"
+                },
+                "reps": {
+                    "type": "integer"
+                },
+                "weight": {
+                    "type": "number"
                 }
             }
         },

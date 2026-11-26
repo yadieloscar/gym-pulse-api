@@ -90,6 +90,14 @@ type MockLogDAO struct {
 	RecordSetsFunc      func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID) ([]model.SetPerf, error)
 
 	WeeklyHeaviestSetsFunc func(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error)
+	ExerciseSessionsFunc   func(ctx context.Context, userID uuid.UUID, filter model.ExerciseSessionsFilter) (*model.ExerciseSessionsPage, error)
+}
+
+func (m *MockLogDAO) ExerciseSessions(ctx context.Context, userID uuid.UUID, filter model.ExerciseSessionsFilter) (*model.ExerciseSessionsPage, error) {
+	if m.ExerciseSessionsFunc != nil {
+		return m.ExerciseSessionsFunc(ctx, userID, filter)
+	}
+	return &model.ExerciseSessionsPage{Sessions: []model.ExerciseSession{}}, nil
 }
 
 func (m *MockLogDAO) ListByWeek(ctx context.Context, userID uuid.UUID, weekStart time.Time) ([]model.DayLogSummary, error) {

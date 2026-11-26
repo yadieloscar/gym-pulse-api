@@ -216,6 +216,23 @@ else
   bad "GET exercises/progression?weeks=53 expected 422 field weeks, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8b2. exercise sessions wired (contract 1.18.0) ----------
+step "8b2. GET /api/v1/exercises/sessions returns a page and validates its query"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/sessions?exercise_id=$rand&name=smoke%20lift&limit=5" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'sessions','next_before','heaviest'}; assert isinstance(d['sessions'], list)" "$body" 2>/dev/null; then
+  ok "exercise sessions endpoint returns sessions, next_before, heaviest (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercises/sessions expected 200 page, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/sessions" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['details']['field']=='exercise_id'" "$body" 2>/dev/null; then
+  ok "exercise sessions rejects a request that names no lift"
+else
+  bad "GET exercises/sessions with no lift expected 422 field exercise_id, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 8c. stretch library wired (contract 1.16.0) ----------
 step "8c. GET /api/v1/stretching/library returns the library and PUT validates moves"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stretching/library" "${auth[@]}")
