@@ -48,6 +48,7 @@ func New(
 	stretchLibraryHandler *handler.StretchLibraryHandler,
 	weekOffHandler *handler.WeekOffHandler,
 	exerciseNoteHandler *handler.ExerciseNoteHandler,
+	programRecapHandler *handler.ProgramRecapHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -109,6 +110,7 @@ func New(
 						r.Get("/", programHandler.Get)
 						r.Put("/", programHandler.Update)
 						r.Delete("/", programHandler.Delete)
+						r.Get("/recap", programRecapHandler.Get)
 					})
 				})
 				r.Get("/schedule", scheduleHandler.List)
