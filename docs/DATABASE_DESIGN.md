@@ -19,7 +19,7 @@ The document uses three labels:
 - **Target**: the chosen future design. A target is not deployed until a later migration, code
   change, and PostgreSQL-backed verification land.
 
-The current inventory contains **46 tables and 489 supported columns**. For the Supabase-managed
+The current inventory contains **47 tables and 495 supported columns**. For the Supabase-managed
 `auth.users` table, only the `id` column is part of GymPulse's supported persistence contract;
 provider-managed columns are deliberately outside this inventory.
 
@@ -1436,6 +1436,28 @@ policies and existing Data API roles have table privileges revoked.
 
 **Migration source**: 051.
 
+### Table: `public.exercise_notes`
+
+**Purpose**: The athlete's one short private note per exercise, such as "seat height 4". The note belongs to the exercise itself and is shown wherever that exercise comes up; it is separate from the prescription `notes` columns on `exercises`, `program_exercises`, and `scheduled_sets`.
+
+| Column | Type | Null/default | Meaning | Sensitivity |
+|---|---|---|---|---|
+| `user_id` | `uuid` | not null | Authenticated owner | Account |
+| `exercise_key` | `text` | not null | The exercise's name trimmed, whitespace collapsed, lowercased; derived by the API | Health |
+| `exercise_name` | `text` | not null | The name as last saved | Health |
+| `note` | `text` | not null | The athlete's note | Health |
+| `created_at` | `timestamptz` | not null; `now()` | When the note was first saved | Operational |
+| `updated_at` | `timestamptz` | not null; `now()` | When the note was last saved | Operational |
+
+**Current constraints and indexes**
+
+- PK `(user_id, exercise_key)`; FK `user_id → auth.users(id) ON DELETE CASCADE`. No secondary index: every read and write is by owner.
+- Checks: `exercise_key` and `exercise_name` 1–120 characters; `note` 1–200 characters. The key's derivation from the name and the limit of 500 notes per athlete are enforced by the API.
+
+**Ownership/lifecycle**: Private to the authenticated owner. A save upserts the row and replaces `exercise_name` and `note` (last write wins; no revision, no idempotency record). Clearing a note deletes the row. No other table references it, and it references no exercise row, so deleting or renaming an exercise leaves the note untouched. Removed with the account. RLS, Data API revocation, and runtime-role provisioning through `gym_pulse_private.secure_table`.
+
+**Migration source**: 052.
+
 ### Table: `public.criteria_training_blocks`
 
 **Purpose**: Owner-scoped athlete-authored block, optionally associated with an owned program without changing its schedule.
@@ -1588,7 +1610,7 @@ The count is derived from the final state after migration 041, not the sum of ev
 
 | Parent | Child/reference | Delete action | Historical effect |
 |---|---|---|---|
-| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals`, `nutrition_profiles`, `stretch_libraries`, `weeks_off` | Cascade | Removes all application-owned data |
+| `auth.users` | `user_profiles`, `training_profiles`, `programs`, `scheduled_workouts`, `workout_sessions`, `day_participation`, `idempotency_records`, `legacy_adoptions`, six legacy roots, `sport_activities`, `mobility_sessions`, `workout_imports`, `knee_kit_days`, `criteria_training_blocks`, `user_foods`, `food_entries`, `saved_meals`, `nutrition_profiles`, `stretch_libraries`, `weeks_off`, `exercise_notes` | Cascade | Removes all application-owned data |
 | `food_catalog` | `food_entries`, `saved_meal_items` | Restrict | Catalog rows are never deleted; entries and meal items keep their reference |
 | `user_foods` | `food_entries` | Restrict | Own foods are archived, never deleted |
 | `user_foods` | `saved_meal_items` | No action, deferred | A held own food cannot be deleted on its own; the identity cascade removes meal and food together |
@@ -1670,6 +1692,7 @@ snapshot; `set_logs` is the preferred per-set history.
 | Sport activities | `sport_activities`, participation, idempotency | Independent completed sport records | Authoritative activity + durable participation |
 | Mobility sessions | `mobility_sessions` | Owner range list, get, delete; nothing else reads it | Authoritative write-once fact; never counted |
 | Stretch library | `stretch_libraries`, idempotency | Owner read by primary key; nothing else reads it | Athlete-authored revisioned document; never counted, bundled catalog stays in the app |
+| Exercise notes | `exercise_notes` | Owner list of every note; only the data export also reads it | Idempotent by owner and exercise key, last write wins; never counted |
 | Weeks off | `weeks_off`, `scheduled_workouts` resolution | Owner list by week range; finalization checks the workout's week | Idempotent by week; never counted; a week off skips untouched workouts instead of leaving misses |
 | Workout imports | `workout_imports`, `day_logs`, `set_logs` | Owner list, commit, delete; imported days read as ordinary day logs | Write-once batch owning the day logs it created |
 | Knee Kit days | `knee_kit_days`, idempotency | Owner range list oldest first and whole-day replacement; only the data export also reads it | Authoritative revisioned per-day fact; never counted, no guidance computed |
@@ -2440,6 +2463,7 @@ Report one of:
 | 049 | `exercises.duration_seconds` (seconds per set of a hold or stretch, 1–3600) and `workout_templates.warmup_routine_id` / `cooldown_routine_id` (the stretching routines the athlete chose for a saved workout; 1–64 character slugs, `NULL` for the automatic pick). Additive; no row rewritten |
 | 050 | `stretch_libraries` (one JSONB document of the athlete's own stretch moves and routines per athlete, revisioned), `secure_table` provisioning; `program_workouts.warmup_routine_id` / `cooldown_routine_id` with the slug checks 049 gave `workout_templates`. Additive; no row rewritten |
 | 051 | `weeks_off` (one row per athlete and Monday-started week taken off, Monday check), `secure_table` provisioning. Additive; no row rewritten |
+| 052 | `exercise_notes` (one short private note per athlete and exercise key, length checks), `secure_table` provisioning. Additive; no row rewritten |
 
 ## 19. Decision summary
 

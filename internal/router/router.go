@@ -47,6 +47,7 @@ func New(
 	nutritionPlanHandler *handler.NutritionPlanHandler,
 	stretchLibraryHandler *handler.StretchLibraryHandler,
 	weekOffHandler *handler.WeekOffHandler,
+	exerciseNoteHandler *handler.ExerciseNoteHandler,
 ) http.Handler {
 	r := chi.NewRouter()
 
@@ -161,6 +162,9 @@ func New(
 				r.Get("/weeks-off", weekOffHandler.List)
 				r.Put("/weeks-off/{week_start}", weekOffHandler.Take)
 				r.Delete("/weeks-off/{week_start}", weekOffHandler.End)
+				// The athlete's one short private note per exercise.
+				r.Get("/exercise-notes", exerciseNoteHandler.List)
+				r.Put("/exercise-notes", exerciseNoteHandler.Save)
 				r.Route("/knee-kit", func(r chi.Router) {
 					r.Get("/days", kneeKitHandler.ListDays)
 					r.Put("/days/{date}", kneeKitHandler.SaveDay)

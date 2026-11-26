@@ -102,6 +102,9 @@ func (f *exportFixture) seedAthlete(t *testing.T, marker string) uuid.UUID {
 		{sql: `INSERT INTO knee_kit_days (id, user_id, date, completed_items, morning_pain, sharp_pain)
 			VALUES ($1, $2, '2026-02-08', '{isometric-hold,morning-check}', 3, true), ($3, $2, '2026-02-09', '{}', NULL, false)`,
 			args: []any{uuid.New(), userID, uuid.New()}},
+		{sql: `INSERT INTO exercise_notes (user_id, exercise_key, exercise_name, note)
+			VALUES ($1, 'leg press', 'Leg press', $2), ($1, 'bench press', 'Bench press', 'narrow grip')`,
+			args: []any{userID, marker + " seat height 4"}},
 	}
 	for _, step := range steps {
 		args := make([]any, len(step.args))
@@ -195,6 +198,10 @@ func TestExportReadsEveryOwnedSectionAndNothingElse(t *testing.T) {
 		k[0].ActivityPain != nil || !k[0].SharpPain || k[0].Limping || k[1].CompletedItems == nil || len(k[1].CompletedItems) != 0 {
 		t.Errorf("knee kit days = %+v", k)
 	}
+	e := got.ExerciseNotes
+	if len(e) != 2 || e[0].ExerciseName != "Bench press" || e[0].Note != "narrow grip" || e[1].Note != "mine seat height 4" || e[1].UpdatedAt.IsZero() {
+		t.Errorf("exercise notes = %+v", e)
+	}
 	if !got.ExportedAt.Equal(exportedAt) {
 		t.Errorf("exported_at = %v", got.ExportedAt)
 	}
@@ -213,7 +220,7 @@ func TestExportOfNewAthleteIsEmptyArrays(t *testing.T) {
 		t.Fatal(err)
 	}
 	body, _ := json.Marshal(got)
-	for _, want := range []string{`"profile":null`, `"workouts":[]`, `"templates":[]`, `"food_entries":[]`, `"own_foods":[]`, `"saved_meals":[]`, `"knee_kit_days":[]`} {
+	for _, want := range []string{`"profile":null`, `"workouts":[]`, `"templates":[]`, `"food_entries":[]`, `"own_foods":[]`, `"saved_meals":[]`, `"knee_kit_days":[]`, `"exercise_notes":[]`} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("missing %s in %s", want, body)
 		}
