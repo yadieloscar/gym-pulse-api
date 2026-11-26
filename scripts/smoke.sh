@@ -252,6 +252,24 @@ else
   bad "PUT weeks-off/2026-11-24 expected 422 field week_start, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8e. exercise notes wired (contract 1.19.0) ----------
+step "8e. GET /api/v1/exercise-notes lists notes and PUT refuses a missing exercise name"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercise-notes" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'exercise_notes'} and isinstance(d['exercise_notes'], list)" "$body" 2>/dev/null; then
+  ok "exercise notes endpoint returns an exercise_notes list (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercise-notes expected 200 list, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/exercise-notes" "${auth[@]}" \
+  -H "Content-Type: application/json" -d '{"note":"seat height 4"}')
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='VALIDATION_ERROR' and d['details']['field']=='exercise_name'" "$body" 2>/dev/null; then
+  ok "PUT exercise-notes refuses a missing name with field exercise_name"
+else
+  bad "PUT exercise-notes without a name expected 422 field exercise_name, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 9. weekly volume series ----------
 step "9. GET /api/v1/stats/volume?weeks=4 returns a 4-week series"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stats/volume?weeks=4" "${auth[@]}")

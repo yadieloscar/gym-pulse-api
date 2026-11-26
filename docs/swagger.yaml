@@ -488,6 +488,10 @@ definitions:
         items:
           $ref: '#/definitions/model.ExportBodyWeight'
         type: array
+      exercise_notes:
+        items:
+          $ref: '#/definitions/model.ExportExerciseNote'
+        type: array
       exported_at:
         type: string
       knee_kit_days:
@@ -686,6 +690,24 @@ definitions:
           $ref: '#/definitions/model.SetLog'
         type: array
     type: object
+  model.ExerciseNote:
+    properties:
+      exercise_key:
+        type: string
+      exercise_name:
+        type: string
+      note:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.ExerciseNotesResponse:
+    properties:
+      exercise_notes:
+        items:
+          $ref: '#/definitions/model.ExerciseNote'
+        type: array
+    type: object
   model.ExerciseOverride:
     properties:
       actual_reps:
@@ -800,6 +822,15 @@ definitions:
         type: string
       weight:
         type: number
+    type: object
+  model.ExportExerciseNote:
+    properties:
+      exercise_name:
+        type: string
+      note:
+        type: string
+      updated_at:
+        type: string
     type: object
   model.ExportExerciseSummary:
     properties:
@@ -2176,6 +2207,13 @@ definitions:
     - expected_revision
     - operation_key
     type: object
+  model.SaveExerciseNoteRequest:
+    properties:
+      exercise_name:
+        type: string
+      note:
+        type: string
+    type: object
   model.SaveKneeKitDayRequest:
     properties:
       activity_pain:
@@ -3218,6 +3256,51 @@ paths:
       summary: Delete a body weight entry
       tags:
       - body-weight
+  /api/v1/exercise-notes:
+    get:
+      description: Returns every note the athlete keeps, ordered by exercise_key.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ExerciseNotesResponse'
+      security:
+      - BearerAuth: []
+      summary: List the athlete's exercise notes
+      tags:
+      - exercises
+    put:
+      description: Replaces the athlete's note for the named exercise; an empty note
+        clears it. Idempotent, last write wins. See docs/CONTRACTS.md "Exercise notes".
+      parameters:
+      - description: Exercise name and note
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveExerciseNoteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ExerciseNote'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save, edit, or clear the note for one exercise
+      tags:
+      - exercises
   /api/v1/exercises:
     get:
       description: Returns the curated exercise catalog, optionally filtered by workout

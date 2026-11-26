@@ -208,6 +208,77 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/exercise-notes": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Returns every note the athlete keeps, ordered by exercise_key.",
+                "tags": [
+                    "exercises"
+                ],
+                "summary": "List the athlete's exercise notes",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ExerciseNotesResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Replaces the athlete's note for the named exercise; an empty note clears it. Idempotent, last write wins. See docs/CONTRACTS.md \"Exercise notes\".",
+                "tags": [
+                    "exercises"
+                ],
+                "summary": "Save, edit, or clear the note for one exercise",
+                "parameters": [
+                    {
+                        "description": "Exercise name and note",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/model.SaveExerciseNoteRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/model.ExerciseNote"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Unprocessable Entity",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/exercises": {
             "get": {
                 "security": [
@@ -5816,6 +5887,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/model.ExportBodyWeight"
                     }
                 },
+                "exercise_notes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExportExerciseNote"
+                    }
+                },
                 "exported_at": {
                     "type": "string"
                 },
@@ -6112,6 +6189,34 @@ const docTemplate = `{
                 }
             }
         },
+        "model.ExerciseNote": {
+            "type": "object",
+            "properties": {
+                "exercise_key": {
+                    "type": "string"
+                },
+                "exercise_name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.ExerciseNotesResponse": {
+            "type": "object",
+            "properties": {
+                "exercise_notes": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/model.ExerciseNote"
+                    }
+                }
+            }
+        },
         "model.ExerciseOverride": {
             "type": "object",
             "required": [
@@ -6284,6 +6389,20 @@ const docTemplate = `{
                 },
                 "weight": {
                     "type": "number"
+                }
+            }
+        },
+        "model.ExportExerciseNote": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "updated_at": {
+                    "type": "string"
                 }
             }
         },
@@ -8323,6 +8442,17 @@ const docTemplate = `{
                     "minimum": 1
                 },
                 "operation_key": {
+                    "type": "string"
+                }
+            }
+        },
+        "model.SaveExerciseNoteRequest": {
+            "type": "object",
+            "properties": {
+                "exercise_name": {
+                    "type": "string"
+                },
+                "note": {
                     "type": "string"
                 }
             }
