@@ -235,3 +235,37 @@ func (h *LogHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// ExerciseSessions godoc
+// @Summary     One lift's past sessions, newest first
+// @Description Returns one page of the days the athlete performed a lift, each with its completed sets, and the heaviest weighted set of the whole history. The lift is named by exercise_id, catalog_id, name, or any mix; a set that matches any of them belongs to it.
+// @Tags        logs
+// @Produce     json
+// @Param       exercise_id query string false "Saved-workout exercise UUID"
+// @Param       catalog_id  query string false "Exercise catalog UUID"
+// @Param       name        query string false "Exercise name, matched without case"
+// @Param       before      query string false "Return days strictly before this YYYY-MM-DD date"
+// @Param       limit       query int    false "Days per page, 1 to 50 (default 20)"
+// @Success     200 {object} model.ExerciseSessionsPage
+// @Failure     401 {object} map[string]string
+// @Failure     422 {object} map[string]string
+// @Security    BearerAuth
+// @Router      /api/v1/exercises/sessions [get]
+func (h *LogHandler) ExerciseSessions(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.MustGetUserID(r.Context())
+
+	query := r.URL.Query()
+	page, err := h.svc.ExerciseSessions(r.Context(), userID, service.ExerciseSessionsParams{
+		ExerciseID: query.Get("exercise_id"),
+		CatalogID:  query.Get("catalog_id"),
+		Name:       query.Get("name"),
+		Before:     query.Get("before"),
+		Limit:      query.Get("limit"),
+	})
+	if err != nil {
+		handleServiceError(w, err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, page)
+}

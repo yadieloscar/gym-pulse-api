@@ -55,6 +55,7 @@ func (r *exportDAO) Export(ctx context.Context, userID uuid.UUID, exportedAt tim
 		readExportSavedMeals,
 		readExportCalculatorProfile,
 		readExportKneeKitDays,
+		readExportExerciseNotes,
 	}
 	for _, read := range readers {
 		if err := read(ctx, tx, userID, out); err != nil {
@@ -485,6 +486,25 @@ func readExportKneeKitDays(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out
 		return fmt.Errorf("scanning export knee kit days: %w", err)
 	}
 	out.KneeKitDays = append(out.KneeKitDays, days...)
+	return nil
+}
+
+func readExportExerciseNotes(ctx context.Context, tx pgx.Tx, userID uuid.UUID, out *model.DataExport) error {
+	rows, err := tx.Query(ctx, `
+		SELECT exercise_name, note, updated_at
+		FROM exercise_notes WHERE user_id=$1 ORDER BY exercise_key`, userID)
+	if err != nil {
+		return fmt.Errorf("querying export exercise notes: %w", err)
+	}
+	notes, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (model.ExportExerciseNote, error) {
+		var n model.ExportExerciseNote
+		err := row.Scan(&n.ExerciseName, &n.Note, &n.UpdatedAt)
+		return n, err
+	})
+	if err != nil {
+		return fmt.Errorf("scanning export exercise notes: %w", err)
+	}
+	out.ExerciseNotes = append(out.ExerciseNotes, notes...)
 	return nil
 }
 

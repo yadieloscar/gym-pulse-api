@@ -30,6 +30,9 @@ type LogDAO interface {
 	// heaviest completed weighted set of each Monday-start week on or after
 	// since, weeks oldest first.
 	WeeklyHeaviestSets(ctx context.Context, userID uuid.UUID, exerciseIDs []uuid.UUID, since time.Time) ([]model.ExerciseProgression, error)
+	// ExerciseSessions returns one page of the days a lift was performed,
+	// newest first, with the heaviest set of the lift's whole history.
+	ExerciseSessions(ctx context.Context, userID uuid.UUID, filter model.ExerciseSessionsFilter) (*model.ExerciseSessionsPage, error)
 }
 
 type logDAO struct {
@@ -362,6 +365,92 @@ func (r *logDAO) WeeklyHeaviestSets(ctx context.Context, userID uuid.UUID, exerc
 		last.Weeks = append(last.Weeks, week)
 	}
 	return progressions, rows.Err()
+}
+
+// liftPerformedSQL selects the athlete's completed sets of one lift from both
+// set sources. $1 is the user, $2 the saved-workout exercise id, $3 the
+// catalog id, and $4 the lower-case trimmed name; a set matches on any of
+// them, and a null or empty one matches nothing.
+const liftPerformedSQL = `
+	SELECT dl.date, sl.day_log_id AS parent_id, sl.set_index, sl.actual_reps, sl.actual_weight, sl.duration_seconds, sl.logged_at
+	FROM set_logs sl
+	JOIN day_logs dl ON dl.id = sl.day_log_id
+	LEFT JOIN exercises e ON e.id = sl.exercise_id
+	WHERE dl.user_id = $1 AND sl.completed = true
+	  AND (sl.exercise_id = $2 OR e.catalog_id = $3 OR ($4 <> '' AND lower(btrim(sl.exercise_name)) = $4))
+	UNION ALL
+	SELECT ws.date, sl.workout_session_id AS parent_id, sl.set_index, sl.actual_reps, sl.actual_weight, sl.duration_seconds, sl.logged_at
+	FROM set_logs sl
+	JOIN workout_sessions ws ON ws.id = sl.workout_session_id
+	LEFT JOIN exercises e ON e.id = sl.exercise_id
+	LEFT JOIN scheduled_sets ss ON ss.id = sl.scheduled_set_id
+	WHERE ws.user_id = $1 AND ws.status <> 'discarded' AND sl.completed = true
+	  AND (sl.exercise_id = $2 OR e.catalog_id = $3 OR ss.catalog_id = $3 OR ($4 <> '' AND lower(btrim(sl.exercise_name)) = $4))`
+
+// ExerciseSessions reads one page of a lift's days, newest first, and the
+// heaviest weighted set of its whole history, in one round trip. It asks for
+// one day more than the page holds to learn whether another page follows.
+func (r *logDAO) ExerciseSessions(ctx context.Context, userID uuid.UUID, filter model.ExerciseSessionsFilter) (*model.ExerciseSessionsPage, error) {
+	batch := &pgx.Batch{}
+	batch.Queue(`
+		WITH performed AS (`+liftPerformedSQL+`),
+		days AS (
+			SELECT DISTINCT date FROM performed
+			WHERE $5::date IS NULL OR date < $5::date
+			ORDER BY date DESC LIMIT $6
+		)
+		SELECT to_char(p.date, 'YYYY-MM-DD'), p.actual_reps, p.actual_weight, p.duration_seconds
+		FROM performed p JOIN days d ON d.date = p.date
+		ORDER BY p.date DESC, p.parent_id, p.set_index, p.logged_at`,
+		userID, filter.ExerciseID, filter.CatalogID, filter.Name, filter.Before, filter.Limit+1)
+	batch.Queue(`
+		WITH performed AS (`+liftPerformedSQL+`)
+		SELECT to_char(date, 'YYYY-MM-DD'), actual_weight, actual_reps FROM performed
+		WHERE actual_weight IS NOT NULL AND actual_reps IS NOT NULL AND actual_reps > 0
+		ORDER BY actual_weight DESC, actual_reps DESC, date ASC LIMIT 1`,
+		userID, filter.ExerciseID, filter.CatalogID, filter.Name)
+	results := r.pool.SendBatch(ctx, batch)
+	defer results.Close()
+
+	rows, err := results.Query()
+	if err != nil {
+		return nil, fmt.Errorf("querying exercise sessions: %w", err)
+	}
+	page := &model.ExerciseSessionsPage{Sessions: []model.ExerciseSession{}}
+	for rows.Next() {
+		var (
+			date string
+			set  model.ExerciseSessionSet
+		)
+		if err := rows.Scan(&date, &set.ActualReps, &set.ActualWeight, &set.DurationSeconds); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("scanning exercise session set: %w", err)
+		}
+		if n := len(page.Sessions); n == 0 || page.Sessions[n-1].Date != date {
+			page.Sessions = append(page.Sessions, model.ExerciseSession{Date: date})
+		}
+		last := &page.Sessions[len(page.Sessions)-1]
+		last.Sets = append(last.Sets, set)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterating exercise sessions: %w", err)
+	}
+	if len(page.Sessions) > filter.Limit {
+		page.Sessions = page.Sessions[:filter.Limit]
+		next := page.Sessions[filter.Limit-1].Date
+		page.NextBefore = &next
+	}
+
+	var heaviest model.HeaviestSet
+	err = results.QueryRow().Scan(&heaviest.Date, &heaviest.Weight, &heaviest.Reps)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return nil, fmt.Errorf("querying heaviest set: %w", err)
+	}
+	if err == nil {
+		page.Heaviest = &heaviest
+	}
+	return page, nil
 }
 
 // ExerciseHistory returns, per requested exercise, the completed sets from the

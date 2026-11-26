@@ -1295,6 +1295,77 @@ workouts are treated as in any other week from then on. Validation is the same
 as for `PUT`, without the 8-week limit: a week before the athlete's current
 week cannot be ended (`422`, `field: "week_start"`).
 
+### Exercise notes (contract 1.19.0)
+
+An exercise note is the athlete's one short private note for an exercise, such
+as "seat height 4" or "narrow grip". It belongs to the exercise itself, so the
+same note comes back wherever that exercise appears: saved workouts, programs,
+and scheduled workouts. It is separate from the prescription `notes` on a
+template, program, or scheduled set, which are written while planning and are
+unchanged. Additive in contract 1.19.0; older clients never call these routes.
+
+**How an exercise is identified.** By its name. The server derives
+`exercise_key` from `exercise_name`: trim it, collapse each run of whitespace
+to one space, lowercase it. `"Leg press"`, `" LEG  press "`, and `"leg press"`
+are one exercise. Renaming an exercise starts a fresh note, and two exercises
+with the same name share one. Clients match a note to an exercise by deriving
+the same key from the name they show.
+
+**Idempotency.** A save replaces the whole note, so it is idempotent by
+athlete and exercise. It takes no `operation_key` and no `Idempotency-Key`,
+and there is no revision: the last save to reach the server wins. A client may
+queue a save while offline and send it again safely.
+
+**Privacy.** Notes are private to the authenticated athlete and removed with
+the account. Error responses name the field at fault and never repeat the
+text.
+
+**Detecting an older server.** A server older than 1.19.0 does not have these
+routes and answers 404 without the JSON error envelope; clients treat that as
+"not available yet" and keep the note on the device.
+
+#### `ExerciseNote`
+
+```json
+{ "exercise_key": "leg press", "exercise_name": "Leg press",
+  "note": "seat height 4", "updated_at": "<RFC3339>" }
+```
+`exercise_name` is the name as last saved, trimmed with whitespace collapsed.
+`note` is 1 to 200 characters; it is `""` only in the answer to a save that
+cleared the note.
+
+#### `GET /api/v1/exercise-notes`
+
+Response 200, all of the athlete's notes ordered by `exercise_key`; `[]` when
+there are none. An athlete keeps at most 500 notes, so the list is not paged:
+```json
+{ "exercise_notes": [ExerciseNote] }
+```
+
+#### `PUT /api/v1/exercise-notes`
+
+Saves, edits, or clears the note for one exercise.
+```json
+{ "exercise_name": "Leg press", "note": "seat height 4" }
+```
+- `exercise_name`: required, 1 to 120 characters after trimming and collapsing
+  whitespace.
+- `note`: trimmed at both ends; line breaks inside are kept. At most 200
+  characters. Empty (or missing, or only whitespace) **clears** the note.
+
+Response 200 with the `ExerciseNote` as it now stands. Saving over an existing
+note replaces its text and its `exercise_name`. Clearing deletes the stored
+note and returns 200 with `"note": ""` and the current time as `updated_at`,
+also when there was no note; the exercise then no longer appears in the list.
+
+`422 VALIDATION_ERROR` with `details.field`:
+- `exercise_name` when it is missing, blank, or longer than 120 characters;
+- `note` when it is longer than 200 characters;
+- `exercise_name` when the athlete already keeps 500 notes and this exercise
+  has none. Editing or clearing an existing note still works at the limit.
+
+A body that is not JSON returns `400 BAD_REQUEST`.
+
 ### Sport activities
 
 Sport activities are completed athlete-owned sports, separate from structured
@@ -2094,6 +2165,62 @@ no idempotency key and no revision.
 ]
 ```
 A server older than 1.15.0 does not have this route and answers 404 without the
+JSON error envelope; clients treat that as "not available yet".
+
+### `GET /api/v1/exercises/sessions` → `ExerciseSessionsPage` (contract 1.18.0)
+One lift's past sessions, newest first, for the exercise history page. Unlike
+`/exercises/history`, `/exercises/records`, and `/exercises/progression`, this
+route also reads planned (program) workouts, whose sets carry no saved-workout
+exercise id. Read-only: no idempotency key and no revision.
+
+Query:
+
+- The lift is named by `exercise_id` (a saved-workout exercise UUID),
+  `catalog_id` (an exercise catalog UUID), `name`, or any mix. At least one is
+  required → otherwise 422 `VALIDATION_ERROR` with
+  `details.field: "exercise_id"`. A malformed UUID → 422 naming its field.
+  `name` is trimmed, matched without case against the name stored with each
+  set, and at most 200 characters → otherwise 422 with `details.field: "name"`.
+- A set belongs to the lift when it matches **any** identity given: its
+  `exercise_id` is the one sent; its saved-workout exercise or its planned set
+  points at `catalog_id`; or its stored name equals `name`. Clients send every
+  identity they hold so planned work, off-plan work, and imported history
+  appear together.
+- `limit` is the number of days per page: default 20, 1 to 50. Anything else →
+  422 with `details.field: "limit"`.
+- `before` (`YYYY-MM-DD`, optional) keeps days strictly earlier than it. A
+  malformed date → 422 with `details.field: "before"`.
+
+Response:
+
+```json
+{
+  "sessions": [
+    { "date": "2026-09-05",
+      "sets": [ { "actual_reps": 5, "actual_weight": 205, "duration_seconds": null } ] }
+  ],
+  "next_before": "2026-09-05",
+  "heaviest": { "date": "2026-09-05", "weight": 205, "reps": 5 }
+}
+```
+
+- One entry per calendar day the lift was performed, newest first. A day with
+  more than one workout is one entry. `sets` are the completed sets only, in
+  the order they were logged, from day logs and from workout sessions that are
+  not discarded; a day with no completed set of the lift has no entry.
+  `actual_reps`, `actual_weight`, and `duration_seconds` are each `null` when
+  the set has none (a bodyweight set has no weight; a timed hold has only a
+  duration).
+- `next_before` is the value to send as `before` for the next page, and `null`
+  on the last page. `sessions` is `[]`, never `null`.
+- `heaviest` is the heaviest completed set with a weight and positive reps in
+  the lift's **whole** history, not only this page: equal weight → more reps,
+  then the earlier date. It is `null` when the lift has no such set. It is a
+  set the athlete lifted, never an estimate.
+- An unknown lift, and an id owned by another athlete, return the empty page:
+  `{ "sessions": [], "next_before": null, "heaviest": null }`.
+
+A server older than 1.18.0 does not have this route and answers 404 without the
 JSON error envelope; clients treat that as "not available yet".
 
 ---
@@ -2976,7 +3103,8 @@ A read failure answers the standard JSON error with no attachment header.
       "energy_kcal": 400, "protein_g": 30, "carbs_g": 50, "fat_g": 8, "archived": false }]
   },
   "knee_kit_days": [{ "date": "YYYY-MM-DD", "completed_items": ["morning-check"],
-    "morning_pain": 3 | null, "activity_pain": null, "sharp_pain": false, "limping": false }]
+    "morning_pain": 3 | null, "activity_pain": null, "sharp_pain": false, "limping": false }],
+  "exercise_notes": [{ "exercise_name": "Leg press", "note": "seat height 4", "updated_at": "RFC3339" }]
 }
 ```
 
@@ -2999,6 +3127,9 @@ A read failure answers the standard JSON error with no attachment header.
 - `knee_kit_days` (added in contract 1.7.0, additive, `schema_version` still
   1) holds every Knee Kit day oldest first; `completed_items` is sorted and
   `[]` when nothing was ticked. Exports made by an older API omit the key.
+- `exercise_notes` (added in contract 1.19.0, additive, `schema_version` still
+  1) holds every exercise note, ordered by exercise name ignoring case; `[]`
+  when none. Exports made by an older API omit the key.
 - `nutrition.saved_meals` (added in contract 1.8.0, additive, `schema_version`
   still 1) holds every saved meal in the order saved:
   `{ "name": "Usual breakfast", "section": "breakfast", "items": [{ "food_name": "Oats", "serving_label": "1 cup (81 g)", "serving_g": 81, "amount": 1 }] }`.

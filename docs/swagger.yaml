@@ -488,6 +488,10 @@ definitions:
         items:
           $ref: '#/definitions/model.ExportBodyWeight'
         type: array
+      exercise_notes:
+        items:
+          $ref: '#/definitions/model.ExportExerciseNote'
+        type: array
       exported_at:
         type: string
       knee_kit_days:
@@ -686,6 +690,24 @@ definitions:
           $ref: '#/definitions/model.SetLog'
         type: array
     type: object
+  model.ExerciseNote:
+    properties:
+      exercise_key:
+        type: string
+      exercise_name:
+        type: string
+      note:
+        type: string
+      updated_at:
+        type: string
+    type: object
+  model.ExerciseNotesResponse:
+    properties:
+      exercise_notes:
+        items:
+          $ref: '#/definitions/model.ExerciseNote'
+        type: array
+    type: object
   model.ExerciseOverride:
     properties:
       actual_reps:
@@ -732,6 +754,35 @@ definitions:
         type: string
       max_weight_reps:
         type: integer
+    type: object
+  model.ExerciseSession:
+    properties:
+      date:
+        type: string
+      sets:
+        items:
+          $ref: '#/definitions/model.ExerciseSessionSet'
+        type: array
+    type: object
+  model.ExerciseSessionSet:
+    properties:
+      actual_reps:
+        type: integer
+      actual_weight:
+        type: number
+      duration_seconds:
+        type: integer
+    type: object
+  model.ExerciseSessionsPage:
+    properties:
+      heaviest:
+        $ref: '#/definitions/model.HeaviestSet'
+      next_before:
+        type: string
+      sessions:
+        items:
+          $ref: '#/definitions/model.ExerciseSession'
+        type: array
     type: object
   model.ExportBodyWeight:
     properties:
@@ -800,6 +851,15 @@ definitions:
         type: string
       weight:
         type: number
+    type: object
+  model.ExportExerciseNote:
+    properties:
+      exercise_name:
+        type: string
+      note:
+        type: string
+      updated_at:
+        type: string
     type: object
   model.ExportExerciseSummary:
     properties:
@@ -1357,6 +1417,15 @@ definitions:
         type: integer
       resets_at:
         type: string
+    type: object
+  model.HeaviestSet:
+    properties:
+      date:
+        type: string
+      reps:
+        type: integer
+      weight:
+        type: number
     type: object
   model.ImportPreview:
     properties:
@@ -2227,6 +2296,13 @@ definitions:
     required:
     - expected_revision
     - operation_key
+    type: object
+  model.SaveExerciseNoteRequest:
+    properties:
+      exercise_name:
+        type: string
+      note:
+        type: string
     type: object
   model.SaveKneeKitDayRequest:
     properties:
@@ -3270,6 +3346,51 @@ paths:
       summary: Delete a body weight entry
       tags:
       - body-weight
+  /api/v1/exercise-notes:
+    get:
+      description: Returns every note the athlete keeps, ordered by exercise_key.
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ExerciseNotesResponse'
+      security:
+      - BearerAuth: []
+      summary: List the athlete's exercise notes
+      tags:
+      - exercises
+    put:
+      description: Replaces the athlete's note for the named exercise; an empty note
+        clears it. Idempotent, last write wins. See docs/CONTRACTS.md "Exercise notes".
+      parameters:
+      - description: Exercise name and note
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/model.SaveExerciseNoteRequest'
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ExerciseNote'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Save, edit, or clear the note for one exercise
+      tags:
+      - exercises
   /api/v1/exercises:
     get:
       description: Returns the curated exercise catalog, optionally filtered by workout
@@ -3419,6 +3540,57 @@ paths:
       security:
       - BearerAuth: []
       summary: All-time records per exercise
+      tags:
+      - logs
+  /api/v1/exercises/sessions:
+    get:
+      description: Returns one page of the days the athlete performed a lift, each
+        with its completed sets, and the heaviest weighted set of the whole history.
+        The lift is named by exercise_id, catalog_id, name, or any mix; a set that
+        matches any of them belongs to it.
+      parameters:
+      - description: Saved-workout exercise UUID
+        in: query
+        name: exercise_id
+        type: string
+      - description: Exercise catalog UUID
+        in: query
+        name: catalog_id
+        type: string
+      - description: Exercise name, matched without case
+        in: query
+        name: name
+        type: string
+      - description: Return days strictly before this YYYY-MM-DD date
+        in: query
+        name: before
+        type: string
+      - description: Days per page, 1 to 50 (default 20)
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/model.ExerciseSessionsPage'
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "422":
+          description: Unprocessable Entity
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - BearerAuth: []
+      summary: One lift's past sessions, newest first
       tags:
       - logs
   /api/v1/export:

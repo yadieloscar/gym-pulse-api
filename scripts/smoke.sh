@@ -216,6 +216,23 @@ else
   bad "GET exercises/progression?weeks=53 expected 422 field weeks, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
+# ---------- 8b2. exercise sessions wired (contract 1.18.0) ----------
+step "8b2. GET /api/v1/exercises/sessions returns a page and validates its query"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/sessions?exercise_id=$rand&name=smoke%20lift&limit=5" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'sessions','next_before','heaviest'}; assert isinstance(d['sessions'], list)" "$body" 2>/dev/null; then
+  ok "exercise sessions endpoint returns sessions, next_before, heaviest (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercises/sessions expected 200 page, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercises/sessions" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['details']['field']=='exercise_id'" "$body" 2>/dev/null; then
+  ok "exercise sessions rejects a request that names no lift"
+else
+  bad "GET exercises/sessions with no lift expected 422 field exercise_id, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
 # ---------- 8c. stretch library wired (contract 1.16.0) ----------
 step "8c. GET /api/v1/stretching/library returns the library and PUT validates moves"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/stretching/library" "${auth[@]}")
@@ -252,8 +269,26 @@ else
   bad "PUT weeks-off/2026-11-24 expected 422 field week_start, got $resp" "$(echo "$body" | head -c 200)"
 fi
 
-# ---------- 8e. program recap wired (contract 1.20.0) ----------
-step "8e. GET /api/v1/programs/{id}/recap answers 404 NOT_FOUND for an unknown program"
+# ---------- 8e. exercise notes wired (contract 1.19.0) ----------
+step "8e. GET /api/v1/exercise-notes lists notes and PUT refuses a missing exercise name"
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/exercise-notes" "${auth[@]}")
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "200" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert set(d)=={'exercise_notes'} and isinstance(d['exercise_notes'], list)" "$body" 2>/dev/null; then
+  ok "exercise notes endpoint returns an exercise_notes list (body: $(echo "$body" | head -c 60))"
+else
+  bad "GET exercise-notes expected 200 list, got $resp" "$(echo "$body" | head -c 200)"
+fi
+resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" -X PUT "$API/api/v1/exercise-notes" "${auth[@]}" \
+  -H "Content-Type: application/json" -d '{"note":"seat height 4"}')
+body=$(cat /tmp/smoke.body)
+if [ "$resp" = "422" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='VALIDATION_ERROR' and d['details']['field']=='exercise_name'" "$body" 2>/dev/null; then
+  ok "PUT exercise-notes refuses a missing name with field exercise_name"
+else
+  bad "PUT exercise-notes without a name expected 422 field exercise_name, got $resp" "$(echo "$body" | head -c 200)"
+fi
+
+# ---------- 8f. program recap wired (contract 1.20.0) ----------
+step "8f. GET /api/v1/programs/{id}/recap answers 404 NOT_FOUND for an unknown program"
 resp=$(curl -s -o /tmp/smoke.body -w "%{http_code}" "$API/api/v1/programs/00000000-0000-4000-8000-000000000000/recap" "${auth[@]}")
 body=$(cat /tmp/smoke.body)
 if [ "$resp" = "404" ] && python3 -c "import json,sys; d=json.loads(sys.argv[1]); assert d['code']=='NOT_FOUND'" "$body" 2>/dev/null; then

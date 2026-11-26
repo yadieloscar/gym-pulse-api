@@ -132,5 +132,5 @@ gets a 404 without the JSON envelope and hides the recap.
 | FR-005 | `TestBuildProgramRecap/full_program`, `TestProgramRecapRead` |
 | FR-006 | `TestBuildProgramRecap/no_logged_lifts`, `TestBuildProgramRecapMainLifts`, `TestProgramRecapRead` |
 | FR-007 | `program_recap_dao.go` (one `SendBatch`), `TestProgramRecapRoundTrips` |
-| FR-008 | `training_routes_test.go`, `docs/CONTRACTS.md` 1.20.0, smoke step 8e |
+| FR-008 | `training_routes_test.go`, `docs/CONTRACTS.md` 1.20.0, smoke step 8f |
 | FR-009 | `TestProgramRecapReadIsOwned` |

@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-playground/validator/v10"
 	"github.com/google/uuid"
@@ -22,6 +23,17 @@ type LogService interface {
 	ExerciseHistory(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseHistory, error)
 	ExerciseRecords(ctx context.Context, userID uuid.UUID, idsParam string) ([]model.ExerciseRecord, error)
 	ExerciseProgression(ctx context.Context, userID uuid.UUID, idsParam, weeksParam string) ([]model.ExerciseProgression, error)
+	ExerciseSessions(ctx context.Context, userID uuid.UUID, params ExerciseSessionsParams) (*model.ExerciseSessionsPage, error)
+}
+
+// ExerciseSessionsParams carries the raw query values of
+// GET /exercises/sessions; the service validates them.
+type ExerciseSessionsParams struct {
+	ExerciseID string
+	CatalogID  string
+	Name       string
+	Before     string
+	Limit      string
 }
 
 type logService struct {
@@ -282,6 +294,66 @@ func (s *logService) ExerciseProgression(ctx context.Context, userID uuid.UUID, 
 		delete(byID, id)
 	}
 	return progressions, nil
+}
+
+const (
+	defaultExerciseSessionsLimit = 20
+	maxExerciseSessionsLimit     = 50
+	maxExerciseNameLength        = 200
+)
+
+// ExerciseSessions returns one page of the days the athlete performed a
+// lift, newest first. The lift is named by a saved-workout exercise id, a
+// catalog id, a name, or any mix; a set that matches any of them belongs to
+// it, so planned and off-plan work appear together.
+func (s *logService) ExerciseSessions(ctx context.Context, userID uuid.UUID, params ExerciseSessionsParams) (*model.ExerciseSessionsPage, error) {
+	filter := model.ExerciseSessionsFilter{Limit: defaultExerciseSessionsLimit}
+	if id, ok, err := parseOptionalUUID(params.ExerciseID, "exercise_id"); err != nil {
+		return nil, err
+	} else if ok {
+		filter.ExerciseID = &id
+	}
+	if id, ok, err := parseOptionalUUID(params.CatalogID, "catalog_id"); err != nil {
+		return nil, err
+	} else if ok {
+		filter.CatalogID = &id
+	}
+	filter.Name = strings.ToLower(strings.TrimSpace(params.Name))
+	if utf8.RuneCountInString(filter.Name) > maxExerciseNameLength {
+		return nil, &model.ValidationError{Message: "name must be at most 200 characters", Field: "name"}
+	}
+	if filter.ExerciseID == nil && filter.CatalogID == nil && filter.Name == "" {
+		return nil, &model.ValidationError{Message: "one of exercise_id, catalog_id, or name is required", Field: "exercise_id"}
+	}
+	if params.Before != "" {
+		before, err := model.ParseDate(params.Before)
+		if err != nil {
+			return nil, &model.ValidationError{Message: "invalid date format, expected YYYY-MM-DD", Field: "before"}
+		}
+		filter.Before = &before
+	}
+	if params.Limit != "" {
+		n, err := strconv.Atoi(params.Limit)
+		if err != nil || n < 1 || n > maxExerciseSessionsLimit {
+			return nil, &model.ValidationError{Message: "limit must be an integer from 1 to 50", Field: "limit"}
+		}
+		filter.Limit = n
+	}
+	return s.repo.ExerciseSessions(ctx, userID, filter)
+}
+
+// parseOptionalUUID reads an optional UUID query value. ok is false when the
+// value is absent.
+func parseOptionalUUID(raw, field string) (id uuid.UUID, ok bool, err error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return uuid.Nil, false, nil
+	}
+	id, err = uuid.Parse(raw)
+	if err != nil {
+		return uuid.Nil, false, &model.ValidationError{Message: "invalid " + field, Field: field}
+	}
+	return id, true, nil
 }
 
 // MaxExerciseIDsPerRequest bounds the window queries behind exercise history

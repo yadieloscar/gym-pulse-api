@@ -32,7 +32,7 @@ the unfinished week) are easier to read and to test as a Go function over plain 
 `internal/model/program_recap.go`, `internal/dao/program_recap_dao.go`,
 `internal/service/program_recap_svc.go`, `internal/handler/program_recap.go`,
 `internal/router/router.go`, `cmd/server/main.go`, tests beside each, `docs/CONTRACTS.md`,
-generated swagger, `scripts/smoke.sh` step 8e, `bruno/`.
+generated swagger, `scripts/smoke.sh` step 8f, `bruno/`.
 
 ## Verification
 
