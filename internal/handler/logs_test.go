@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
+	"github.com/gym-pulse/gym-pulse-api/internal/service"
 )
 
 func TestLogHandler_ListByWeek(t *testing.T) {
@@ -384,6 +385,69 @@ func TestLogHandler_ExerciseProgression(t *testing.T) {
 		}}
 		rec := httptest.NewRecorder()
 		NewLogHandler(svc).ExerciseProgression(rec, newReq(t, http.MethodGet, "/?ids="+exerciseID.String(), nil, uid))
+		if rec.Code != http.StatusInternalServerError {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+func TestLogHandler_ExerciseSessions(t *testing.T) {
+	uid := uuid.New()
+	exerciseID := "11111111-1111-4111-8111-111111111111"
+
+	t.Run("success passes every query value and writes the page", func(t *testing.T) {
+		svc := &MockLogService{ExerciseSessionsFunc: func(_ context.Context, userID uuid.UUID, params service.ExerciseSessionsParams) (*model.ExerciseSessionsPage, error) {
+			want := service.ExerciseSessionsParams{ExerciseID: exerciseID, CatalogID: "c", Name: "Back Squat", Before: "2026-10-01", Limit: "2"}
+			if userID != uid || params != want {
+				t.Fatalf("unexpected request: user=%s params=%+v", userID, params)
+			}
+			reps, weight, next := 5, 205.0, "2026-09-02"
+			return &model.ExerciseSessionsPage{
+				Sessions:   []model.ExerciseSession{{Date: "2026-09-02", Sets: []model.ExerciseSessionSet{{ActualReps: &reps, ActualWeight: &weight}}}},
+				NextBefore: &next,
+				Heaviest:   &model.HeaviestSet{Date: "2026-09-02", Weight: 205, Reps: 5},
+			}, nil
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseSessions(rec, newReq(t, http.MethodGet, "/?exercise_id="+exerciseID+"&catalog_id=c&name=Back%20Squat&before=2026-10-01&limit=2", nil, uid))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		want := `{"sessions":[{"date":"2026-09-02","sets":[{"actual_reps":5,"actual_weight":205,"duration_seconds":null}]}],"next_before":"2026-09-02","heaviest":{"date":"2026-09-02","weight":205,"reps":5}}`
+		if got := strings.TrimSpace(rec.Body.String()); got != want {
+			t.Errorf("body = %s, want %s", got, want)
+		}
+	})
+
+	t.Run("empty history is an empty list with nulls", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		NewLogHandler(&MockLogService{}).ExerciseSessions(rec, newReq(t, http.MethodGet, "/?name=squat", nil, uid))
+		want := `{"sessions":[],"next_before":null,"heaviest":null}`
+		if got := strings.TrimSpace(rec.Body.String()); rec.Code != http.StatusOK || got != want {
+			t.Fatalf("status=%d body=%s, want 200 %s", rec.Code, got, want)
+		}
+	})
+
+	t.Run("validation failure names the field", func(t *testing.T) {
+		svc := &MockLogService{ExerciseSessionsFunc: func(context.Context, uuid.UUID, service.ExerciseSessionsParams) (*model.ExerciseSessionsPage, error) {
+			return nil, &model.ValidationError{Message: "limit must be an integer from 1 to 50", Field: "limit"}
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseSessions(rec, newReq(t, http.MethodGet, "/?name=squat&limit=99", nil, uid))
+		if rec.Code != http.StatusUnprocessableEntity {
+			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+		}
+		if body := rec.Body.String(); !strings.Contains(body, `"VALIDATION_ERROR"`) || !strings.Contains(body, `"field":"limit"`) {
+			t.Errorf("body = %s, want VALIDATION_ERROR with field limit", body)
+		}
+	})
+
+	t.Run("service failure", func(t *testing.T) {
+		svc := &MockLogService{ExerciseSessionsFunc: func(context.Context, uuid.UUID, service.ExerciseSessionsParams) (*model.ExerciseSessionsPage, error) {
+			return nil, errors.New("database unavailable")
+		}}
+		rec := httptest.NewRecorder()
+		NewLogHandler(svc).ExerciseSessions(rec, newReq(t, http.MethodGet, "/?name=squat", nil, uid))
 		if rec.Code != http.StatusInternalServerError {
 			t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 		}

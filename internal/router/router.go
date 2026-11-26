@@ -256,6 +256,8 @@ func New(
 				r.Get("/exercises/records", logHandler.ExerciseRecords)
 				// Per-exercise weekly heaviest set (Progress trend)
 				r.Get("/exercises/progression", logHandler.ExerciseProgression)
+				// One lift's past sessions, paged (exercise history page)
+				r.Get("/exercises/sessions", logHandler.ExerciseSessions)
 
 				// Weekly plan
 				r.Route("/plan", func(r chi.Router) {
