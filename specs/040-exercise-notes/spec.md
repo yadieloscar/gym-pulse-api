@@ -4,7 +4,7 @@
 
 **Feature ID**: `gympulse-exercise-notes`
 
-**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/048-exercise-notes/spec.md)
+**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/052-exercise-notes/spec.md)
 
 **Created**: 2026-11-25
 
