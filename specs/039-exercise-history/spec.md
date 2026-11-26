@@ -4,7 +4,7 @@
 
 **Feature ID**: `gympulse-exercise-history`
 
-**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/048-exercise-history/spec.md)
+**Sibling Spec**: [App specification](../../../gym-pulse-app/specs/053-exercise-history/spec.md)
 
 **Created**: 2026-11-25
 
