@@ -111,6 +111,18 @@ workspace brief `docs/briefs/2026-11-07-training-regimes-research.md`; spec FR-0
 | FR-019 | T034, T035 | `TestSlotOrderCoversEveryKind` (sub-pattern match, never by name or category); migration 034 on the acceptance stack | Passed: sub-pattern slot tests; acceptance stack: migration 034 applied, 83 rows, 0 null patterns, 20 sub_patterns |
 | FR-020 | T035 | `TestRuleListIsNamedAndOrdered`; `TestConstrainedMatrix` | Passed: `TestRuleListIsNamedAndOrdered`, `TestConstrainedMatrix` (864 constrained builds, refusals under a quarter) |
 
+## Phase 9: Catalog amendment (2026-11-28)
+
+Owner direction: more exercises for a Life Time club floor; "Yes, add them". Spec FR-021.
+
+- [x] T039 Migration 053: 34 machine, cable, and Smith entries with pattern, muscle group, equipment, impact, and sub-pattern, sorted after each category's existing entries; down migration; `DATABASE_DESIGN.md`; `CONTRACTS.md` count
+- [x] T040 `catalog_fixture_test.go` mirrors migration 053; `weeklyBandSteps` replaces the 64-step bound in `ruleWeeklySetBands`, which ran out on a six-day machines-only power draft once every slot could be filled
+- [x] T041 Gates and evidence: fill the row below
+
+| Requirement / acceptance | Tasks | Verification | Result / limitation |
+| --- | --- | --- | --- |
+| FR-021 | T039, T040, T041 | `TestExhaustiveMatrix`, `TestConstrainedMatrix` on the 117-entry fixture; migration round trip and re-run on a scratch PostgreSQL | Passed 2026-11-28: `go test ./...`, `golangci-lint run` (0 issues), `validate-database-design.sh`; scratch PostgreSQL 16 migrated to version 53 with 117 catalog rows; tagged `internal/dao` and `internal/dbmigrate` suites passed (round trip and re-run). Not verified: the list against a real Life Time floor; smoke and the RLS validator were not run (no handler or table change) |
+
 ## Dependencies & Execution Order
 
 T001 first. T002, T003, T005, T006, T007, T009 in parallel; T004 after T003; T008 after T007; T010 after T009. US1: T011, T012, T014, T015, T016 (tests) in parallel, then T013 → T017. US2 (T018 → T019 → T020) and US3 (T021 → T022) and US4 (T023) after T017, in any order. Phase 7: T024, T025, T027 parallel with the stories; T026 after T017; T028 → T029 → T030 → T031 → T032 last; T033 after T028.

@@ -78,6 +78,19 @@ brief's ranked items become this amendment; the engine refactors it names come f
 - Q: Power exercises? → A: Box Jump, Broad Jump, Medicine Ball Slam, and Push Press join the
   catalog so power drafts stop depending on Olympic-lift variants.
 
+### Session 2026-11-28 (catalog amendment)
+
+Owner direction: "I work out at life time and I dont have all the machines or options I should
+have", then "Yes, add them" to a list of about 35 missing machine exercises.
+
+- Q: How do the new entries reach the app and the engine? → A: Seed data in migration 053; the
+  catalog route and the app are unchanged. The engine selects them by the same metadata (FR-021).
+- Q: Do existing drafts change? → A: New entries sort after every existing one, so the first
+  candidate of each slot is the same. Later picks rotate over a longer list, and an athlete with
+  only machines now gets vertical push, hinge, and incline work that used to be dropped.
+- Q: Is the list a confirmed Life Time inventory? → A: No. No published list was found; it is the
+  equipment a large club usually has. The owner may send corrections.
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Get a draft instantly from my answers (Priority: P1)
@@ -263,6 +276,9 @@ three workouts, and the rationale names the secondary goal.
   and the engine MUST select by it instead of by name or category heuristics.
 - **FR-020**: `Build` MUST be a list of named rules applied in order, each covered by its own test,
   and the exhaustive matrix MUST also run over a fixed set of `avoid` and `focus` combinations.
+- **FR-021**: The catalog MUST include the common machine, cable, and Smith exercises of a large
+  club (migration 053), each with full programming metadata, and every draft in both matrices
+  MUST stay valid and inside its weekly set bands with them present.
 
 ### Key Entities
 

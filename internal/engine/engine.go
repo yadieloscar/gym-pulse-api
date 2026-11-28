@@ -371,6 +371,13 @@ func ruleTopUp(b *builder, w *Workout, i int) {
 
 // --- weekly rules ------------------------------------------------------------
 
+// weeklyBandSteps bounds the trimming loop. Each step removes one exercise or
+// one set, or adds one isolation exercise, so the bound must exceed the most
+// sets a week can hold: six workouts of maxExercises at ten sets each is 480.
+// The earlier bound of 64 ran out on six-day drafts once the catalog could
+// fill every slot from machines alone.
+const weeklyBandSteps = 512
+
 // ruleWeeklySetBands keeps each muscle group's weekly sets inside the goal's
 // band (FR-014). An over-served group first loses an isolation exercise, then
 // a compound whose pattern repeats within its day, then a set from its last
@@ -382,7 +389,7 @@ func ruleWeeklySetBands(b *builder, d *Draft) {
 	if !ok || b.in.PrimaryGoal == model.GoalConditioning {
 		return
 	}
-	for range 64 {
+	for range weeklyBandSteps {
 		tally := weeklySets(*d)
 		changed := false
 		for _, group := range sortedGroups(tally) {

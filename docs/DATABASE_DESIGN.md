@@ -319,10 +319,12 @@ account deletion leaves this row to the Supabase Admin API, after application an
 
 **Lifecycle**: Changes and seed additions ship as migrations; there is no public write endpoint.
 Migration 032 seeds the programming metadata for all 79 entries and fails if any row is missed;
-migration 034 adds `sub_pattern` for 20 entries and four power entries (83 rows).
+migration 034 adds `sub_pattern` for 20 entries and four power entries (83 rows). Migration 053
+seeds 34 machine, cable, and Smith entries after each category's last `sort_order` (117 rows) and
+fails unless all 34 are present.
 
 **Migration source**: `008_create_exercise_catalog`, `032_add_exercise_catalog_programming`,
-`034_add_exercise_catalog_sub_pattern_and_power`.
+`034_add_exercise_catalog_sub_pattern_and_power`, `053_seed_machine_exercises`.
 
 ### Table: `public.workout_templates`
 

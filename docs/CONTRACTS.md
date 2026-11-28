@@ -1963,7 +1963,8 @@ convention as `/stats/distribution`):
   `hamstring_isolation`, `glute_isolation`, `calf`, or `null`).
 - Unknown `category` → 422 `VALIDATION_ERROR`. Valid categories are the
   workout type ids (push, pull, legs, upper, lower, full, core, cardio, …).
-- Catalog is seeded by migration (83 entries); no write endpoints in v1.
+- Catalog is seeded by migration (117 entries; migration 053 added 34 machine, cable, and Smith
+  entries); no write endpoints in v1. Clients must not assume a fixed count.
 
 ---
 
