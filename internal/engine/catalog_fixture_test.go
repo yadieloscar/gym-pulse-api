@@ -8,7 +8,7 @@ import (
 	"github.com/gym-pulse/gym-pulse-api/internal/model"
 )
 
-// fixtureCatalog mirrors migrations 008, 032, and 034: every real entry with
+// fixtureCatalog mirrors migrations 008, 032, 034, and 053: every real entry with
 // its programming metadata, so engine tests run against the shipped catalog.
 func fixtureCatalog() []model.CatalogExercise {
 	compound, isolation := "compound", "isolation"
@@ -104,5 +104,39 @@ func fixtureCatalog() []model.CatalogExercise {
 	add(80, "Broad Jump", "full", "strength", &compound, 9, "explosive", "glutes", "bodyweight", "high", "")
 	add(81, "Medicine Ball Slam", "full", "strength", &compound, 10, "explosive", "full_body", "full_gym", "low", "")
 	add(82, "Push Press", "push", "strength", &compound, 15, "explosive", "shoulders", "barbell", "low", "")
+	add(83, "Machine Shoulder Press", "push", "strength", &compound, 16, "vertical_push", "shoulders", "machines", "low", "")
+	add(84, "Incline Machine Press", "push", "strength", &compound, 17, "horizontal_push", "chest", "machines", "low", "incline_push")
+	add(85, "Smith Machine Bench Press", "push", "strength", &compound, 18, "horizontal_push", "chest", "machines", "low", "")
+	add(86, "Assisted Dip", "push", "strength", &compound, 19, "vertical_push", "chest", "machines", "low", "")
+	add(87, "Machine Dip", "push", "strength", &compound, 20, "vertical_push", "chest", "machines", "low", "")
+	add(88, "Pec Deck", "push", "strength", &isolation, 21, "isolation", "chest", "machines", "low", "chest_isolation")
+	add(89, "Machine Lateral Raise", "push", "strength", &isolation, 22, "isolation", "shoulders", "machines", "low", "shoulder_isolation")
+	add(90, "Cable Lateral Raise", "push", "strength", &isolation, 23, "isolation", "shoulders", "machines", "low", "shoulder_isolation")
+	add(91, "Rope Triceps Extension", "push", "strength", &isolation, 24, "isolation", "arms", "machines", "low", "triceps")
+	add(92, "Skull Crusher", "push", "strength", &isolation, 25, "isolation", "arms", "barbell", "low", "triceps")
+	add(93, "Assisted Pull-Up", "pull", "strength", &compound, 15, "vertical_pull", "back", "machines", "low", "")
+	add(94, "Machine High Row", "pull", "strength", &compound, 16, "vertical_pull", "back", "machines", "low", "")
+	add(95, "Chest-Supported Row", "pull", "strength", &compound, 17, "horizontal_pull", "back", "machines", "low", "")
+	add(96, "Single-Arm Cable Row", "pull", "strength", &compound, 18, "horizontal_pull", "back", "machines", "low", "")
+	add(97, "Straight-Arm Pulldown", "pull", "strength", &isolation, 19, "isolation", "back", "machines", "low", "")
+	add(98, "Reverse Pec Deck", "pull", "strength", &isolation, 20, "isolation", "shoulders", "machines", "low", "rear_delt")
+	add(99, "Dumbbell Shrug", "pull", "strength", &isolation, 21, "isolation", "back", "dumbbells", "low", "")
+	add(100, "Cable Curl", "pull", "strength", &isolation, 22, "isolation", "arms", "machines", "low", "biceps")
+	add(101, "Machine Preacher Curl", "pull", "strength", &isolation, 23, "isolation", "arms", "machines", "low", "biceps")
+	add(102, "Smith Machine Squat", "legs", "strength", &compound, 15, "squat", "quads", "machines", "low", "")
+	add(103, "Pendulum Squat", "legs", "strength", &compound, 16, "squat", "quads", "machines", "low", "")
+	add(104, "Belt Squat", "legs", "strength", &compound, 17, "squat", "quads", "machines", "low", "")
+	add(105, "Machine Hip Thrust", "legs", "strength", &compound, 18, "hinge", "glutes", "machines", "low", "")
+	add(106, "Seated Leg Curl", "legs", "strength", &isolation, 19, "isolation", "hamstrings", "machines", "low", "hamstring_isolation")
+	add(107, "Glute-Ham Raise", "legs", "strength", &isolation, 20, "isolation", "hamstrings", "full_gym", "low", "hamstring_isolation")
+	add(108, "Back Extension", "legs", "strength", &isolation, 21, "isolation", "hamstrings", "full_gym", "low", "")
+	add(109, "Cable Kickback", "legs", "strength", &isolation, 22, "isolation", "glutes", "machines", "low", "glute_isolation")
+	add(110, "Hip Adduction", "legs", "strength", &isolation, 23, "isolation", "glutes", "machines", "low", "")
+	add(111, "Leg Press Calf Raise", "legs", "strength", &isolation, 24, "isolation", "calves", "machines", "low", "calf")
+	add(112, "Captain's Chair Leg Raise", "core", "strength", &compound, 9, "core", "core", "full_gym", "low", "")
+	add(113, "Ab Crunch Machine", "core", "strength", &isolation, 10, "core", "core", "machines", "low", "")
+	add(114, "Rotary Torso", "core", "strength", &isolation, 11, "core", "core", "machines", "low", "")
+	add(115, "Pallof Press", "core", "strength", &isolation, 12, "core", "core", "machines", "low", "")
+	add(116, "SkiErg", "cardio", "cardio", nil, 13, "locomotion", "full_body", "cardio_machine", "low", "")
 	return out
 }
